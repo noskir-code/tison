@@ -1,0 +1,114 @@
+{% extends "base.html" %} {% import "macros/moderation.html" as moderation_ui %} {% block content %}
+<section class="box content moderation federation">
+    {% call moderation_ui::tabs(sections) %}{% endcall %}
+    <p class="post-username">
+        The servers of the Fediverse this site has met, from the accounts it knows.
+        <strong>Limit</strong>: their posts and notifications only reach the people following their accounts.
+        <strong>Ban</strong>: what came from them is deleted, nothing goes to them, what they send is ignored.
+    </p>
+    {% if !federation_on %}
+    <p class="empty">The Fediverse is turned off on this site: no other server is reached.</p>
+    {% endif %}
+    {% if let Some(text) = message %}
+    <p class="saved">{{ text }}</p>
+    {% endif %}
+
+    <form action="/moderation/federation" method="get" class="search-field instance-search" role="search">
+        <label for="instance-search" class="visually-hidden">Find a server</label>
+        <input id="instance-search" type="search" name="q" value="{{ search }}" placeholder="Find a server" />
+        <button type="submit" class="button" aria-label="Find">
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
+                <circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2.2" />
+                <line x1="15.5" y1="15.5" x2="21" y2="21" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+            </svg>
+        </button>
+    </form>
+
+    <div class="instance-table-wrap">
+        <table class="instance-table">
+            <thead>
+                <tr>
+                    <th scope="col">Server</th>
+                    <th scope="col" class="number" title="Accounts of this server known here">Accounts</th>
+                    <th scope="col" class="number" title="Its accounts following people or communities here">Followers here</th>
+                    <th scope="col" class="number" title="Its accounts followed by people here">Followed</th>
+                    <th scope="col" class="number">Posts</th>
+                    <th scope="col">Last seen</th>
+                    <th scope="col">Status</th>
+                    <th scope="col"><span class="visually-hidden">Actions</span></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for instance in instances %}
+                <tr class="{% if let Some(policy) = instance.policy %}{{ policy.as_str() }}{% endif %}">
+                    <th scope="row"><a href="https://{{ instance.domain }}" rel="nofollow noopener noreferrer" target="_blank">{{ instance.domain }}</a></th>
+                    <td class="number">{{ instance.accounts }}</td>
+                    <td class="number">{{ instance.followers }}</td>
+                    <td class="number">{{ instance.followed }}</td>
+                    <td class="number">{{ instance.posts }}</td>
+                    <td>{% if let Some(iso) = instance.last_seen_iso() %}{% if let Some(label) = instance.last_seen_label() %}<time datetime="{{ iso }}">{{ label }}</time>{% endif %}{% else %}<span class="post-meta">never</span>{% endif %}</td>
+                    <td>
+                        {% match instance.policy %}
+                        {% when Some(policy) %}
+                        <span class="instance-status {{ policy.as_str() }}"{% if !instance.reason.is_empty() %} title="{{ instance.reason }}"{% endif %}>{% if policy.as_str() == "banned" %}Banned{% else %}Limited{% endif %}</span>
+                        {% when None %}
+                        <span class="post-meta">Normal</span>
+                        {% endmatch %}
+                    </td>
+                    <td class="instance-actions">
+                        {% match instance.policy %}
+                        {% when Some(policy) %}
+                        {% if policy.as_str() == "limited" %}
+                        <form action="/moderation/federation" method="post">
+                            <input type="hidden" name="domain" value="{{ instance.domain }}" />
+                            <input type="hidden" name="policy" value="none" />
+                            <button type="submit" class="action">Unlimit</button>
+                        </form>
+                        <form action="/moderation/federation" method="post" data-confirm="Ban {{ instance.domain }}? What came from it is deleted, and it can't be brought back." data-confirm-label="Ban">
+                            <input type="hidden" name="domain" value="{{ instance.domain }}" />
+                            <input type="hidden" name="policy" value="banned" />
+                            <button type="submit" class="action danger">Ban</button>
+                        </form>
+                        {% else %}
+                        <form action="/moderation/federation" method="post">
+                            <input type="hidden" name="domain" value="{{ instance.domain }}" />
+                            <input type="hidden" name="policy" value="none" />
+                            <button type="submit" class="action">Unban</button>
+                        </form>
+                        {% endif %}
+                        {% when None %}
+                        <form action="/moderation/federation" method="post">
+                            <input type="hidden" name="domain" value="{{ instance.domain }}" />
+                            <input type="hidden" name="policy" value="limited" />
+                            <button type="submit" class="action">Limit</button>
+                        </form>
+                        <form action="/moderation/federation" method="post" data-confirm="Ban {{ instance.domain }}? What came from it is deleted, and it can't be brought back." data-confirm-label="Ban">
+                            <input type="hidden" name="domain" value="{{ instance.domain }}" />
+                            <input type="hidden" name="policy" value="banned" />
+                            <button type="submit" class="action danger">Ban</button>
+                        </form>
+                        {% endmatch %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="8" class="empty">{% if search.is_empty() %}No server met yet.{% else %}No server matches.{% endif %}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <h2>Limit or ban a server</h2>
+    <p class="post-username">Also one this site hasn't met yet: it will be treated so from its first contact.</p>
+    <form action="/moderation/federation" method="post" class="instance-form">
+        <label for="instance-domain" class="visually-hidden">Domain</label>
+        <input id="instance-domain" type="text" name="domain" placeholder="Domain, like spam.example" required autocomplete="off" />
+        <label for="instance-reason" class="visually-hidden">Reason (optional, for the staff)</label>
+        <input id="instance-reason" type="text" name="reason" placeholder="Reason (optional, for the staff)" maxlength="500" autocomplete="off" />
+        <select name="policy" aria-label="Rule">
+            <option value="limited">Limit</option>
+            <option value="banned">Ban</option>
+        </select>
+        <button type="submit" class="button primary">Apply</button>
+    </form>
+</section>
+{% endblock %}

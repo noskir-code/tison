@@ -1,9 +1,6 @@
-{% extends "base.html" %} {% import "macros/account.html" as accounts %} {% block content %}
+{% extends "base.html" %} {% import "macros/account.html" as accounts %} {% import "macros/moderation.html" as moderation_ui %} {% block content %}
 <section class="box content moderation staff">
-    <div class="moderation-title">
-        <h1>Staff</h1>
-        <a href="/moderation" class="button">Reports</a>
-    </div>
+    {% call moderation_ui::tabs(sections) %}{% endcall %}
     <p class="post-username">
         The <strong>Creator</strong> made this site and names the moderators.
         <strong>Moderators</strong> handle reports: they delete what breaks the rules, suspend and block accounts.

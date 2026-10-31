@@ -18,10 +18,10 @@
             } catch {}
         </script>
         {% block stylesheets %}
-        <link rel="stylesheet" href="/assets/style.css"/>
+        <link rel="stylesheet" href="/assets/style.css?v={{ crate::handlers::system::assets_version() }}"/>
         {% endblock %}
         {% block scripts %}
-        <script src="/assets/system.js" defer></script>
+        <script src="/assets/system.js?v={{ crate::handlers::system::assets_version() }}" defer></script>
         {% endblock %}
         {# Pages with a Fediverse version link it: pasting the page's address in
            Mastodon's search finds the account or post. #}

@@ -426,6 +426,11 @@ pub async fn for_post(pool: &PgPool, post_id: i64, viewer_id: Option<i32>) -> Re
             "COALESCE(c.user_id = $2, FALSE)"
         ),
         " WHERE c.post_id = $1 AND u.suspended_at IS NULL
+           -- Comments of a limited server: only for who follows their author.
+           AND NOT EXISTS (SELECT 1 FROM instance_policies lp
+                WHERE lp.domain = ra.host AND lp.policy = 'limited'
+                  AND NOT EXISTS (SELECT 1 FROM federation_following lf
+                                  WHERE lf.actor_id = ra.id AND lf.user_id = $2 AND lf.accepted))
          ORDER BY c.created_at, c.id"
     ))
     .bind(post_id)

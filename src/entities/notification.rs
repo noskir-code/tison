@@ -680,6 +680,17 @@ pub async fn followed(pool: &PgPool, user_id: i32, remote_actor_id: i64) -> Resu
 /// Notifications with what they are about, newest first. `$1` is the user,
 /// `$4` an optional id to load only that one, `$5` an optional id to load
 /// only older ones.
+/// Whether the notification `n` reaches its user: not from an account of a
+/// limited server they don't follow. A macro for `concat!`.
+macro_rules! not_muted {
+    () => {
+        "NOT EXISTS (SELECT 1 FROM federation_actors ma JOIN instance_policies mp ON mp.domain = ma.host
+            WHERE ma.id = n.remote_actor_id AND mp.policy = 'limited'
+              AND NOT EXISTS (SELECT 1 FROM federation_following mf
+                              WHERE mf.actor_id = ma.id AND mf.user_id = n.user_id AND mf.accepted))"
+    };
+}
+
 macro_rules! notification_select {
     () => {
         concat!(
@@ -696,7 +707,9 @@ macro_rules! notification_select {
               LEFT JOIN posts p ON p.id = n.post_id
               LEFT JOIN comments c ON c.id = n.comment_id
               LEFT JOIN communities cm ON cm.id = n.community_id
-             WHERE n.user_id = $1
+             WHERE n.user_id = $1 AND ",
+            not_muted!(),
+            "
                AND ($4::bigint IS NULL OR n.id = $4)
                AND ($5::bigint IS NULL OR n.id < $5)
              ORDER BY n.id DESC
@@ -743,7 +756,10 @@ pub async fn find(pool: &PgPool, user_id: i32, id: i64) -> Result<Option<Notific
 }
 
 pub async fn unread_count(pool: &PgPool, user_id: i32) -> Result<i64, sqlx::Error> {
-    sqlx::query_scalar("SELECT COUNT(*) FROM notifications WHERE user_id = $1 AND read_at IS NULL")
+    sqlx::query_scalar(concat!(
+        "SELECT COUNT(*) FROM notifications n WHERE n.user_id = $1 AND n.read_at IS NULL AND ",
+        not_muted!()
+    ))
         .bind(user_id)
         .fetch_one(pool)
         .await

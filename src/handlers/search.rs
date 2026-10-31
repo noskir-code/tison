@@ -220,6 +220,14 @@ pub(crate) async fn find_account(state: &AppState, pool: &sqlx::PgPool, me: &Use
     let Some(federation) = state.federation.as_deref() else {
         return Err("The Fediverse is turned off on this server.".to_string());
     };
+    // A banned server isn't even asked.
+    let domain = match search.split_once("://") {
+        Some(_) => store::host_of(search),
+        None => search.rsplit('@').next().unwrap_or_default().to_ascii_lowercase(),
+    };
+    if store::policy_of(pool, &domain).await.ok().flatten() == Some(store::Policy::Banned) {
+        return Err(format!("{domain} is banned on this server."));
+    }
     let url = if search.starts_with("https://") || search.starts_with("http://") {
         search.to_string()
     } else {

@@ -1238,6 +1238,10 @@ async fn receive_announce(
 /// Fetches a shared note from its own server (never trusting a copy sent by
 /// someone else) and stores it as a post. `None` when it can't be shown.
 async fn fetch_shared_post(federation: &Federation, pool: &PgPool, url: &str, key: &LocalKey) -> Result<Option<i64>, String> {
+    // A share of a post of a banned server: not fetched.
+    if store::is_banned(pool, url).await.map_err(|err| format!("failed to check {url}: {err}"))? {
+        return Ok(None);
+    }
     let note = match linker::fetch(federation, url, Some(key)).await {
         Ok(note) => note,
         Err(err) => {

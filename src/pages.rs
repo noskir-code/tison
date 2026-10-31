@@ -88,6 +88,7 @@ pub fn page_routes() -> Router<AppState> {
         .route("/moderation", get(moderation::dashboard))
         .route("/moderation/reports/{id}/{action}", post(moderation::act))
         .route("/moderation/staff", get(moderation::staff_page).post(moderation::add_moderator))
+        .route("/moderation/federation", get(moderation::federation_page).post(moderation::set_instance_policy))
         .route("/moderation/staff/{user_id}/remove", post(moderation::remove_moderator))
         .route("/search", get(search::search_page))
         .route("/search/suggest", get(search::suggest))

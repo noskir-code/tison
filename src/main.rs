@@ -116,6 +116,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Ok(count) => tracing::info!("deleted {} expired password reset links", count),
             Err(err) => tracing::warn!("failed to delete expired password reset links: {}", err),
         }
+        // Servers of accounts saved before they were stored.
+        match entities::federation::fill_hosts(pool).await {
+            Ok(0) => {}
+            Ok(count) => tracing::info!("found the server of {} known accounts", count),
+            Err(err) => tracing::warn!("failed to fill the servers of accounts: {}", err),
+        }
         // Avatars saved before the media proxy existed.
         if let Err(err) = entities::media::register_known_avatars(pool).await {
             tracing::warn!("failed to register avatars for the media proxy: {}", err);

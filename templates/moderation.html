@@ -1,12 +1,9 @@
-{% extends "base.html" %} {% block content %}
+{% extends "base.html" %} {% import "macros/moderation.html" as moderation_ui %} {% block content %}
 <section class="box content moderation">
-    <div class="moderation-title">
-        <h1>Moderation</h1>
-        <a href="/moderation/staff" class="button">Staff</a>
-    </div>
-    <nav class="profile-tabs" aria-label="Reports">
+    {% call moderation_ui::tabs(sections) %}{% endcall %}
+    <nav class="report-filters" aria-label="Reports">
         {% for tab in tabs %}
-        <a href="{{ tab.url }}"{% if tab.active %} class="active" aria-current="page"{% endif %}>{{ tab.label }} · {{ tab.count }}</a>
+        <a href="{{ tab.url }}" class="action{% if tab.active %} active{% endif %}"{% if tab.active %} aria-current="page"{% endif %}>{{ tab.label }} · {{ tab.count }}</a>
         {% endfor %}
     </nav>
     {% if let Some(text) = message %}

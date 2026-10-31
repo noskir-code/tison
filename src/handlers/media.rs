@@ -51,6 +51,10 @@ pub async fn proxy(State(state): State<AppState>, Path(hash): Path<String>, requ
         }
     };
 
+    // From a server banned since: not served anymore.
+    if crate::entities::federation::is_banned(pool, &proxied.url).await.unwrap_or(false) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
     let cached = match &proxied.extension {
         Some(extension) if tokio::fs::try_exists(cached_path(&hash, extension)).await.unwrap_or(false) => {
             cached_path(&hash, extension)

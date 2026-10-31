@@ -22,6 +22,8 @@ pub const ACTORS_TABLE: Table = Table {
         Column::new("id", "BIGSERIAL").primary_key(),
         // Their ActivityPub id, like https://mastodon.social/users/alice
         Column::new("actor_id", "TEXT"),
+        // Their server, like `mastodon.social`, for the rules of `INSTANCES_TABLE`.
+        Column::new("host", "TEXT").default("''"),
         Column::new("username", "TEXT").default("''"),
         // Shown next to their posts and comments.
         Column::new("display_name", "TEXT").default("''"),
@@ -42,6 +44,7 @@ pub const ACTORS_TABLE: Table = Table {
     ],
     indexes: &[
         Index::unique("federation_actors_actor_id_idx", "actor_id"),
+        Index::new("federation_actors_host_idx", "host"),
         Index::new("federation_actors_key_id_idx", "key_id"),
     ],
 };
@@ -265,8 +268,8 @@ pub async fn save_actor(pool: &PgPool, actor: &NewRemoteActor) -> Result<RemoteA
     let row = sqlx::query(concat!(
         "INSERT INTO federation_actors
             (actor_id, username, inbox, shared_inbox, key_id, public_key_pem, display_name, icon_url, profile_url,
-             summary, followers_url)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+             summary, followers_url, host)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
          ON CONFLICT (actor_id) DO UPDATE SET
             username = EXCLUDED.username, inbox = EXCLUDED.inbox,
             shared_inbox = EXCLUDED.shared_inbox, key_id = EXCLUDED.key_id,
@@ -287,9 +290,205 @@ pub async fn save_actor(pool: &PgPool, actor: &NewRemoteActor) -> Result<RemoteA
     .bind(&actor.profile_url)
     .bind(&actor.summary)
     .bind(&actor.followers_url)
+    .bind(host_of(&actor.actor_id))
     .fetch_one(pool)
     .await?;
     RemoteActor::from_row(&row)
+}
+
+// --- Servers of the Fediverse ---
+
+/// Rules the site's staff set for whole servers. A server without a row is
+/// treated normally.
+pub const INSTANCES_TABLE: Table = Table {
+    name: "instance_policies",
+    columns: &[
+        // Like `mastodon.social`, lowercase, the same as `federation_actors.host`.
+        Column::new("domain", "TEXT"),
+        // `limited` or `banned`, see `Policy`.
+        Column::new("policy", "TEXT"),
+        Column::new("reason", "TEXT").default("''"),
+        Column::new("set_by", "INTEGER")
+            .nullable()
+            .references("users(id) ON DELETE SET NULL"),
+        Column::new("set_at", "TIMESTAMPTZ").default("NOW()"),
+    ],
+    indexes: &[Index::unique("instance_policies_domain_idx", "domain")],
+};
+
+/// The server of an address, lowercase: `mastodon.social` (with the port
+/// when there's one), the key of `INSTANCES_TABLE`.
+pub fn host_of(url: &str) -> String {
+    crate::entities::author::host_of(url).to_ascii_lowercase()
+}
+
+/// What the staff decided about a server.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Policy {
+    /// Its posts and comments are only shown to the people following their
+    /// author, its notifications only reach them (Mastodon's "limit").
+    Limited,
+    /// Defederated: its content is deleted, nothing goes to it, what it sends
+    /// is ignored (Mastodon's "suspend").
+    Banned,
+}
+
+impl Policy {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Limited => "limited",
+            Self::Banned => "banned",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "limited" => Some(Self::Limited),
+            "banned" => Some(Self::Banned),
+            _ => None,
+        }
+    }
+}
+
+/// A server as shown in the Federation tab.
+pub struct Instance {
+    pub domain: String,
+    /// Its accounts known here.
+    pub accounts: i64,
+    /// Its accounts following local users or communities.
+    pub followers: i64,
+    /// Its accounts followed by local users.
+    pub followed: i64,
+    pub posts: i64,
+    pub last_seen: Option<DateTime<Utc>>,
+    pub policy: Option<Policy>,
+    pub reason: String,
+}
+
+impl Instance {
+    pub fn last_seen_iso(&self) -> Option<String> {
+        self.last_seen.as_ref().map(|time| time.to_rfc3339())
+    }
+
+    pub fn last_seen_label(&self) -> Option<String> {
+        self.last_seen.as_ref().map(|time| time.format("%b %-d, %Y").to_string())
+    }
+}
+
+/// Servers shown at once.
+pub const INSTANCES_SHOWN: i64 = 200;
+
+/// Every server met (its accounts known here) or with a rule, the biggest
+/// first, matching `search` in its domain when given.
+pub async fn instances(pool: &PgPool, search: Option<&str>) -> Result<Vec<Instance>, sqlx::Error> {
+    let pattern = search.map(|search| format!("%{}%", crate::entities::user::escape_like(&search.trim().to_lowercase())));
+    sqlx::query(
+        "WITH accounts AS (
+            SELECT a.host, a.fetched_at,
+                   EXISTS (SELECT 1 FROM federation_followers f WHERE f.actor_id = a.id)
+                   OR EXISTS (SELECT 1 FROM community_followers f WHERE f.actor_id = a.id) AS follows_here,
+                   EXISTS (SELECT 1 FROM federation_following f WHERE f.actor_id = a.id) AS followed_here,
+                   (SELECT COUNT(*) FROM posts p WHERE p.remote_actor_id = a.id) AS posts
+            FROM federation_actors a WHERE a.host <> ''
+         ), known AS (
+            SELECT host AS domain, COUNT(*) AS accounts, MAX(fetched_at) AS last_seen,
+                   COUNT(*) FILTER (WHERE follows_here) AS followers,
+                   COUNT(*) FILTER (WHERE followed_here) AS followed,
+                   SUM(posts)::bigint AS posts
+            FROM accounts GROUP BY host
+         )
+         SELECT COALESCE(k.domain, i.domain) AS domain, COALESCE(k.accounts, 0) AS accounts,
+                COALESCE(k.followers, 0) AS followers, COALESCE(k.followed, 0) AS followed,
+                COALESCE(k.posts, 0) AS posts, k.last_seen, i.policy, COALESCE(i.reason, '') AS reason
+         FROM known k FULL OUTER JOIN instance_policies i ON i.domain = k.domain
+         WHERE $1::text IS NULL OR COALESCE(k.domain, i.domain) LIKE $1
+         ORDER BY i.policy IS NULL, COALESCE(k.accounts, 0) DESC, COALESCE(k.domain, i.domain)
+         LIMIT $2",
+    )
+    .bind(pattern)
+    .bind(INSTANCES_SHOWN)
+    .fetch_all(pool)
+    .await?
+    .iter()
+    .map(|row| {
+        Ok(Instance {
+            domain: row.try_get("domain")?,
+            accounts: row.try_get("accounts")?,
+            followers: row.try_get("followers")?,
+            followed: row.try_get("followed")?,
+            posts: row.try_get("posts")?,
+            last_seen: row.try_get("last_seen")?,
+            policy: row.try_get::<Option<String>, _>("policy")?.as_deref().and_then(Policy::parse),
+            reason: row.try_get("reason")?,
+        })
+    })
+    .collect()
+}
+
+/// The rule of a server, `None` when it's treated normally.
+pub async fn policy_of(pool: &PgPool, domain: &str) -> Result<Option<Policy>, sqlx::Error> {
+    let policy: Option<String> = sqlx::query_scalar("SELECT policy FROM instance_policies WHERE domain = $1")
+        .bind(domain.to_ascii_lowercase())
+        .fetch_optional(pool)
+        .await?;
+    Ok(policy.as_deref().and_then(Policy::parse))
+}
+
+/// Whether the server of `url` is banned.
+pub async fn is_banned(pool: &PgPool, url: &str) -> Result<bool, sqlx::Error> {
+    Ok(policy_of(pool, &host_of(url)).await? == Some(Policy::Banned))
+}
+
+/// Sets the rule of a server, or removes it (`None`). A ban deletes what
+/// came from it, see `Policy::Banned`; lifting it brings nothing back.
+pub async fn set_policy(pool: &PgPool, domain: &str, policy: Option<Policy>, reason: &str, by: i32) -> Result<(), sqlx::Error> {
+    let domain = domain.trim().to_ascii_lowercase();
+    let mut transaction = pool.begin().await?;
+    match policy {
+        None => {
+            sqlx::query("DELETE FROM instance_policies WHERE domain = $1")
+                .bind(&domain)
+                .execute(&mut *transaction)
+                .await?;
+        }
+        Some(policy) => {
+            sqlx::query(
+                "INSERT INTO instance_policies (domain, policy, reason, set_by) VALUES ($1, $2, $3, $4)
+                 ON CONFLICT (domain) DO UPDATE SET policy = EXCLUDED.policy, reason = EXCLUDED.reason,
+                    set_by = EXCLUDED.set_by, set_at = NOW()",
+            )
+            .bind(&domain)
+            .bind(policy.as_str())
+            .bind(reason)
+            .bind(by)
+            .execute(&mut *transaction)
+            .await?;
+        }
+    }
+    if policy == Some(Policy::Banned) {
+        let of_server = "IN (SELECT id FROM federation_actors WHERE host = $1)";
+        for statement in [
+            format!("DELETE FROM posts WHERE remote_actor_id {of_server}"),
+            format!("DELETE FROM comments WHERE remote_actor_id {of_server}"),
+            format!("DELETE FROM remote_reactions WHERE actor_id {of_server}"),
+            format!("DELETE FROM federation_followers WHERE actor_id {of_server}"),
+            format!("DELETE FROM community_followers WHERE actor_id {of_server}"),
+            format!("DELETE FROM federation_following WHERE actor_id {of_server}"),
+            // Waiting deliveries to it.
+            "DELETE FROM federation_deliveries WHERE inbox LIKE 'http%://' || $1 || '/%'".to_string(),
+        ] {
+            sqlx::query(sqlx::AssertSqlSafe(statement)).bind(&domain).execute(&mut *transaction).await?;
+        }
+    }
+    transaction.commit().await
+}
+
+/// Fills `host` for accounts saved before it existed.
+pub async fn fill_hosts(pool: &PgPool) -> Result<u64, sqlx::Error> {
+    Ok(sqlx::query("UPDATE federation_actors SET host = LOWER(substring(actor_id from '://([^/]+)')) WHERE host = ''")
+        .execute(pool)
+        .await?
+        .rows_affected())
 }
 
 /// Blocks an account of another server, or lifts the block. Blocking removes

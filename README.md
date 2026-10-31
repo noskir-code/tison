@@ -38,8 +38,8 @@ https://instavox.social/
 
  - (Finished) v0.1 > the first fully operational function (Content-Aggregator)
  - (Finished) v0.2 > DFRN
- - (Current) v0.3 > Moderator system
- - v0.4 > Content Type system
+ - (Finished) v0.3 > Moderator system
+ - (Current)v0.4 > Content Type system
  - v0.5 > Macro blogging
  - v0.6 > Image
  - v0.7 > Publishing
@@ -49,4 +49,4 @@ https://instavox.social/
  - v0.11 > Live Streaming
  - v0.12 > CLI configuration
 
- - v1.0 > Fully functional system that shows contents and users from other instances with multi-user links and notifier that notifies the publication of new content by users.
+ - v1.0 > Fully functional system and clean that shows contents and users from other instances with multi-user links and notifier that notifies the publication of new content by users.

@@ -41,6 +41,7 @@ pub const TABLES: &[&schema::Table] = &[
     &federation::FOLLOWING_TABLE,
     &federation::REACTIONS_TABLE,
     &federation::DELIVERIES_TABLE,
+    &federation::INSTANCES_TABLE,
     &notification::TABLE,
     &message::CONVERSATIONS_TABLE,
     &message::MESSAGES_TABLE,

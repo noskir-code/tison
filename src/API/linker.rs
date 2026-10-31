@@ -583,6 +583,9 @@ const ACTOR_REFRESH_HOURS: i64 = 24;
 /// with `key` and saved.
 pub async fn fetch_actor(federation: &Federation, pool: &PgPool, url: &str, key: &LocalKey) -> Result<RemoteActor, String> {
     let url = url.split('#').next().unwrap_or(url);
+    if store::is_banned(pool, url).await.map_err(|err| format!("failed to check {url}: {err}"))? {
+        return Err(format!("the server of {url} is banned here"));
+    }
     let known = store::find_actor(pool, url)
         .await
         .map_err(|err| format!("failed to load actor {url}: {err}"))?;
@@ -841,6 +844,14 @@ pub async fn run_deliveries(federation: Arc<Federation>, pool: PgPool) {
 }
 
 async fn deliver(federation: &Federation, pool: &PgPool, delivery: Delivery) {
+    // Banned since it was queued: dropped.
+    if store::is_banned(pool, &delivery.inbox).await.unwrap_or(false) {
+        tracing::debug!("dropped delivery to banned {}", delivery.inbox);
+        if let Err(err) = store::finish_delivery(pool, delivery.id).await {
+            tracing::warn!("failed to drop delivery {}: {}", delivery.id, err);
+        }
+        return;
+    }
     let result = match local_key(federation, pool, delivery.signer).await {
         Ok(key) => send(federation, &key, &delivery.inbox, &delivery.activity).await,
         Err(err) => Err(SendError::Retry(err)),

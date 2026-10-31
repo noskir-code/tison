@@ -179,6 +179,7 @@ struct StatusTab {
 struct ModerationTemplate {
     title: String,
     layout: Layout,
+    sections: Vec<Section>,
     status: Status,
     tabs: Vec<StatusTab>,
     reports: Vec<Report>,
@@ -239,6 +240,7 @@ pub async fn dashboard(State(state): State<AppState>, session: Session, Query(qu
     });
     render_template(&ModerationTemplate {
         title: "Moderation".to_string(),
+        sections: sections(&pool, "Reports").await,
         layout: Layout::load(&state, &session).await,
         status,
         tabs,
@@ -351,6 +353,7 @@ async fn failed(state: &AppState, session: &Session, err: sqlx::Error) -> Respon
 struct StaffTemplate {
     title: String,
     layout: Layout,
+    sections: Vec<Section>,
     staff: Vec<User>,
     /// The admin: can name moderators.
     can_manage: bool,
@@ -370,6 +373,7 @@ pub async fn staff_page(State(state): State<AppState>, session: Session, Query(q
     };
     render_template(&StaffTemplate {
         title: "Staff".to_string(),
+        sections: sections(&pool, "Staff").await,
         layout: Layout::load(&state, &session).await,
         staff: members,
         can_manage: me.is_admin(),
@@ -439,4 +443,135 @@ pub async fn remove_moderator(State(state): State<AppState>, session: Session, P
         Err(err) => return failed(&state, &session, err).await,
     }
     Redirect::to("/moderation/staff?saved=1").into_response()
+}
+
+// --- Tabs ---
+
+/// A tab of the moderation area: Reports, Federation, Staff.
+pub struct Section {
+    label: &'static str,
+    url: &'static str,
+    active: bool,
+    /// Open reports, on the Reports tab.
+    count: Option<i64>,
+}
+
+/// The tabs, `active` being the label of the current one.
+async fn sections(pool: &PgPool, active: &str) -> Vec<Section> {
+    let open = report::open_count(pool).await.unwrap_or(0);
+    [("Reports", "/moderation"), ("Federation", "/moderation/federation"), ("Staff", "/moderation/staff")]
+        .into_iter()
+        .map(|(label, url)| Section {
+            label,
+            url,
+            active: label == active,
+            count: (label == "Reports" && open > 0).then_some(open),
+        })
+        .collect()
+}
+
+// --- Federation ---
+
+#[derive(Template)]
+#[template(path = "moderation_federation.html")]
+struct FederationTemplate {
+    title: String,
+    layout: Layout,
+    sections: Vec<Section>,
+    instances: Vec<store::Instance>,
+    search: String,
+    message: Option<&'static str>,
+    /// Off: there are no other servers to show.
+    federation_on: bool,
+}
+
+/// The servers met, with what's known of them and their rule.
+pub async fn federation_page(State(state): State<AppState>, session: Session, Query(query): Query<HashMap<String, String>>) -> Response {
+    let (pool, _) = match staff(&state, &session).await {
+        Ok(found) => found,
+        Err(response) => return response,
+    };
+    let search = query.get("q").map(|search| search.trim().to_string()).unwrap_or_default();
+    let instances = match store::instances(&pool, Some(&search).filter(|search| !search.is_empty()).map(String::as_str)).await {
+        Ok(instances) => instances,
+        Err(err) => return failed(&state, &session, err).await,
+    };
+    let message = query.get("done").map(|done| match done.as_str() {
+        "limited" => "Limited: its posts and notifications only reach the people following its accounts.",
+        "banned" => "Banned: what came from it is deleted, and nothing goes to it anymore.",
+        "cleared" => "The server is treated normally again.",
+        "invalid" => "Write a domain, like mastodon.social.",
+        "own" => "This is the domain of this site.",
+        _ => "Saved.",
+    });
+    render_template(&FederationTemplate {
+        title: "Federation".to_string(),
+        sections: sections(&pool, "Federation").await,
+        layout: Layout::load(&state, &session).await,
+        instances,
+        search,
+        message,
+        federation_on: state.federation.is_some(),
+    })
+}
+
+/// A domain as written by the staff: `mastodon.social`, from an address
+/// too. `None` when it can't be one.
+fn clean_domain(raw: &str) -> Option<String> {
+    let raw = raw.trim().trim_start_matches('@');
+    let domain = match raw.split_once("://") {
+        Some(_) => store::host_of(raw),
+        None => raw.rsplit('@').next().unwrap_or_default().split('/').next().unwrap_or_default().to_ascii_lowercase(),
+    };
+    let valid = domain.contains('.') || domain.contains(':');
+    let valid = valid
+        && domain.len() <= 253
+        && domain.chars().all(|letter| letter.is_ascii_alphanumeric() || matches!(letter, '.' | '-' | ':'))
+        && !domain.starts_with(['.', '-']);
+    valid.then_some(domain)
+}
+
+/// Limits, bans or clears a server (`policy`: `limited`, `banned`, `none`).
+pub async fn set_instance_policy(State(state): State<AppState>, session: Session, Form(form): Form<HashMap<String, String>>) -> Response {
+    let (pool, me) = match staff(&state, &session).await {
+        Ok(found) => found,
+        Err(response) => return response,
+    };
+    let back = |done: &str| Redirect::to(&format!("/moderation/federation?done={done}")).into_response();
+    let Some(domain) = form.get("domain").and_then(|domain| clean_domain(domain)) else {
+        return back("invalid");
+    };
+    if state.federation.as_ref().is_some_and(|federation| federation.domain == domain) {
+        return back("own");
+    }
+    let policy = form.get("policy").and_then(|policy| store::Policy::parse(policy));
+    let reason: String = form
+        .get("reason")
+        .map(|reason| reason.trim().chars().filter(|letter| !letter.is_control()).take(500).collect())
+        .unwrap_or_default();
+    if let Err(err) = store::set_policy(&pool, &domain, policy, &reason, me.id).await {
+        return failed(&state, &session, err).await;
+    }
+    tracing::info!("moderator @{} set {} to {:?}", me.username, domain, policy);
+    back(match policy {
+        Some(store::Policy::Limited) => "limited",
+        Some(store::Policy::Banned) => "banned",
+        None => "cleared",
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn domains_are_cleaned() {
+        assert_eq!(clean_domain(" Mastodon.Social ").as_deref(), Some("mastodon.social"));
+        assert_eq!(clean_domain("https://pleroma.example/users/a").as_deref(), Some("pleroma.example"));
+        assert_eq!(clean_domain("@bob@misskey.io").as_deref(), Some("misskey.io"));
+        assert_eq!(clean_domain("127.0.0.1:9100").as_deref(), Some("127.0.0.1:9100"));
+        assert_eq!(clean_domain("localhost"), None);
+        assert_eq!(clean_domain("bad domain.com"), None);
+        assert_eq!(clean_domain("x.org'; DROP TABLE"), None);
+    }
 }

@@ -1597,11 +1597,12 @@ form.search-field {
     text-decoration-thickness: 0.12em;
 }
 
-/* The card of a link under a post, see macros/post.html. */
+/* The card of a link under a post, see macros/post.html: a small square
+   image on the left, the site, title and description beside it. */
 .link-card {
     display: flex;
-    flex-direction: column;
-    margin: 0.75em 0;
+    align-items: stretch;
+    margin: 0.6em 0;
     overflow: hidden;
     border: solid 0.1em var(--button);
     border-radius: 0.5em;
@@ -1616,38 +1617,47 @@ form.search-field {
 
 .link-card-image {
     display: block;
-    width: 100%;
-    aspect-ratio: 1.91 / 1;
+    flex-shrink: 0;
+    width: 11em;
+    height: 11em;
+    aspect-ratio: 1;
     object-fit: cover;
     background-color: var(--button);
+    border-right: solid 0.1em var(--button);
 }
 
 .link-card-text {
     display: flex;
     flex-direction: column;
-    gap: 0.2em;
-    padding: 0.75em 1em;
+    justify-content: center;
+    gap: 0.1em;
+    padding: 0.5em 0.75em;
     min-width: 0;
+    font-size: 0.9em;
 }
 
 .link-card-site {
     font-size: 0.85em;
     color: var(--light-text);
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
 }
 
-.link-card-title {
-    overflow-wrap: anywhere;
-}
-
-/* At most three lines: the card stays small. */
+/* Title and description: at most two lines each, the card stays small. */
+.link-card-title,
 .link-card-description {
     display: -webkit-box;
     -webkit-box-orient: vertical;
-    -webkit-line-clamp: 3;
-    line-clamp: 3;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
     overflow: hidden;
+    overflow-wrap: anywhere;
+}
+
+.link-card-description {
     color: var(--light-text);
-    font-size: 0.9em;
+    font-size: 0.95em;
 }
 
 /* --- Messenger, see messenger.html and conversation.html. --- */
@@ -2115,4 +2125,129 @@ body:has(.conversation) {
 
 .staff-add button.button.primary {
     padding: 0 1.2em;
+}
+
+/* --- The tabs of the moderation area, and its Federation tab. --- */
+.moderation-tabs {
+    margin: -0.25em 0 1em;
+    border-top: none;
+    border-bottom: solid 0.1em var(--button);
+}
+
+.moderation-tabs .badge {
+    margin-left: 0.3em;
+}
+
+.report-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25em;
+    height: auto;
+}
+
+/* Not the menu's links (`nav a`): side by side. */
+.report-filters a {
+    display: inline-block;
+    width: auto;
+    padding: 0.35em 0.75em;
+}
+
+.report-filters .action.active {
+    font-weight: bold;
+    background-color: var(--button);
+    border-radius: 0.3em;
+}
+
+.instance-search {
+    margin: 1em 0;
+}
+
+/* Wide tables scroll inside the box on phones, not the page. Positioned,
+   so the hidden labels inside (absolute) are clipped with it too. */
+.instance-table-wrap {
+    position: relative;
+    overflow-x: auto;
+}
+
+.instance-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.95em;
+}
+
+.instance-table th,
+.instance-table td {
+    padding: 0.5em 0.4em;
+    text-align: left;
+    white-space: nowrap;
+    border-bottom: solid 0.1em var(--button);
+}
+
+.instance-table thead th {
+    font-size: 0.85em;
+    color: var(--light-text);
+}
+
+.instance-table .number {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.instance-table th[scope="row"] a {
+    color: var(--text);
+}
+
+.instance-table tr.banned th[scope="row"] a {
+    text-decoration: line-through;
+    color: var(--light-text);
+}
+
+.instance-status {
+    padding: 0.1em 0.5em;
+    border-radius: 1em;
+    font-size: 0.85em;
+    font-weight: bold;
+}
+
+.instance-status.limited {
+    background-color: hsl(40, 90%, 85%);
+    color: hsl(30, 80%, 25%);
+}
+
+.instance-status.banned {
+    background-color: hsl(0, 70%, 45%);
+    color: white;
+}
+
+.instance-actions {
+    display: flex;
+    gap: 0.25em;
+}
+
+.instance-actions form {
+    margin: 0;
+}
+
+.instance-form {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5em;
+}
+
+.instance-form input,
+.instance-form select {
+    padding: 0.45em 0.6em;
+    font: inherit;
+    color: var(--text);
+    background-color: var(--background);
+    border: solid 0.1em var(--button);
+    border-radius: 0.3em;
+}
+
+.instance-form input[name="domain"] {
+    flex: 1 1 12em;
+}
+
+.instance-form input[name="reason"] {
+    flex: 2 1 14em;
 }

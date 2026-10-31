@@ -103,6 +103,18 @@ pub fn error_page(layout: Layout, status: StatusCode, message: &str) -> Response
     (status, render_template(&template)).into_response()
 }
 
+/// Added to the addresses of `style.css` and `system.js` (`?v=`): a new
+/// one at each start, so browsers load the new files instead of their copy.
+pub fn assets_version() -> &'static str {
+    static VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    VERSION.get_or_init(|| {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|elapsed| elapsed.as_secs().to_string())
+            .unwrap_or_default()
+    })
+}
+
 pub fn render_template<T: Template>(template: &T) -> Response {
     match template.render() {
         Ok(html) => Html(html).into_response(),

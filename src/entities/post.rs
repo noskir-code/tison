@@ -303,10 +303,15 @@ macro_rules! post_select {
 /// `cm`): their own posts, public posts outside communities, posts of
 /// communities that aren't banned and are public or have the viewer as
 /// member, and followers-only posts of other servers when the viewer follows
-/// their author. Never posts of suspended users.
+/// their author. Never posts of suspended users, nor posts of a limited
+/// server to someone not following their author.
 macro_rules! post_visible {
     () => {
         "((NOT EXISTS (SELECT 1 FROM users su WHERE su.id = p.user_id AND su.suspended_at IS NOT NULL))
+          AND (NOT EXISTS (SELECT 1 FROM federation_actors la JOIN instance_policies lp ON lp.domain = la.host
+                WHERE la.id = p.remote_actor_id AND lp.policy = 'limited'
+                  AND NOT EXISTS (SELECT 1 FROM federation_following lf
+                                  WHERE lf.actor_id = la.id AND lf.user_id = $1 AND lf.accepted)))
           AND (COALESCE(p.user_id = $1, FALSE) OR (p.visibility = 'public' AND (p.community_id IS NULL OR (
             cm.status <> 'banned' AND (cm.visibility = 'public' OR EXISTS (
                 SELECT 1 FROM community_members mm WHERE mm.community_id = cm.id AND mm.user_id = $1)))))

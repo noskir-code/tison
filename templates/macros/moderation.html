@@ -1,0 +1,12 @@
+{# The tabs of the moderation area: Reports, Federation, Staff. `sections`
+   is `handlers::moderation::Section`. #}
+{% macro tabs(sections) %}
+<h1 class="visually-hidden">Moderation</h1>
+<nav class="profile-tabs moderation-tabs" aria-label="Moderation">
+    {% for section in sections %}
+    <a href="{{ section.url }}"{% if section.active %} class="active" aria-current="page"{% endif %}>
+        {{ section.label }}{% if let Some(count) = section.count %} <span class="badge">{{ count }}</span>{% endif %}
+    </a>
+    {% endfor %}
+</nav>
+{% endmacro %}

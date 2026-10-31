@@ -432,6 +432,19 @@ async fn inbox(State(state): State<AppState>, method: Method, uri: Uri, headers:
     };
     let kind = activity["type"].as_str().unwrap_or_default();
 
+    // A banned server: accepted (so it stops sending) and ignored, before
+    // anything else, like fetching its key.
+    if let Some(actor) = object_id(&activity["actor"]) {
+        match store::is_banned(pool, actor).await {
+            Ok(true) => {
+                tracing::debug!("ignored {} activity of banned server {}", kind, store::host_of(actor));
+                return StatusCode::ACCEPTED.into_response();
+            }
+            Ok(false) => {}
+            Err(err) => return server_error("failed to check the server's policy", err),
+        }
+    }
+
     // Only activities Tison acts on are checked, the others are accepted and
     // dropped: checking means fetching the sender's key, for nothing.
     let recipient = activities::recipient(federation, pool, &activity).await;
