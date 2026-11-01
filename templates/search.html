@@ -25,6 +25,7 @@
         {% endfor %}
     </ul>
 
+    {% if crate::settings::services().content_aggregator %}
     <h2>Communities</h2>
     <ul class="account-list">
         {% for community in communities %}
@@ -45,6 +46,7 @@
         <li class="empty">No community found.</li>
         {% endfor %}
     </ul>
+    {% endif %}
     {% endif %}
 
     {% if fediverse %}

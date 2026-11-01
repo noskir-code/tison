@@ -6,9 +6,11 @@
     {% if layout.viewer.is_some() %}
     <div class="profile-actions">
         {% call accounts::follow_button(account, return_to) %}{% endcall %}
+        {% if crate::settings::services().dfrn %}
         <form action="/messenger/remote/{{ account.author.id }}" method="post">
             <button type="submit" class="button">Message</button>
         </form>
+        {% endif %}
         <a href="/report?remote={{ account.author.id }}" class="button report-button" title="Report this account to the moderators">Report</a>
     </div>
     {% endif %}

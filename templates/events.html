@@ -1,0 +1,26 @@
+{% extends "base.html" %} {% import "macros/post.html" as posts_ui %}
+{% block content %}
+<section class="box content media-page events-page">
+    <div class="media-page-head">
+        <h1>{{ title }}</h1>
+        <div class="media-page-actions">
+            {% if past || series %}<a href="/events" class="button">Upcoming</a>{% else %}<a href="/events?past" class="button">Past events</a>{% endif %}
+            {% if layout.viewer.is_some() %}<a href="/events/new" class="button primary">New event</a>{% endif %}
+        </div>
+    </div>
+    {% if !mine.is_empty() %}
+    <h2>Your events</h2>
+    <ul class="event-list">
+        {% for post in mine %}{% call posts_ui::event_row(post) %}{% endcall %}{% endfor %}
+    </ul>
+    {% endif %}
+    {% if !series %}<h2>{% if past %}Over{% else %}Coming up{% endif %}</h2>{% endif %}
+    <ul class="event-list">
+        {% for post in events %}
+        {% call posts_ui::event_row(post) %}{% endcall %}
+        {% else %}
+        <li class="empty">{% if past %}No past event.{% else %}Nothing planned yet.{% if layout.viewer.is_some() %} Organize the first one.{% endif %}{% endif %}</li>
+        {% endfor %}
+    </ul>
+</section>
+{% endblock %}

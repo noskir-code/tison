@@ -1,0 +1,40 @@
+{# The parts of large uploads (videos, episodes), animated by
+   `setupUploadProgress` and `setupDropZones` in assets/system.js. #}
+
+{# A round progress with its percentage inside: the circle is 100 long,
+   its stroke shows the done part. #}
+{% macro ring() %}
+<span class="progress-ring" aria-hidden="true">
+    <svg viewBox="0 0 36 36">
+        <circle class="progress-ring-track" cx="18" cy="18" r="15.9155" />
+        <circle class="progress-ring-done" cx="18" cy="18" r="15.9155" data-ring />
+    </svg>
+    <span class="progress-ring-percent" data-ring-percent>0%</span>
+</span>
+{% endmacro %}
+
+{# The file to send: a large area to click, or to drop the file on. The
+   input stays reachable with the keyboard. #}
+{% macro drop_zone(id, name, accept, label, help) %}
+<label class="upload-drop" for="{{ id }}" data-upload-drop>
+    <input id="{{ id }}" type="file" name="{{ name }}" accept="{{ accept }}" required class="upload-drop-input" />
+    <svg class="upload-drop-icon" viewBox="0 0 24 24" width="40" height="40" aria-hidden="true" focusable="false">
+        <path d="M12 16V4M7 9l5-5 5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+        <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+    </svg>
+    <strong data-upload-drop-name>{{ label }}</strong>
+    <span class="field-help" data-upload-drop-help>{{ help }}</span>
+</label>
+{% endmacro %}
+
+{# The send button: during the upload, the ring and percentage, with the
+   details (megabytes, time left) under it. #}
+{% macro upload_button(label) %}
+<div class="upload-send">
+    <button type="submit" class="button upload-button" data-upload-button>
+        {% call ring() %}{% endcall %}
+        <span data-upload-label>{{ label }}</span>
+    </button>
+    <p class="field-help" data-upload-status aria-live="polite" hidden></p>
+</div>
+{% endmacro %}

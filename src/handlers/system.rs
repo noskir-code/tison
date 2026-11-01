@@ -40,11 +40,11 @@ impl Layout {
             }
         };
         let unread_messages = match &viewer {
-            Some(viewer) => crate::entities::message::unread_count(pool, viewer.id).await.unwrap_or_else(|err| {
+            Some(viewer) if crate::settings::services().dfrn => crate::entities::message::unread_count(pool, viewer.id).await.unwrap_or_else(|err| {
                 tracing::warn!("failed to count unread messages: {}", err);
                 0
             }),
-            None => 0,
+            _ => 0,
         };
         let open_reports = match &viewer {
             Some(viewer) if viewer.is_staff() => crate::entities::report::open_count(pool).await.unwrap_or_else(|err| {

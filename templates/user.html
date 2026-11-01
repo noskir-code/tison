@@ -22,9 +22,9 @@
                 <p class="profile-username">@{{ user.username }}</p>
             </div>
             <p class="profile-counts">
-                <a href="/user/{{ user.username }}?tab=followers"><strong>{{ counts.followers }}</strong> follower{% if counts.followers != 1 %}s{% endif %}</a>
-                <a href="/user/{{ user.username }}?tab=following"><strong>{{ counts.following }}</strong> following</a>
-                <a href="/user/{{ user.username }}?tab=friends"><strong>{{ friend_count }}</strong> friend{% if friend_count != 1 %}s{% endif %}</a>
+                <a href="/user/{{ user.username }}?tab=followers"{% if tab.slug() == "followers" %} class="active" aria-current="page"{% endif %}><strong>{{ counts.followers }}</strong> follower{% if counts.followers != 1 %}s{% endif %}</a>
+                <a href="/user/{{ user.username }}?tab=following"{% if tab.slug() == "following" %} class="active" aria-current="page"{% endif %}><strong>{{ counts.following }}</strong> following</a>
+                {% if crate::settings::services().dfrn %}<a href="/user/{{ user.username }}?tab=friends"{% if tab.slug() == "friends" %} class="active" aria-current="page"{% endif %}><strong>{{ friend_count }}</strong> friend{% if friend_count != 1 %}s{% endif %}</a>{% endif %}
             </p>
         </div>
         {% if is_own_profile %}
@@ -63,13 +63,15 @@
                 <input type="hidden" name="return" value="/user/{{ user.username }}" />
                 <button type="submit" class="button">{% if follows %}Unfollow{% else %}Follow{% endif %}</button>
             </form>
+            {% if crate::settings::services().dfrn %}
             <form action="/messenger/with/{{ user.username }}" method="post">
                 <button type="submit" class="button">Message</button>
             </form>
+            {% endif %}
             <a href="/report?user={{ user.username }}" class="button report-button" title="Report @{{ user.username }} to the moderators">Report</a>
         </div>
         {% else %}
-        <a href="/login" class="button profile-edit-link">Login to add as friend or follow</a>
+        <a href="/login" class="button profile-edit-link">Login to {% if crate::settings::services().dfrn %}add as friend or {% endif %}follow</a>
         {% endif %}
     </div>
     <nav class="profile-tabs" aria-label="Profile sections">
@@ -88,22 +90,38 @@
         {% if is_own_profile %}You haven't posted anything yet.{% else %}@{{ user.username }} hasn't posted anything yet.{% endif %}
     </p>
     {% endif %}
-    {% when ProfileTab::Comments %}
-    <h2>Comments</h2>
-    {% for comment in comments %}
-    <article class="comment" id="comment-{{ comment.id }}">
-        <a href="/posts/{{ comment.post_id }}#comment-{{ comment.id }}" class="comment-context">
-            <span class="post-username">On @{{ comment.post_author }}'s post</span>
-            <span class="comment-excerpt">{{ comment.post_excerpt }}{% if comment.post_truncated %}…{% endif %}</span>
-        </a>
-        <p class="post-body">{{ comment.body_html()|safe }}</p>
-        <time class="post-meta" datetime="{{ comment.created_at_iso() }}" data-relative>{{ comment.created_at_label() }}</time>
-    </article>
+    {% when ProfileTab::Photos %}
+    <h2>Photos</h2>
+    {% if is_own_profile %}
+    {% call posts_ui::photo_grid(photos, "You haven't posted photos yet. Add some from the post form on the home page.") %}{% endcall %}
     {% else %}
+    {% call posts_ui::photo_grid(photos, "No photo here yet.") %}{% endcall %}
+    {% endif %}
+    {% when ProfileTab::Articles %}
+    <h2>Articles</h2>
+    {% if articles.is_empty() %}
     <p class="empty">
-        {% if is_own_profile %}You haven't commented anything yet.{% else %}@{{ user.username }} hasn't commented anything yet.{% endif %}
+        {% if is_own_profile %}You haven't written an article yet. Write one from the Article tab of the post form on the home page.{% else %}@{{ user.username }} hasn't written an article yet.{% endif %}
     </p>
-    {% endfor %}
+    {% else %}
+    <ol class="article-list">
+        {% for article in articles %}
+        <li>
+            <a href="/posts/{{ article.id }}" class="article-list-title">{{ article.title_text() }}</a>
+            <time class="post-meta" datetime="{{ article.created_at_iso() }}">{{ article.created_at_label() }}</time>
+            <span class="post-meta">· {{ article.reading_minutes() }} min read</span>
+            <p class="article-excerpt">{{ article.article_excerpt() }}</p>
+        </li>
+        {% endfor %}
+    </ol>
+    {% endif %}
+    {% when ProfileTab::Videos %}
+    <h2>Videos</h2>
+    {% if is_own_profile %}
+    {% call posts_ui::video_grid(videos, "You haven't uploaded a video yet.") %}{% endcall %}
+    {% else %}
+    {% call posts_ui::video_grid(videos, "No video here yet.") %}{% endcall %}
+    {% endif %}
     {% when ProfileTab::Friends %}
     {% if !requests_received.is_empty() %}
     <h2>Friend requests</h2>

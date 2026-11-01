@@ -1,0 +1,45 @@
+{% extends "base.html" %} {% import "macros/post.html" as posts_ui %} {% import "macros/upload.html" as upload_ui %}
+{% block content %}
+<section class="box content media-page">
+    <div class="media-page-head">
+        <h1>Videos</h1>
+        {% if layout.viewer.is_some() %}
+        <div class="media-page-actions">
+            {% if crate::settings::services().video %}<a href="/videos/upload" class="button">Upload a video</a>{% endif %}
+            {% if live_streaming %}<a href="/live" class="button">Go live</a>{% endif %}
+        </div>
+        {% endif %}
+    </div>
+    {# The viewer's uploads still converting, live like on their pages. #}
+    {% if !converting.is_empty() %}
+    <h2>Converting now</h2>
+    <ul class="video-grid">
+        {% for post in converting %}
+        <li class="converting-card" data-conversion="/posts/{{ post.id }}/progress" data-conversion-list>
+            <a href="/posts/{{ post.id }}" class="video-thumb" tabindex="-1">
+                <span class="video-thumb-picture">
+                    {% if let Some(poster) = post.poster() %}<img src="{{ poster }}" alt="" loading="lazy" />{% endif %}
+                    <span class="conversion-ring" data-conversion-ring>{% call upload_ui::ring() %}{% endcall %}</span>
+                </span>
+                <strong class="video-thumb-title">{{ post.title_text() }}</strong>
+            </a>
+            <span class="converting-line">
+                <span class="post-meta" data-conversion-text>Converting…</span>
+                <a href="/posts/{{ post.id }}" class="button converting-open" data-conversion-open>Open</a>
+            </span>
+        </li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+    {% if !live_now.is_empty() %}
+    <h2>Live now</h2>
+    {% call posts_ui::video_grid(live_now, "") %}{% endcall %}
+    {% endif %}
+    {% if crate::settings::services().video %}
+    <h2>Newest videos</h2>
+    {% call posts_ui::video_grid(videos, "No video yet.") %}{% endcall %}
+    {% else if live_now.is_empty() %}
+    <p class="empty">Nobody is live right now.</p>
+    {% endif %}
+</section>
+{% endblock %}

@@ -83,23 +83,29 @@ async fn read_image_field(multipart: &mut Multipart) -> Result<Vec<u8>, ImageErr
 pub async fn save_image(owner: ImageOwner, kind: &str, multipart: &mut Multipart) -> Result<String, ImageError> {
     let data = read_image_field(multipart).await?;
     let extension = detect_extension(&data).ok_or(ImageError::UnsupportedFormat)?;
+    save_file(owner, kind, extension, &data).await
+}
 
+/// Saves `data` in the owner's folder and returns its public URL. `kind`
+/// starts the file name.
+pub async fn save_file(owner: ImageOwner, kind: &str, extension: &str, data: &[u8]) -> Result<String, ImageError> {
+    let (path, url) = new_file(owner, kind, extension).await.map_err(ImageError::Io)?;
+    tokio::fs::write(path, data).await.map_err(ImageError::Io)?;
+    Ok(url)
+}
+
+/// A new file in the owner's folder, for ffmpeg to write (see `av::jobs`):
+/// its path and public URL.
+pub async fn new_file(owner: ImageOwner, kind: &str, extension: &str) -> std::io::Result<(PathBuf, String)> {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_nanos())
         .unwrap_or(0);
     let file_name = format!("{kind}-{nanos}.{extension}");
-
     let folder = owner.folder();
     let dir = PathBuf::from(UPLOADS_DIR).join(&folder);
-    tokio::fs::create_dir_all(&dir)
-        .await
-        .map_err(ImageError::Io)?;
-    tokio::fs::write(dir.join(&file_name), &data)
-        .await
-        .map_err(ImageError::Io)?;
-
-    Ok(format!("{UPLOADS_URL}/{folder}/{file_name}"))
+    tokio::fs::create_dir_all(&dir).await?;
+    Ok((dir.join(&file_name), format!("{UPLOADS_URL}/{folder}/{file_name}")))
 }
 
 /// Deletes a file previously returned by `save_image`.

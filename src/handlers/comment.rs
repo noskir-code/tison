@@ -367,11 +367,14 @@ pub async fn edit_page(
         back: format!("/posts/{}#comment-{comment_id}", rights.post_id),
         body,
         body_max_chars: BODY_MAX_CHARS,
+        article_title: None,
+        title_max_chars: 0,
         error: query
             .get("error")
             .and_then(|code| CommentError::from_code(code))
             .map(CommentError::message),
         federated: state.federation.is_some(),
+        video_thumbnail: None,
     })
 }
 

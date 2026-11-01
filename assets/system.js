@@ -851,6 +851,1148 @@ const Tison = (() => {
         });
     }
 
+    // Photo posts (see macros/post.html): the arrows and dots of the
+    // carousel, and double-click to like, like on Pixelfed.
+    function setupPhotos(root = document) {
+        for (const frame of root.querySelectorAll("[data-carousel]")) {
+            const track = frame.querySelector("[data-photo-track]");
+            const slides = track.children;
+            if (slides.length < 2) {
+                continue;
+            }
+            const previous = frame.querySelector("[data-photo-previous]");
+            const next = frame.querySelector("[data-photo-next]");
+            const count = frame.querySelector("[data-photo-count]");
+            const dots = frame.querySelectorAll(".photo-dots span");
+            const current = () => Math.round(track.scrollLeft / Math.max(track.clientWidth, 1));
+            const update = () => {
+                const index = Math.min(current(), slides.length - 1);
+                previous.hidden = index === 0;
+                next.hidden = index === slides.length - 1;
+                count.textContent = `${index + 1} / ${slides.length}`;
+                dots.forEach((dot, at) => dot.classList.toggle("active", at === index));
+            };
+            const go = (step) => track.scrollTo({ left: (current() + step) * track.clientWidth });
+            previous.addEventListener("click", () => go(-1));
+            next.addEventListener("click", () => go(1));
+            track.addEventListener("scroll", update, { passive: true });
+            track.addEventListener("keydown", (event) => {
+                if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+                    event.preventDefault();
+                    go(event.key === "ArrowLeft" ? -1 : 1);
+                }
+            });
+            update();
+        }
+
+        for (const photo of root.querySelectorAll("img[data-like-target]")) {
+            photo.addEventListener("dblclick", () => {
+                const frame = photo.closest("[data-carousel]");
+                const reveal = frame.querySelector(".photo-reveal");
+                // Not through the cover of a sensitive photo.
+                if (reveal && !reveal.checked) {
+                    return;
+                }
+                const slide = photo.closest(".photo-slide");
+                slide.classList.remove("photo-liked");
+                void slide.offsetWidth;
+                slide.classList.add("photo-liked");
+                // Only likes, never takes the like back.
+                const form = document.getElementById(photo.dataset.likeTarget);
+                const button = form?.querySelector("button[aria-pressed]");
+                if (button && button.getAttribute("aria-pressed") === "false") {
+                    setTimeout(() => form.requestSubmit(), 350);
+                }
+            });
+        }
+    }
+
+    // The photos chosen in the post form: shown, each with its alt text.
+    function setupPhotoComposer() {
+        for (const form of document.querySelectorAll("[data-photo-composer]")) {
+            const input = form.querySelector('input[name="photos"]');
+            const previews = form.querySelector("[data-photo-previews]");
+            const hint = form.querySelector("[data-photo-hint]");
+            const sensitive = form.querySelector("[data-photo-sensitive]");
+            if (!input || !previews) {
+                continue;
+            }
+            const max = Number(input.dataset.max) || 4;
+            const defaultHint = hint.textContent;
+            const urls = [];
+            const show = () => {
+                urls.splice(0).forEach((url) => URL.revokeObjectURL(url));
+                previews.replaceChildren();
+                const files = Array.from(input.files);
+                if (files.length > max) {
+                    hint.textContent = `At most ${max} photos: choose again.`;
+                    hint.classList.add("error");
+                    input.value = "";
+                    files.length = 0;
+                } else {
+                    hint.textContent = defaultHint;
+                    hint.classList.remove("error");
+                }
+                files.forEach((file, index) => {
+                    const item = document.createElement("li");
+                    const image = document.createElement("img");
+                    const url = URL.createObjectURL(file);
+                    urls.push(url);
+                    image.src = url;
+                    image.alt = "";
+                    const alt = document.createElement("textarea");
+                    alt.name = "alt";
+                    alt.maxLength = 1500;
+                    alt.placeholder = "Describe it for people who can't see it (alt text)";
+                    alt.setAttribute("aria-label", `Description of photo ${index + 1}`);
+                    const remove = document.createElement("button");
+                    remove.type = "button";
+                    remove.className = "action danger";
+                    remove.textContent = "Remove";
+                    remove.addEventListener("click", () => {
+                        // Alt texts written for the others are kept.
+                        const kept = Array.from(previews.querySelectorAll("textarea")).map((field) => field.value);
+                        kept.splice(index, 1);
+                        const remaining = new DataTransfer();
+                        Array.from(input.files).forEach((other, at) => at !== index && remaining.items.add(other));
+                        input.files = remaining.files;
+                        show();
+                        previews.querySelectorAll("textarea").forEach((field, at) => (field.value = kept[at] || ""));
+                    });
+                    item.append(image, alt, remove);
+                    previews.append(item);
+                });
+                previews.hidden = files.length === 0;
+                sensitive.hidden = files.length === 0;
+            };
+            input.addEventListener("change", show);
+            form.addEventListener("reset", () => setTimeout(show));
+        }
+    }
+
+    // Live streams (see src/av/live.rs): HLS made of fMP4 pieces, in
+    // several qualities. Played through MediaSource wherever it exists, by
+    // this script: the quality menu, Auto choosing by the connection's speed
+    // and the player's size. Only browsers without it (older iPhones) play
+    // the HLS themselves.
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    async function fetchText(url) {
+        try {
+            const response = await fetch(url, { cache: "no-store" });
+            return response.ok ? await response.text() : null;
+        } catch {
+            return null;
+        }
+    }
+
+    // The qualities of a master playlist, best first.
+    function liveVariants(text, master) {
+        const lines = text.split("\n").map((line) => line.trim());
+        const variants = [];
+        lines.forEach((line, at) => {
+            if (!line.startsWith("#EXT-X-STREAM-INF")) {
+                return;
+            }
+            const uri = lines.slice(at + 1).find((next) => next && !next.startsWith("#"));
+            const [width, height] = (line.match(/RESOLUTION=(\d+)x(\d+)/) || [0, 0, 0]).slice(1).map(Number);
+            variants.push({
+                url: new URL(uri, master),
+                bandwidth: Number(line.match(/[^-]BANDWIDTH=(\d+)/)?.[1] || 0),
+                codecs: line.match(/CODECS="([^"]+)"/)?.[1] || "avc1.64001f,mp4a.40.2",
+                width,
+                height,
+                lines: Math.min(width, height) || height,
+            });
+        });
+        return variants.sort((first, second) => second.lines - first.lines);
+    }
+
+    // Starts the video with its sound; a browser refusing it without a click
+    // waits for one, on the "Play with sound" button like videos.
+    function startLive(video, say) {
+        if (!video.paused || video.dataset.userPaused || video.dataset.waitingForClick) {
+            return;
+        }
+        video.play().catch(() => {
+            video.dataset.waitingForClick = "true";
+            const start = video.parentElement.querySelector("[data-player-start]");
+            if (!start) {
+                say("Press play to watch.");
+                return;
+            }
+            start.hidden = false;
+            start.addEventListener(
+                "click",
+                (event) => {
+                    event.stopPropagation();
+                    video.muted = false;
+                    video.play().catch(() => {});
+                },
+                { once: true },
+            );
+            video.addEventListener("play", () => (start.hidden = true), { once: true });
+        });
+    }
+
+    // The gear menu of a live stream: Auto, then each quality. `choose` gets
+    // "auto" or a number of lines.
+    function liveQualityMenu(frame, variants, choose) {
+        const control = frame.querySelector("[data-live-quality]");
+        if (!control || variants.length < 2) {
+            return () => {};
+        }
+        const button = control.querySelector("[data-quality-button]");
+        const menu = control.querySelector("[data-quality-menu]");
+        const current = control.querySelector("[data-quality-current]");
+        const autoDetail = control.querySelector("[data-quality-auto]");
+        for (const variant of variants) {
+            const item = document.createElement("button");
+            item.type = "button";
+            item.setAttribute("role", "menuitemradio");
+            item.setAttribute("aria-checked", "false");
+            item.dataset.qualityChoice = String(variant.lines);
+            item.textContent = `${variant.lines}p`;
+            if (variant.lines >= 720) {
+                const hd = document.createElement("span");
+                hd.className = "quality-detail";
+                hd.textContent = "HD";
+                item.append(hd);
+            }
+            menu.append(item);
+        }
+        const items = [...menu.querySelectorAll("[data-quality-choice]")];
+        const open = (shown) => {
+            menu.hidden = !shown;
+            button.setAttribute("aria-expanded", String(shown));
+            control.classList.toggle("open", shown);
+            if (shown) {
+                (menu.querySelector("[aria-checked=true]") || items[0]).focus();
+            }
+        };
+        button.addEventListener("click", (event) => {
+            event.stopPropagation();
+            open(menu.hidden);
+        });
+        for (const item of items) {
+            item.addEventListener("click", (event) => {
+                event.stopPropagation();
+                for (const other of items) {
+                    other.setAttribute("aria-checked", String(other === item));
+                }
+                choose(item.dataset.qualityChoice);
+                open(false);
+                button.focus();
+            });
+        }
+        menu.addEventListener("keydown", (event) => {
+            const at = items.indexOf(document.activeElement);
+            if (event.key === "Escape") {
+                open(false);
+                button.focus();
+            } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                event.preventDefault();
+                items[(at + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length].focus();
+            }
+        });
+        document.addEventListener("click", (event) => {
+            if (!menu.hidden && !control.contains(event.target)) {
+                open(false);
+            }
+        });
+        control.hidden = false;
+        // Shows what plays: "Auto (480p)" or "720p".
+        return (choice, playing) => {
+            current.textContent = choice === "auto" ? "Auto" : `${playing.lines}p`;
+            autoDetail.textContent = choice === "auto" ? ` (${playing.lines}p)` : "";
+            button.setAttribute("aria-label", `Quality: ${choice === "auto" ? `Auto, ${playing.lines}p` : `${playing.lines}p`}`);
+        };
+    }
+
+    async function playLive(video) {
+        const frame = video.closest("[data-player]") || video.parentElement;
+        const waiting = frame.querySelector("[data-live-waiting]");
+        const say = (text) => {
+            if (waiting) {
+                waiting.textContent = text;
+                waiting.hidden = !text;
+            }
+        };
+        video.addEventListener("playing", () => say(""));
+        const master = new URL(video.dataset.livePlayer, window.location.href);
+        const Source = window.ManagedMediaSource || window.MediaSource;
+        if (!Source) {
+            if (video.canPlayType("application/vnd.apple.mpegurl")) {
+                video.src = master.href;
+                startLive(video, say);
+            } else {
+                say("This browser can't play live streams.");
+            }
+            return;
+        }
+        // ffmpeg writes the master playlist after the first pieces.
+        let variants = [];
+        for (let tries = 0; !variants.length; tries++) {
+            const text = await fetchText(master);
+            variants = text ? liveVariants(text, master) : [];
+            if (!variants.length) {
+                if (tries > 30) {
+                    say("The live stream has ended.");
+                    return;
+                }
+                await sleep(2000);
+            }
+        }
+        const typeOf = (variant) => `video/mp4; codecs="${variant.codecs}"`;
+        variants = variants.filter((variant) => Source.isTypeSupported(typeOf(variant)));
+        if (!variants.length) {
+            say("This browser can't play this stream.");
+            return;
+        }
+
+        // Auto: the best quality the connection carries (75% of the speed
+        // measured on the last pieces), not larger than the player shows.
+        let speed = 0;
+        let choice = "auto";
+        try {
+            choice = localStorage.getItem("videoQuality") || "auto";
+        } catch {
+            // Private browsing: Auto.
+        }
+        const automatic = () => {
+            const box = video.getBoundingClientRect();
+            const needed = Math.max(box.height, box.width * (9 / 16)) * (window.devicePixelRatio || 1);
+            const fitting = variants.filter((variant) => variant.lines <= Math.max(needed * 1.25, 360));
+            const pool = fitting.length ? fitting : variants.slice(-1);
+            if (!speed) {
+                return pool.find((variant) => variant.lines <= 720) || pool[pool.length - 1];
+            }
+            return pool.find((variant) => variant.bandwidth <= speed * 0.75) || pool[pool.length - 1];
+        };
+        const wanted = () =>
+            choice === "auto" ? automatic() : variants.find((variant) => variant.lines <= Number(choice)) || variants[variants.length - 1];
+        let current = wanted();
+        const showQuality = liveQualityMenu(frame, variants, (picked) => {
+            choice = picked;
+            try {
+                localStorage.setItem("videoQuality", picked);
+            } catch {
+                // Private browsing: this page only.
+            }
+            showQuality(choice, wanted());
+        });
+        showQuality(choice, current);
+
+        const source = new Source();
+        video.disableRemotePlayback = true;
+        video.src = URL.createObjectURL(source);
+        await new Promise((resolve) => source.addEventListener("sourceopen", resolve, { once: true }));
+        const buffer = source.addSourceBuffer(typeOf(current));
+        const append = (data) =>
+            new Promise((resolve, reject) => {
+                buffer.addEventListener("updateend", resolve, { once: true });
+                buffer.addEventListener("error", reject, { once: true });
+                buffer.appendBuffer(data);
+            });
+        const fetchData = async (url) => {
+            const started = performance.now();
+            const response = await fetch(url, { cache: "no-store" });
+            if (!response.ok) {
+                throw new Error(String(response.status));
+            }
+            const data = await response.arrayBuffer();
+            // Bits a second, smoothed over the last pieces.
+            const measured = (data.byteLength * 8) / Math.max((performance.now() - started) / 1000, 0.05);
+            speed = speed ? speed * 0.7 + measured * 0.3 : measured;
+            return data;
+        };
+        // Pieces are numbered alike in every quality: switching goes on
+        // from the next number.
+        const number = (piece) => Number(piece.match(/(\d+)\.m4s/)?.[1] ?? -1);
+        let lastNumber = -1;
+        let initFor = null;
+        try {
+            for (;;) {
+                const text = await fetchText(current.url);
+                if (!text) {
+                    break;
+                }
+                const lines = text.split("\n").map((line) => line.trim());
+                const pieces = lines.filter((line) => line && !line.startsWith("#"));
+                if (initFor !== current && pieces.length) {
+                    if (initFor && buffer.changeType) {
+                        buffer.changeType(typeOf(current));
+                    }
+                    const init = lines.find((line) => line.startsWith("#EXT-X-MAP"))?.match(/URI="([^"]+)"/)?.[1];
+                    await append(await fetchData(new URL(init || "init.mp4", current.url)));
+                    initFor = current;
+                    // Close to live: only the last pieces.
+                    if (lastNumber < 0) {
+                        lastNumber = number(pieces[Math.max(0, pieces.length - 4)]);
+                    }
+                }
+                for (const piece of pieces) {
+                    if (number(piece) <= lastNumber) {
+                        continue;
+                    }
+                    await append(await fetchData(new URL(piece, current.url)));
+                    lastNumber = number(piece);
+                    // Another quality from the next piece on.
+                    const next = wanted();
+                    if (next !== current) {
+                        current = next;
+                        showQuality(choice, current);
+                        break;
+                    }
+                }
+                if (buffer.buffered.length) {
+                    const start = buffer.buffered.start(0);
+                    const end = buffer.buffered.end(buffer.buffered.length - 1);
+                    // Behind the stream (a pause, a slow network): back to live.
+                    if (video.currentTime < start || end - video.currentTime > 12) {
+                        video.currentTime = Math.max(start, end - 3);
+                    }
+                    startLive(video, say);
+                    // Only the last minute is kept in memory.
+                    if (video.currentTime - start > 90 && !buffer.updating) {
+                        await new Promise((resolve) => {
+                            buffer.addEventListener("updateend", resolve, { once: true });
+                            buffer.remove(0, video.currentTime - 60);
+                        });
+                    }
+                }
+                if (lines.includes("#EXT-X-ENDLIST")) {
+                    break;
+                }
+                if (initFor === current) {
+                    await sleep(2000);
+                }
+            }
+        } catch {
+            // A piece removed or a network error: the stream likely ended.
+        }
+        if (source.readyState === "open" && !buffer.updating) {
+            source.endOfStream();
+        }
+        say("The live stream has ended.");
+    }
+
+    function setupLivePlayers(root = document) {
+        for (const video of root.querySelectorAll("video[data-live-player]")) {
+            if (video.dataset.liveReady) {
+                continue;
+            }
+            video.dataset.liveReady = "true";
+            video.addEventListener("pause", () => (video.dataset.userPaused = "true"));
+            video.addEventListener("play", () => {
+                delete video.dataset.userPaused;
+                delete video.dataset.waitingForClick;
+            });
+            playLive(video);
+        }
+    }
+
+    // A progress ring (macros/upload.html): its circle is 100 long, the
+    // stroke shows `percent` of it; `null` spins without a number.
+    function setRing(ring, percent) {
+        const done = ring.querySelector("[data-ring]");
+        const label = ring.querySelector("[data-ring-percent]");
+        ring.classList.toggle("spinning", percent === null);
+        done.style.strokeDasharray = percent === null ? "25 100" : `${percent} 100`;
+        label.textContent = percent === null ? "" : `${percent}%`;
+    }
+
+    // The file areas of large uploads: clicked to choose a file, or a file
+    // dropped on them; the chosen file's name and size are shown.
+    function setupDropZones() {
+        for (const zone of document.querySelectorAll("[data-upload-drop]")) {
+            const input = zone.querySelector("input[type=file]");
+            const name = zone.querySelector("[data-upload-drop-name]");
+            const help = zone.querySelector("[data-upload-drop-help]");
+            const empty = [name.textContent, help.textContent];
+            const show = () => {
+                const file = input.files[0];
+                zone.classList.toggle("chosen", Boolean(file));
+                name.textContent = file ? file.name : empty[0];
+                help.textContent = file ? `${(file.size / 1024 / 1024).toFixed(1)} MB · click to choose another` : empty[1];
+            };
+            input.addEventListener("change", show);
+            for (const kind of ["dragenter", "dragover"]) {
+                zone.addEventListener(kind, (event) => {
+                    event.preventDefault();
+                    zone.classList.add("dragging");
+                });
+            }
+            for (const kind of ["dragleave", "drop"]) {
+                zone.addEventListener(kind, () => zone.classList.remove("dragging"));
+            }
+            zone.addEventListener("drop", (event) => {
+                event.preventDefault();
+                if (event.dataTransfer.files.length) {
+                    input.files = event.dataTransfer.files;
+                    show();
+                }
+            });
+        }
+    }
+
+    // Large uploads (videos, episodes, posts with photos): sent with their
+    // progress live (a ring with the percentage on the upload button, or a
+    // bar), then the page the server answers is opened. Without JavaScript
+    // the form is sent as usual.
+    function setupUploadProgress() {
+        for (const form of document.querySelectorAll("form[data-upload-progress]")) {
+            const button = form.querySelector("[data-upload-button]") || form.querySelector("button[type=submit]");
+            const ring = button.querySelector(".progress-ring");
+            const label = button.querySelector("[data-upload-label]");
+            const bar = form.querySelector("[data-upload-bar]");
+            const status = form.querySelector("[data-upload-status]");
+            const megabytes = (bytes) => (bytes / 1024 / 1024).toFixed(1);
+            const timeLeft = (seconds) =>
+                seconds < 60 ? `about ${Math.max(1, Math.round(seconds))} s left` : `about ${Math.round(seconds / 60)} min left`;
+            const showing = (percent, text) => {
+                if (ring) {
+                    setRing(ring, percent);
+                } else if (bar) {
+                    bar.hidden = false;
+                    bar.value = percent ?? 100;
+                }
+                status.hidden = false;
+                status.textContent = text;
+            };
+            form.addEventListener("submit", (event) => {
+                // Without a file to send (a post without photos), the
+                // form goes as usual.
+                const hasFile = [...form.querySelectorAll("input[type=file]")].some((input) => input.files.length);
+                if (!window.FormData || !status || !hasFile) {
+                    return;
+                }
+                event.preventDefault();
+                const request = new XMLHttpRequest();
+                request.open("POST", form.action);
+                const original = label ? label.textContent : "";
+                button.disabled = true;
+                button.classList.add("uploading");
+                if (label) {
+                    label.textContent = "Uploading";
+                }
+                showing(0, "Starting the upload…");
+                const started = performance.now();
+                request.upload.addEventListener("progress", (progress) => {
+                    if (progress.lengthComputable) {
+                        const percent = Math.min(100, Math.floor((progress.loaded / progress.total) * 100));
+                        const seconds = (performance.now() - started) / 1000;
+                        const speed = progress.loaded / Math.max(seconds, 0.001);
+                        const left = seconds > 1 && percent < 100 ? ` · ${timeLeft((progress.total - progress.loaded) / speed)}` : "";
+                        showing(percent, `${megabytes(progress.loaded)} of ${megabytes(progress.total)} MB${left}`);
+                    }
+                });
+                request.upload.addEventListener("load", () => {
+                    if (label) {
+                        label.textContent = "Saving";
+                    }
+                    showing(null, "Uploaded, saving…");
+                });
+                request.addEventListener("load", () => {
+                    window.location.href = request.responseURL || form.action;
+                });
+                request.addEventListener("error", () => {
+                    showing(0, "The upload failed: check your connection, or the size of the file, and try again.");
+                    button.disabled = false;
+                    button.classList.remove("uploading");
+                    if (label) {
+                        label.textContent = original;
+                    }
+                });
+                request.send(new FormData(form));
+            });
+        }
+    }
+
+    // The conversion of a video or episode, live through a WebSocket like
+    // the notifications (see src/handlers/video.rs): the ring turns with
+    // ffmpeg. On its page, the page reloads with the player when it's
+    // done; in the Videos page's list (`data-conversion-list`), its card
+    // says so. A connection cut (a proxy, the server restarting) is opened
+    // again; leaving the page closes it without a word.
+    let leavingPage = false;
+    window.addEventListener("pagehide", () => (leavingPage = true));
+    window.addEventListener("pageshow", () => (leavingPage = false));
+
+    function setupConversions() {
+        for (const box of document.querySelectorAll("[data-conversion]")) {
+            const text = box.querySelector("[data-conversion-text]");
+            const holder = box.querySelector("[data-conversion-ring]");
+            const ring = holder.querySelector(".progress-ring");
+            const open = box.querySelector("[data-conversion-open]");
+            const inList = "conversionList" in box.dataset;
+            const say = (long, short) => (text.textContent = inList ? short : long);
+            const scheme = window.location.protocol === "https:" ? "wss:" : "ws:";
+            let finished = false;
+            let failures = 0;
+
+            const finish = (ready) => {
+                finished = true;
+                setRing(ring, 100);
+                box.classList.add(ready ? "ready" : "failed");
+                if (!inList) {
+                    say(ready ? "Ready, opening it…" : "The conversion failed.", "");
+                    setTimeout(() => window.location.reload(), 600);
+                } else {
+                    say("", ready ? "Ready to watch" : "The conversion failed");
+                    if (open && ready) {
+                        open.textContent = "Watch";
+                        open.href += "?play";
+                    }
+                }
+            };
+
+            const connect = () => {
+                const socket = new WebSocket(`${scheme}//${window.location.host}${box.dataset.conversion}`);
+                socket.addEventListener("message", (event) => {
+                    let progress;
+                    try {
+                        progress = JSON.parse(event.data);
+                    } catch {
+                        return;
+                    }
+                    failures = 0;
+                    holder.hidden = false;
+                    if (progress.state === "waiting") {
+                        setRing(ring, null);
+                        if (progress.own) {
+                            say("Waiting for your other upload to finish converting…", "Waiting for your other upload…");
+                        } else {
+                            say("Waiting for a free converter: other uploads are converting…", "Waiting for a free converter…");
+                        }
+                    } else if (progress.state === "converting") {
+                        setRing(ring, progress.percent);
+                        say("Converting with ffmpeg in every quality…", `Converting… ${progress.percent}%`);
+                    } else {
+                        finish(progress.state === "ready");
+                    }
+                });
+                socket.addEventListener("close", () => {
+                    if (finished || leavingPage) {
+                        return;
+                    }
+                    // Opened again, a little later each time; the ring and
+                    // text keep what they showed meanwhile.
+                    failures += 1;
+                    if (failures > 12) {
+                        say("The server can't be reached for now. Reload the page later to check the conversion.", "Server unreachable");
+                        return;
+                    }
+                    setTimeout(connect, Math.min(30, 2 ** Math.min(failures, 5)) * 1000);
+                });
+            };
+            connect();
+        }
+    }
+
+    // Events (macros/post.html): their times are written in UTC and shown in
+    // the viewer's time zone, like Mobilizon does.
+    const eventTimeFormat = new Intl.DateTimeFormat(language, {
+        weekday: "short",
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        timeZoneName: "short",
+    });
+    const eventHourFormat = new Intl.DateTimeFormat(language, { hour: "2-digit", minute: "2-digit", timeZoneName: "short" });
+    const eventMonthFormat = new Intl.DateTimeFormat(language, { month: "short" });
+    const viewerZone = (() => {
+        try {
+            return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+        } catch {
+            return "UTC";
+        }
+    })();
+
+    function setupEventTimes(root = document) {
+        const sameDay = (first, second) => first.toDateString() === second.toDateString();
+        for (const time of root.querySelectorAll("time[data-event-time]")) {
+            const date = new Date(time.getAttribute("datetime"));
+            if (Number.isNaN(date.getTime())) {
+                continue;
+            }
+            // An end on the day it starts: only its hour.
+            const start = time.parentElement.querySelector("time[data-event-time]:not([data-event-end])");
+            const startDate = start && start !== time ? new Date(start.getAttribute("datetime")) : null;
+            time.textContent = "eventEnd" in time.dataset && startDate && sameDay(startDate, date) ? eventHourFormat.format(date) : eventTimeFormat.format(date);
+        }
+        for (const block of root.querySelectorAll("[data-event-date]")) {
+            const date = new Date(block.dataset.eventDate);
+            if (!Number.isNaN(date.getTime())) {
+                block.querySelector(".event-date-month").textContent = eventMonthFormat.format(date).replace(".", "").toUpperCase();
+                block.querySelector(".event-date-day").textContent = String(date.getDate());
+            }
+        }
+        for (const zone of root.querySelectorAll("[data-event-zone]")) {
+            const organizer = zone.dataset.eventZone;
+            zone.textContent = organizer && organizer !== viewerZone && organizer !== "UTC" ? `· your time (organizer in ${organizer.replace(/_/g, " ")})` : "· your time";
+        }
+    }
+
+    // The event form: `datetime-local` fields are in the writer's time; their
+    // offset from UTC and time zone go with them. An edited event's times,
+    // given in UTC, are first turned into the writer's.
+    function setupEventForms() {
+        const pad = (number) => String(number).padStart(2, "0");
+        const local = (date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+        for (const form of document.querySelectorAll("form[data-event-form]")) {
+            for (const input of form.querySelectorAll("input[data-utc-time]")) {
+                if (input.value) {
+                    const date = new Date(`${input.value}:00Z`);
+                    if (!Number.isNaN(date.getTime())) {
+                        input.value = local(date);
+                    }
+                }
+            }
+            form.querySelector("[data-timezone]").value = viewerZone;
+            const help = form.querySelector("[data-timezone-help]");
+            if (help) {
+                help.textContent = `Times are in your time zone (${viewerZone.replace(/_/g, " ")}); everyone sees them in theirs.`;
+            }
+            form.addEventListener("submit", () => {
+                for (const offset of form.querySelectorAll("[data-offset-for]")) {
+                    const input = form.querySelector(`#${offset.dataset.offsetFor}`);
+                    const date = input && input.value ? new Date(input.value) : null;
+                    // Minutes east of UTC on that day (summer time included).
+                    offset.value = date && !Number.isNaN(date.getTime()) ? String(-date.getTimezoneOffset()) : "0";
+                }
+            });
+        }
+    }
+
+    // The video player (macros/post.html): the browser's controls are
+    // replaced by ours at the bottom, like PeerTube's. Play, the position,
+    // the time, sound and level, quality (`setupVideoQualities`) and full
+    // screen; a big play button in the middle while paused. The controls
+    // hide while playing and come back when the mouse moves.
+    function setupPlayers() {
+        const clock = (seconds) => {
+            const whole = Math.max(0, Math.floor(seconds || 0));
+            const hours = Math.floor(whole / 3600);
+            const minutes = Math.floor(whole / 60) % 60;
+            const rest = String(whole % 60).padStart(2, "0");
+            return hours ? `${hours}:${String(minutes).padStart(2, "0")}:${rest}` : `${minutes}:${rest}`;
+        };
+        const savedLevel = () => {
+            try {
+                const level = JSON.parse(localStorage.getItem("videoLevel") || "null");
+                return level && typeof level.volume === "number" ? level : { volume: 1, muted: false };
+            } catch {
+                return { volume: 1, muted: false };
+            }
+        };
+        for (const frame of document.querySelectorAll("[data-player]")) {
+            const video = frame.querySelector("[data-player-video]");
+            const controls = frame.querySelector("[data-player-controls]");
+            if (!video || !controls || frame.dataset.playerReady) {
+                continue;
+            }
+            frame.dataset.playerReady = "true";
+            const get = (name) => frame.querySelector(`[data-player-${name}]`);
+            const play = get("play");
+            const bigPlay = get("big-play");
+            const spinner = get("spinner");
+            const seek = get("seek");
+            const played = get("played");
+            const buffered = get("buffered");
+            const current = get("current");
+            const duration = get("duration");
+            const mute = get("mute");
+            const level = get("level");
+            const fullscreen = frame.querySelector("[data-fullscreen]");
+            // A live stream: no position nor time, see `player_chrome`.
+            const live = "playerLive" in frame.dataset;
+
+            // Ours instead of the browser's.
+            video.controls = false;
+            controls.hidden = false;
+            bigPlay.hidden = false;
+            frame.classList.add("custom-player");
+            frame.tabIndex = -1;
+
+            const toggle = () => (video.paused || video.ended ? video.play().catch(() => {}) : video.pause());
+            const showState = () => {
+                const paused = video.paused || video.ended;
+                frame.classList.toggle("playing", !paused);
+                play.setAttribute("aria-label", paused ? "Play" : "Pause");
+                bigPlay.hidden = !paused;
+            };
+            play.addEventListener("click", toggle);
+            bigPlay.addEventListener("click", toggle);
+            video.addEventListener("click", toggle);
+            video.addEventListener("dblclick", () => fullscreen.click());
+            for (const kind of ["play", "pause", "ended"]) {
+                video.addEventListener(kind, showState);
+            }
+            video.addEventListener("waiting", () => (spinner.hidden = false));
+            for (const kind of ["playing", "canplay", "pause"]) {
+                video.addEventListener(kind, () => (spinner.hidden = true));
+            }
+
+            // The position: what played, what loaded, and moving to a time.
+            let seeking = false;
+            const showTime = () => {
+                if (live) {
+                    return;
+                }
+                const total = video.duration;
+                if (Number.isFinite(total) && total > 0) {
+                    duration.textContent = clock(total);
+                    const part = video.currentTime / total;
+                    played.style.width = `${part * 100}%`;
+                    if (!seeking) {
+                        seek.value = Math.round(part * 1000);
+                    }
+                    seek.setAttribute("aria-valuetext", `${clock(video.currentTime)} of ${clock(total)}`);
+                    const ranges = video.buffered;
+                    const loaded = ranges.length ? ranges.end(ranges.length - 1) / total : 0;
+                    buffered.style.width = `${loaded * 100}%`;
+                }
+                current.textContent = clock(video.currentTime);
+            };
+            for (const kind of ["timeupdate", "durationchange", "progress", "loadedmetadata", "seeked"]) {
+                video.addEventListener(kind, showTime);
+            }
+            seek?.addEventListener("input", () => {
+                seeking = true;
+                if (Number.isFinite(video.duration)) {
+                    video.currentTime = (seek.value / 1000) * video.duration;
+                    played.style.width = `${seek.value / 10}%`;
+                }
+            });
+            seek?.addEventListener("change", () => (seeking = false));
+
+            // Sound and level, remembered for every video.
+            const showLevel = () => {
+                const silent = video.muted || video.volume === 0;
+                frame.classList.toggle("muted", silent);
+                frame.classList.toggle("quiet", !silent && video.volume < 0.5);
+                mute.setAttribute("aria-label", silent ? "Sound on" : "Mute");
+                level.value = silent ? 0 : video.volume;
+                level.style.setProperty("--level", `${(silent ? 0 : video.volume) * 100}%`);
+            };
+            const remember = () => {
+                try {
+                    localStorage.setItem("videoLevel", JSON.stringify({ volume: video.volume, muted: video.muted }));
+                } catch {
+                    // Private browsing: this page only.
+                }
+            };
+            const saved = savedLevel();
+            video.volume = saved.volume;
+            video.muted = saved.muted || video.muted;
+            mute.addEventListener("click", () => {
+                if (video.muted || video.volume === 0) {
+                    video.muted = false;
+                    if (video.volume === 0) {
+                        video.volume = 0.5;
+                    }
+                } else {
+                    video.muted = true;
+                }
+                remember();
+            });
+            level.addEventListener("input", () => {
+                video.volume = Number(level.value);
+                video.muted = video.volume === 0;
+                remember();
+            });
+            video.addEventListener("volumechange", showLevel);
+            showLevel();
+            showTime();
+            showState();
+
+            // Full screen: the whole player, so its controls stay.
+            if (frame.requestFullscreen && document.fullscreenEnabled) {
+                fullscreen.addEventListener("click", () => {
+                    if (document.fullscreenElement === frame) {
+                        document.exitFullscreen().catch(() => {});
+                    } else {
+                        frame.requestFullscreen().catch(() => {});
+                    }
+                });
+                document.addEventListener("fullscreenchange", () => {
+                    const full = document.fullscreenElement === frame;
+                    frame.classList.toggle("full", full);
+                    fullscreen.setAttribute("aria-label", full ? "Leave full screen" : "Full screen");
+                });
+            } else if (video.webkitEnterFullscreen) {
+                // iPhone: only the video itself goes full screen.
+                fullscreen.addEventListener("click", () => video.webkitEnterFullscreen());
+            } else {
+                fullscreen.hidden = true;
+            }
+
+            // The controls hide after a while of playing without moving the
+            // mouse; touching or moving brings them back.
+            let idle = null;
+            const wake = () => {
+                frame.classList.remove("idle");
+                clearTimeout(idle);
+                idle = setTimeout(() => {
+                    if (!video.paused && !frame.querySelector("[data-quality-menu]:not([hidden])") && !controls.contains(document.activeElement)) {
+                        frame.classList.add("idle");
+                    }
+                }, 2500);
+            };
+            for (const kind of ["mousemove", "touchstart", "focusin", "keydown"]) {
+                frame.addEventListener(kind, wake, { passive: true });
+            }
+            video.addEventListener("pause", wake);
+            video.addEventListener("play", wake);
+            frame.addEventListener("mouseleave", () => {
+                if (!video.paused) {
+                    frame.classList.add("idle");
+                }
+            });
+
+            // Keys, when the player has the focus: Space or K plays, the
+            // arrows move 5 seconds or change the level, M mutes, F goes
+            // full screen.
+            frame.addEventListener("keydown", (event) => {
+                if (event.target.closest("[data-quality-menu]") || event.altKey || event.ctrlKey || event.metaKey) {
+                    return;
+                }
+                const onRange = event.target.type === "range";
+                const key = event.key.toLowerCase();
+                if (key === " " || key === "k") {
+                    if (event.target.tagName === "BUTTON" && key === " ") {
+                        return;
+                    }
+                    event.preventDefault();
+                    toggle();
+                } else if (key === "m") {
+                    mute.click();
+                } else if (key === "f") {
+                    fullscreen.click();
+                } else if (!live && !onRange && (key === "arrowleft" || key === "arrowright")) {
+                    event.preventDefault();
+                    video.currentTime = Math.max(0, video.currentTime + (key === "arrowleft" ? -5 : 5));
+                } else if (!onRange && (key === "arrowup" || key === "arrowdown")) {
+                    event.preventDefault();
+                    video.muted = false;
+                    video.volume = Math.min(1, Math.max(0, video.volume + (key === "arrowup" ? 0.1 : -0.1)));
+                    remember();
+                }
+            });
+            // Clicking the picture gives the keys to the player.
+            video.addEventListener("pointerdown", () => frame.focus({ preventScroll: true }));
+
+            // Opened from a thumbnail (`?play`): the video starts, with its
+            // sound. A browser refusing sound without a click on this page
+            // keeps it waiting, with a button to play it with sound.
+            const params = new URLSearchParams(window.location.search);
+            if (params.has("play") && !document.querySelector("[data-player][data-autoplayed]")) {
+                frame.dataset.autoplayed = "true";
+                params.delete("play");
+                const rest = params.toString();
+                history.replaceState(history.state, "", window.location.pathname + (rest ? `?${rest}` : "") + window.location.hash);
+                video.play().catch(() => {
+                    const start = get("start");
+                    start.hidden = false;
+                    start.addEventListener("click", (event) => {
+                        event.stopPropagation();
+                        video.muted = false;
+                        video.play().catch(() => {});
+                    });
+                    // However it starts, the button goes.
+                    video.addEventListener("play", () => (start.hidden = true));
+                });
+            }
+        }
+    }
+
+    // The quality of videos (see src/av/mod.rs), from the gear button in
+    // the player: Auto takes the smallest that fills the player on this
+    // screen; a choice is remembered for every video.
+    function setupVideoQualities() {
+        const remembered = () => {
+            try {
+                return localStorage.getItem("videoQuality") || "auto";
+            } catch {
+                return "auto";
+            }
+        };
+        for (const control of document.querySelectorAll("[data-quality]")) {
+            const frame = control.closest(".video-frame");
+            const video = frame && frame.querySelector("video[data-quality-video]");
+            const button = control.querySelector("[data-quality-button]");
+            const menu = control.querySelector("[data-quality-menu]");
+            if (!video || !button || !menu) {
+                continue;
+            }
+            const choices = [...menu.querySelectorAll("[data-quality-choice]")];
+            const files = choices.filter((choice) => choice.dataset.url);
+            const current = control.querySelector("[data-quality-current]");
+            const autoDetail = control.querySelector("[data-quality-auto]");
+
+            const automatic = () => {
+                const ratio = window.devicePixelRatio || 1;
+                const box = video.getBoundingClientRect();
+                const saveData = navigator.connection && navigator.connection.saveData;
+                const allowed = files.filter((file) => !saveData || Number(file.dataset.qualityChoice) <= 360);
+                const pool = allowed.length ? allowed : files.slice(-1);
+                // Best first: the last one still filling the player.
+                const filling = pool.filter((file) => Number(file.dataset.width) >= box.width * ratio || Number(file.dataset.height) >= box.height * ratio);
+                return filling[filling.length - 1] || pool[0];
+            };
+            const play = (file) => {
+                if (video.getAttribute("src") === file.dataset.url) {
+                    return;
+                }
+                const time = video.currentTime;
+                const playing = !video.paused;
+                video.src = file.dataset.url;
+                video.addEventListener(
+                    "loadedmetadata",
+                    () => {
+                        video.currentTime = time;
+                        if (playing) {
+                            video.play().catch(() => {});
+                        }
+                    },
+                    { once: true },
+                );
+            };
+            // `choice` is "auto" or a level like "1080": the remembered one,
+            // or the best this video has under it.
+            let chosen = "auto";
+            const choose = (choice) => {
+                chosen = choice;
+                const file = choice === "auto" ? null : files.find((file) => Number(file.dataset.qualityChoice) <= Number(choice));
+                const playing = file || automatic();
+                play(playing);
+                for (const item of choices) {
+                    item.setAttribute("aria-checked", String(item === (file || choices[0])));
+                }
+                current.textContent = file ? file.firstChild.textContent : "Auto";
+                autoDetail.textContent = file ? "" : ` (${playing.firstChild.textContent})`;
+                button.setAttribute("aria-label", `Quality: ${file ? file.firstChild.textContent : `Auto, ${playing.firstChild.textContent}`}`);
+            };
+
+            const open = (shown) => {
+                menu.hidden = !shown;
+                button.setAttribute("aria-expanded", String(shown));
+                control.classList.toggle("open", shown);
+                if (shown) {
+                    (menu.querySelector("[aria-checked=true]") || choices[0]).focus();
+                }
+            };
+            button.addEventListener("click", (event) => {
+                event.stopPropagation();
+                open(menu.hidden);
+            });
+            for (const item of choices) {
+                item.addEventListener("click", (event) => {
+                    event.stopPropagation();
+                    const choice = item.dataset.qualityChoice;
+                    try {
+                        localStorage.setItem("videoQuality", choice);
+                    } catch {
+                        // Private browsing: only this video.
+                    }
+                    choose(choice);
+                    open(false);
+                    button.focus();
+                });
+            }
+            menu.addEventListener("keydown", (event) => {
+                const at = choices.indexOf(document.activeElement);
+                if (event.key === "Escape") {
+                    open(false);
+                    button.focus();
+                } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                    event.preventDefault();
+                    const step = event.key === "ArrowDown" ? 1 : -1;
+                    choices[(at + step + choices.length) % choices.length].focus();
+                }
+            });
+            document.addEventListener("click", (event) => {
+                if (!menu.hidden && !control.contains(event.target)) {
+                    open(false);
+                }
+            });
+            // A bigger player (full screen): Auto may take a better quality.
+            document.addEventListener("fullscreenchange", () => {
+                if (chosen === "auto") {
+                    choose("auto");
+                }
+            });
+            let resizing = null;
+            window.addEventListener("resize", () => {
+                clearTimeout(resizing);
+                resizing = setTimeout(() => chosen === "auto" && choose("auto"), 400);
+            });
+
+            choose(remembered());
+        }
+    }
+
+    // A chosen thumbnail shown at once, cropped to 16:9 like the server does.
+    function setupThumbnailPreviews() {
+        for (const input of document.querySelectorAll("input[data-thumbnail-input]")) {
+            // In the form (upload) or beside it (edit page).
+            const preview = input.form.parentElement.querySelector("[data-thumbnail-preview]");
+            if (!preview) {
+                continue;
+            }
+            const original = preview.getAttribute("src");
+            input.addEventListener("change", () => {
+                const file = input.files[0];
+                if (preview.src.startsWith("blob:")) {
+                    URL.revokeObjectURL(preview.src);
+                }
+                if (file) {
+                    preview.src = URL.createObjectURL(file);
+                } else if (original) {
+                    preview.src = original;
+                }
+                preview.parentElement.hidden = !file && !original;
+            });
+        }
+    }
+
+    // "Copy" next to a value to paste elsewhere (the stream key, the RSS
+    // feed), and "Show" for a hidden one.
+    function setupCopyButtons() {
+        for (const button of document.querySelectorAll("button[data-copy]")) {
+            button.hidden = false;
+            button.addEventListener("click", async () => {
+                const label = button.textContent;
+                try {
+                    await navigator.clipboard.writeText(button.dataset.copy);
+                    button.textContent = "Copied";
+                    setTimeout(() => (button.textContent = label), 2000);
+                } catch {
+                    const field = button.parentElement.querySelector("input");
+                    if (field) {
+                        field.type = "text";
+                        field.select();
+                    }
+                }
+            });
+        }
+        for (const button of document.querySelectorAll("button[data-reveal]")) {
+            const field = document.getElementById(button.dataset.reveal);
+            if (!field) {
+                continue;
+            }
+            button.hidden = false;
+            button.addEventListener("click", () => {
+                const shown = field.type === "text";
+                field.type = shown ? "password" : "text";
+                button.textContent = shown ? "Show" : "Hide";
+            });
+        }
+    }
+
     function start() {
         refreshTimes();
         setupConfirmations();
@@ -860,6 +2002,18 @@ const Tison = (() => {
         setupConversation();
         setupShareButtons();
         setupCollapsible();
+        setupPhotos();
+        setupPhotoComposer();
+        setupLivePlayers();
+        setupDropZones();
+        setupUploadProgress();
+        setupConversions();
+        setupThumbnailPreviews();
+        setupPlayers();
+        setupVideoQualities();
+        setupEventTimes();
+        setupEventForms();
+        setupCopyButtons();
         setupReplies();
         setupNotificationsPage();
         connectNotifications();
@@ -873,5 +2027,5 @@ const Tison = (() => {
         start();
     }
 
-    return { formatRelative, formatLocal, refreshTimes, setupShareButtons, setupCollapsible, setupReplies, setupConfirmations, setupSearch, setupTheme, setupMenu };
+    return { formatRelative, formatLocal, refreshTimes, setupShareButtons, setupCollapsible, setupPhotos, setupReplies, setupConfirmations, setupSearch, setupTheme, setupMenu };
 })();

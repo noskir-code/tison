@@ -11,11 +11,15 @@ use tower_sessions::{
 // Named like its folder, in capitals.
 #[allow(non_snake_case)]
 mod API;
+mod av;
 mod entities;
+mod geocode;
 mod handlers;
 mod linkify;
 mod mail;
+mod markdown;
 mod pages;
+mod photo;
 mod preview;
 mod settings;
 use handlers::user;
@@ -44,6 +48,12 @@ pub struct AppState {
     /// Where sessions live: long-lived connections reread them from here to
     /// notice a logout, see `handlers::notification::live`.
     pub session_store: MemoryStore,
+    /// The address OBS sends live streams to, shown to streamers.
+    pub rtmp_url: String,
+    /// The largest video or episode uploaded, in bytes.
+    pub max_video_bytes: usize,
+    /// Finds where events take place, see `geocode`. `None`: never asked.
+    pub geocoder: Option<String>,
 }
 
 async fn shutdown_signal() {
@@ -78,15 +88,42 @@ async fn shutdown_signal() {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let config = Config::from_runtime().map_err(io_error_from_string)?;
+    let mut config = Config::from_runtime().map_err(io_error_from_string)?;
     settings::logger::init(&config.log_level);
+    let services = config.services;
+    if services.video || services.live_streaming || services.podcasts {
+        if let Err(reason) = av::find(&config.ffmpeg, &config.ffprobe) {
+            tracing::warn!("videos, live streams and podcasts are off: {} (install ffmpeg, or set FFMPEG and FFPROBE)", reason);
+            config.services = services.without_media();
+        }
+    }
+    config.services.install();
+    av::set_video_settings(av::VideoSettings { preset: config.video_preset.clone(), max_lines: config.video_max_lines });
+    av::jobs::set_parallel(config.video_conversions);
+    tracing::info!(
+        "services: photos {} in {} style, articles {}, videos {}, live streams {}, podcasts {}, events {}, communities {}, friends and messenger {}",
+        if config.services.image_sharing { "on" } else { "off" },
+        if config.services.image_system { "Pixelfed" } else { "Mastodon" },
+        if config.services.publishing { "on" } else { "off" },
+        if config.services.video { "on" } else { "off" },
+        if config.services.live_streaming { "on" } else { "off" },
+        if config.services.podcasts { "on" } else { "off" },
+        if config.services.events { "on" } else { "off" },
+        if config.services.content_aggregator { "on" } else { "off" },
+        if config.services.dfrn { "on" } else { "off" }
+    );
 
     // Lazy: the server starts even if Postgres is down, queries fail until it is up.
     let pool = match &config.database_url {
         Some(database_url) => Some(
             PgPoolOptions::new()
                 .max_connections(config.db_max_connections)
-                .connect_lazy(database_url)?,
+                // The services, for the queries that hide what they turn off.
+                .connect_lazy_with(
+                    database_url
+                        .parse::<sqlx::postgres::PgConnectOptions>()?
+                        .options(config.services.sql_settings()),
+                ),
         ),
         None => {
             tracing::warn!("DATABASE_URL not set; running without database");
@@ -126,6 +163,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Err(err) = entities::media::register_known_avatars(pool).await {
             tracing::warn!("failed to register avatars for the media proxy: {}", err);
         }
+        av::live::clean(pool).await;
     }
 
     // Old cached media of other servers, once a day.
@@ -206,7 +244,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         previews,
         live_notifications,
         session_store: session_store.clone(),
+        rtmp_url: format!(
+            "rtmp://{}:{}/live",
+            // The site's domain, without its web port.
+            entities::author::host_of(&config.public_base_url).split(':').next().unwrap_or_default(),
+            config.rtmp_port
+        ),
+        max_video_bytes: config.max_video_mb * 1024 * 1024,
+        geocoder: config.geocoder.clone(),
     };
+
+    av::jobs::resume(&state).await;
+    tokio::spawn(handlers::event::run_scheduler(state.clone()));
+    if config.services.live_streaming && state.pool.is_some() {
+        tokio::spawn(av::rtmp::serve(format!("{}:{}", config.rtmp_host, config.rtmp_port), state.clone()));
+    }
 
     let session_layer =SessionManagerLayer::new(session_store)
         .with_secure(config.secure_cookies)
@@ -217,7 +269,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )));
 
     let app = Router::new()
-        .merge(pages::page_routes())
+        .merge(pages::page_routes(config.max_video_mb * 1024 * 1024))
         .merge(API::federation::routes())
         .route("/settings/names", post(user::update_names))
         .route("/settings/bio", post(user::update_bio))

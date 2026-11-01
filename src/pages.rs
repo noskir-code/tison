@@ -9,7 +9,10 @@ use serde_json::json;
 
 use crate::{
     AppState,
-    handlers::{auth, comment, community, media, messenger, moderation, notification, password, post, reaction, search, user},
+    handlers::{
+        auth, comment, community, event, media, messenger, moderation, notification, password, podcast, post, reaction, search,
+        user, video,
+    },
 };
 
 async fn health_live() -> Response {
@@ -41,20 +44,80 @@ async fn health_ready(State(state): State<AppState>) -> Response {
     }
 }
 
-pub fn page_routes() -> Router<AppState> {
+/// The pages, without those of the services turned off in
+/// `configs/services.conf`: their addresses answer "not found".
+/// `max_video_bytes` is the largest video or episode uploaded.
+pub fn page_routes(max_video_bytes: usize) -> Router<AppState> {
+    let services = crate::settings::services();
+    let mut routes = base_routes();
+    if services.content_aggregator {
+        routes = routes.merge(community_routes());
+    }
+    if services.dfrn {
+        routes = routes.merge(dfrn_routes());
+    }
+    if services.video || services.live_streaming {
+        routes = routes.route("/videos", get(video::videos_page));
+    }
+    if services.video {
+        routes = routes
+            .route(
+                "/videos/upload",
+                get(video::upload_page).post(video::upload).layer(axum::extract::DefaultBodyLimit::max(max_video_bytes)),
+            )
+            .route("/posts/{post_id}/thumbnail", post(video::change_thumbnail));
+    }
+    if services.live_streaming {
+        routes = routes
+            .route("/live", get(video::studio_page).post(video::update_studio))
+            .route("/live/key", post(video::reset_key))
+            .route("/live/{username}", get(video::watch));
+    }
+    if services.podcasts {
+        routes = routes.merge(podcast_routes(max_video_bytes));
+    }
+    if services.events {
+        routes = routes.merge(event_routes());
+    }
+    if services.video || services.podcasts {
+        // The conversion of an upload, live on its page.
+        routes = routes.route("/posts/{post_id}/progress", get(video::progress));
+    }
+    routes
+}
+
+/// `EVENT-PLANNING`: events and meetups, like Mobilizon.
+fn event_routes() -> Router<AppState> {
     Router::new()
-        .route("/", get(post::home_page))
-        .route("/your-feed", get(post::feed_page))
-        .route("/posts", post(post::create_post))
-        .route("/posts/{post_id}", get(comment::post_page))
-        .route("/posts/{post_id}/comments", post(comment::create_comment))
-        .route("/posts/{post_id}/like", post(reaction::like))
-        .route("/posts/{post_id}/share", post(reaction::share))
-        .route("/posts/{post_id}/edit", get(post::edit_page).post(post::update_post))
-        .route("/posts/{post_id}/delete", post(post::delete_post))
-        .route("/comments/{comment_id}/like", post(comment::like_comment))
-        .route("/comments/{comment_id}/edit", get(comment::edit_page).post(comment::update_comment))
-        .route("/comments/{comment_id}/delete", post(comment::delete_comment))
+        .route("/events", get(event::events_page).post(event::create))
+        .route("/events/new", get(event::new_page))
+        .route("/events/{post_id}/edit", get(event::edit_page).post(event::update))
+        .route("/events/{post_id}/join", post(event::join))
+        .route("/events/{post_id}/leave", post(event::leave))
+        .route("/events/{post_id}/cancel", post(event::toggle_cancelled))
+        .route("/events/{post_id}/stop-repeating", post(event::stop_repeating))
+        .route("/events/{post_id}/participants", get(event::participants_page))
+        .route("/events/{post_id}/participants/{participant_id}/{action}", post(event::answer))
+        .route("/events/{post_id}/calendar.ics", get(event::calendar))
+}
+
+/// `AUDIOSTREAMING`: the podcasts.
+fn podcast_routes(max_episode_bytes: usize) -> Router<AppState> {
+    Router::new()
+        .route("/podcasts", get(podcast::podcasts_page).post(podcast::create))
+        .route("/podcasts/new", get(podcast::new_page))
+        .route("/podcasts/{podcast_id}", get(podcast::podcast_page))
+        .route(
+            "/podcasts/{podcast_id}/episodes",
+            post(podcast::upload_episode).layer(axum::extract::DefaultBodyLimit::max(max_episode_bytes)),
+        )
+        .route("/podcasts/{podcast_id}/delete", post(podcast::delete))
+        .route("/podcasts/{podcast_id}/feed.xml", get(podcast::feed))
+}
+
+/// `CONTENT-AGGREGATOR`: the communities.
+fn community_routes() -> Router<AppState> {
+    Router::new()
         .route("/communities", get(community::communities_page).post(community::create_community))
         .route("/community/{slug}", get(community::community_page))
         .route("/community/{slug}/join", post(community::join))
@@ -77,6 +140,11 @@ pub fn page_routes() -> Router<AppState> {
         .route("/community/{slug}/rules/{rule_id}/delete", post(community::delete_rule))
         .route("/community/{slug}/moderators", post(community::add_moderator))
         .route("/community/{slug}/moderators/{user_id}/remove", post(community::remove_moderator))
+}
+
+/// `DFRN`: friends and the messenger.
+fn dfrn_routes() -> Router<AppState> {
+    Router::new()
         .route("/messenger", get(messenger::messenger_page))
         .route("/messenger/new", post(messenger::start))
         .route("/messenger/with/{username}", get(messenger::with_user).post(messenger::with_user))
@@ -84,6 +152,28 @@ pub fn page_routes() -> Router<AppState> {
         .route("/messenger/{id}", get(messenger::conversation_page).post(messenger::send))
         .route("/messenger/{id}/after/{message_id}", get(messenger::after))
         .route("/messenger/{id}/messages/{message_id}/delete", post(messenger::delete))
+        .route("/user/{username}/friend", post(user::add_friend))
+        .route("/user/{username}/unfriend", post(user::remove_friend))
+}
+
+fn base_routes() -> Router<AppState> {
+    Router::new()
+        .route("/", get(post::home_page))
+        .route("/your-feed", get(post::feed_page))
+        // Up to `post::MAX_PHOTOS` photos.
+        .route(
+            "/posts",
+            post(post::create_post).layer(axum::extract::DefaultBodyLimit::max(post::MAX_POST_BYTES)),
+        )
+        .route("/posts/{post_id}", get(comment::post_page))
+        .route("/posts/{post_id}/comments", post(comment::create_comment))
+        .route("/posts/{post_id}/like", post(reaction::like))
+        .route("/posts/{post_id}/share", post(reaction::share))
+        .route("/posts/{post_id}/edit", get(post::edit_page).post(post::update_post))
+        .route("/posts/{post_id}/delete", post(post::delete_post))
+        .route("/comments/{comment_id}/like", post(comment::like_comment))
+        .route("/comments/{comment_id}/edit", get(comment::edit_page).post(comment::update_comment))
+        .route("/comments/{comment_id}/delete", post(comment::delete_comment))
         .route("/report", get(moderation::report_page).post(moderation::send_report))
         .route("/moderation", get(moderation::dashboard))
         .route("/moderation/reports/{id}/{action}", post(moderation::act))
@@ -102,8 +192,6 @@ pub fn page_routes() -> Router<AppState> {
         .route("/user/{username}", get(user::user_page))
         .route("/user/{username}/follow", post(user::follow_user))
         .route("/user/{username}/unfollow", post(user::unfollow_user))
-        .route("/user/{username}/friend", post(user::add_friend))
-        .route("/user/{username}/unfriend", post(user::remove_friend))
         .route("/notifications", get(notification::notifications_page))
         .route("/notifications/live", get(notification::live))
         .route("/notifications/older", get(notification::older))

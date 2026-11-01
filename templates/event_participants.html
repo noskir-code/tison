@@ -1,0 +1,29 @@
+{% extends "base.html" %} {% block content %}
+<section class="box content profile-edit">
+    <h1>Participants</h1>
+    <p><a href="/posts/{{ post.id }}">← {{ post.title_text() }}</a></p>
+    <ul class="account-list event-participants">
+        {% for participant in participants %}
+        <li>
+            <a href="{{ participant.url }}" class="flex center participant-identity">
+                {% if let Some(photo) = participant.photo_url %}<img src="{{ photo }}" alt="" class="nav-avatar" />{% else %}<span class="nav-avatar placeholder" aria-hidden="true">{{ participant.initial() }}</span>{% endif %}
+                <span><strong>{{ participant.name }}</strong> <span class="post-meta">{{ participant.handle }} · <time datetime="{{ participant.created_at_iso() }}" data-relative>{{ participant.created_at_iso() }}</time></span></span>
+            </a>
+            {% if participant.is_pending() %}
+            <span class="event-badge">Asked</span>
+            {% if !participant.message.is_empty() %}<span class="post-meta">“{{ participant.message }}”</span>{% endif %}
+            <form action="/events/{{ post.id }}/participants/{{ participant.id }}/accept" method="post" class="inline"><button type="submit" class="action">Accept</button></form>
+            <form action="/events/{{ post.id }}/participants/{{ participant.id }}/reject" method="post" class="inline"><button type="submit" class="action danger">Decline</button></form>
+            {% else if !participant.is_user(organizer_id) %}
+            <span class="event-badge going">Going</span>
+            <form action="/events/{{ post.id }}/participants/{{ participant.id }}/reject" method="post" class="inline" data-confirm="{{ participant.name }} won't be on the list anymore." data-confirm-label="Remove"><button type="submit" class="action danger">Remove</button></form>
+            {% else %}
+            <span class="event-badge going">Organizer</span>
+            {% endif %}
+        </li>
+        {% else %}
+        <li class="empty">Nobody yet.</li>
+        {% endfor %}
+    </ul>
+</section>
+{% endblock %}

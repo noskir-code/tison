@@ -23,7 +23,7 @@ use crate::entities::{
     media::{self, NewAttachment},
     message,
     notification,
-    post::{self, BODY_MAX_CHARS, Post, RemoteObject, RemotePost, Visibility},
+    post::{self, BODY_MAX_CHARS, Kind, Post, RemoteObject, RemotePost, Visibility},
     user::{self, User},
 };
 
@@ -207,7 +207,7 @@ fn is_message(object: &Value, sender: &RemoteActor) -> bool {
 /// Types of objects Tison shows as posts: Mastodon's polls are Questions,
 /// Lemmy's posts Pages.
 fn is_note(object: &Value) -> bool {
-    matches!(object["type"].as_str(), Some("Note" | "Page" | "Article" | "Question"))
+    matches!(object["type"].as_str(), Some("Note" | "Page" | "Article" | "Question" | "Video" | "Audio" | "Event"))
 }
 
 /// Who wrote an object: one address, or the first of several (PeerTube lists
@@ -351,11 +351,39 @@ pub fn post_note(federation: &Federation, post: &Post) -> Option<Value> {
         "url": federation.post_page_url(post.id),
         "published": iso(&post.created_at),
         "to": [PUBLIC],
-        "sensitive": false,
+        // Blurs the photos, like Pixelfed's "sensitive".
+        "sensitive": post.sensitive,
         // Counts shown by servers that read them, like Mastodon 4.3+.
         "likes": { "type": "Collection", "totalItems": post.like_count },
         "shares": { "type": "Collection", "totalItems": post.share_count },
     });
+    // Its photos: Images as Pixelfed sends them, which Mastodon reads too.
+    if post.kind == Kind::Post && !post.attachments.is_empty() {
+        let photos: Vec<Value> = post
+            .attachments
+            .iter()
+            .map(|photo| {
+                let url = match photo.url.starts_with('/') {
+                    true => format!("{}{}", federation.base_url, photo.url),
+                    false => photo.url.clone(),
+                };
+                let mut image = json!({
+                    "type": "Image",
+                    "mediaType": photo.media_type,
+                    "url": url,
+                    "name": if photo.description.is_empty() { Value::Null } else { json!(photo.description) },
+                });
+                if let (Some(width), Some(height)) = (photo.width, photo.height) {
+                    image["width"] = json!(width);
+                    image["height"] = json!(height);
+                }
+                image
+            })
+            .collect();
+        note["attachment"] = json!(photos);
+        // Pixelfed hides the comment box when it's false.
+        note["commentsEnabled"] = json!(true);
+    }
     if let Some(edited_at) = &post.edited_at {
         note["updated"] = json!(iso(edited_at));
     }
@@ -365,8 +393,348 @@ pub fn post_note(federation: &Federation, post: &Post) -> Option<Value> {
         cc.push(group.clone());
         note["audience"] = json!(group);
     }
+    if let Some(title) = post.title.as_ref().filter(|_| post.is_article()) {
+        // An article, as WriteFreely sends them: Mastodon shows its title
+        // and a link to its page, WriteFreely-like readers all of it.
+        let base = &federation.base_url;
+        note["type"] = json!("Article");
+        note["name"] = json!(title);
+        note["content"] = json!(crate::markdown::to_html(&post.body, &|address| match address.starts_with('/') {
+            true => format!("{base}{address}"),
+            false => address.to_string(),
+        }));
+        note["mediaType"] = json!("text/html");
+        note["source"] = json!({ "content": post.body, "mediaType": "text/markdown" });
+        note["wordCount"] = json!(post.body.split_whitespace().count());
+        note["tag"] = json!([]);
+    }
+    if post.kind != Kind::Post {
+        media_object(federation, post, &mut note);
+    }
     note["cc"] = json!(cc);
     Some(note)
+}
+
+/// A video as PeerTube sends them (`Video`), an episode as Funkwhale does
+/// (`Audio`), a live stream as Owncast's "is live" notes. Mastodon shows the
+/// first two with their title and link, and plays the attached file.
+fn media_object(federation: &Federation, post: &Post, note: &mut Value) {
+    let base = &federation.base_url;
+    let absolute = |url: &str| if url.starts_with('/') { format!("{base}{url}") } else { url.to_string() };
+    let page = federation.post_page_url(post.id);
+    let title = post.title_text();
+    if let Some(event) = post.event.as_ref().filter(|_| post.kind == Kind::Event) {
+        event_object(post, event, note, &absolute);
+        return;
+    }
+    if post.kind == Kind::Live {
+        let state = if post.is_on_air() { "🔴 Live now" } else { "Was live" };
+        let link = crate::linkify::escape(&page);
+        note["content"] = json!(format!(
+            "<p>{state}: <strong>{}</strong></p>{}<p><a href=\"{link}\">{link}</a></p>",
+            crate::linkify::escape(title),
+            text_to_html(&post.body)
+        ));
+        return;
+    }
+    let file = post.attachments.iter().find(|attachment| attachment.is_video() || attachment.is_audio());
+    note["type"] = json!(if post.kind == Kind::Video { "Video" } else { "Audio" });
+    note["name"] = json!(title);
+    note["mediaType"] = json!("text/html");
+    let mut links = vec![json!({ "type": "Link", "mediaType": "text/html", "href": page })];
+    // Every quality, like PeerTube lists its resolutions.
+    for quality in &post.video_files {
+        links.push(json!({
+            "type": "Link",
+            "mediaType": "video/mp4",
+            "href": absolute(&quality.url),
+            "width": quality.width,
+            "height": quality.height,
+            "size": quality.size_bytes,
+        }));
+    }
+    if let Some(file) = file {
+        if post.video_files.is_empty() {
+            let mut link = json!({ "type": "Link", "mediaType": file.media_type, "href": absolute(&file.url) });
+            if let (Some(width), Some(height)) = (file.width, file.height) {
+                link["width"] = json!(width);
+                link["height"] = json!(height);
+            }
+            links.push(link);
+        }
+        note["attachment"] = json!([{
+            "type": "Document",
+            "mediaType": file.media_type,
+            "url": absolute(&file.url),
+            "name": title,
+            "width": file.width,
+            "height": file.height,
+        }]);
+    }
+    note["url"] = json!(links);
+    if let Some(seconds) = post.duration_seconds {
+        note["duration"] = json!(crate::av::iso_duration(seconds));
+    }
+    let picture = post.poster_url.clone().or_else(|| post.podcast.as_ref().and_then(|podcast| podcast.cover_url.clone()));
+    if let Some(picture) = picture {
+        let media_type = match picture.rsplit('.').next().map(str::to_ascii_lowercase).as_deref() {
+            Some("png") => "image/png",
+            Some("webp") => "image/webp",
+            Some("gif") => "image/gif",
+            _ => "image/jpeg",
+        };
+        let image = json!({ "type": "Image", "url": absolute(&picture), "mediaType": media_type });
+        note["icon"] = json!([image.clone()]);
+        note["image"] = image;
+    }
+    note["commentsEnabled"] = json!(true);
+}
+
+/// An event as Mobilizon sends them: its time, place or link online, how to
+/// join and how many can come. Mastodon shows its title and a link.
+fn event_object(post: &Post, event: &crate::entities::event::EventDetails, note: &mut Value, absolute: &dyn Fn(&str) -> String) {
+    note["type"] = json!("Event");
+    note["name"] = json!(post.title_text());
+    note["mediaType"] = json!("text/html");
+    note["startTime"] = json!(event.starts_at.to_rfc3339());
+    if let Some(end) = &event.ends_at {
+        note["endTime"] = json!(end.to_rfc3339());
+    }
+    note["timezone"] = json!(event.timezone);
+    note["category"] = json!(event.category);
+    note["joinMode"] = json!(event.join_mode);
+    note["ical:status"] = json!(event.status.to_uppercase());
+    note["participantCount"] = json!(event.going);
+    if let Some(capacity) = event.capacity {
+        note["maximumAttendeeCapacity"] = json!(capacity);
+        note["remainingAttendeeCapacity"] = json!(event.places_left().unwrap_or(0));
+    }
+    note["isOnline"] = json!(event.is_online());
+    note["anonymousParticipationEnabled"] = json!(false);
+    note["commentsEnabled"] = json!(true);
+    note["repliesModerationOption"] = json!("allow_all");
+    note["draft"] = json!(false);
+    if !event.place_name.trim().is_empty() || !event.address.trim().is_empty() {
+        note["location"] = json!({
+            "type": "Place",
+            "name": if event.place_name.trim().is_empty() { &event.address } else { &event.place_name },
+            "address": { "type": "PostalAddress", "streetAddress": event.address },
+        });
+        if let (Some(latitude), Some(longitude)) = (event.latitude, event.longitude) {
+            note["location"]["latitude"] = json!(latitude);
+            note["location"]["longitude"] = json!(longitude);
+        }
+    }
+    let mut attachments = Vec::new();
+    if let Some(banner) = &post.poster_url {
+        attachments.push(json!({ "type": "Document", "mediaType": "image/jpeg", "url": absolute(banner), "name": "Banner" }));
+    }
+    // Only participants see a link kept for them.
+    if let Some(online) = event.online_url.as_ref().filter(|_| event.online_public) {
+        attachments.push(json!({ "type": "Link", "mediaType": "text/html", "name": "Website", "href": online }));
+    }
+    if !attachments.is_empty() {
+        note["attachment"] = json!(attachments);
+    }
+}
+
+/// The details of an Event of another server, see `remote_event`.
+struct RemoteEvent {
+    starts_at: DateTime<Utc>,
+    ends_at: Option<DateTime<Utc>>,
+    timezone: String,
+    place_name: String,
+    address: String,
+    online_url: Option<String>,
+    category: &'static str,
+    capacity: Option<i32>,
+    join_mode: &'static str,
+    status: &'static str,
+    participants: Option<i32>,
+    banner: Option<String>,
+    latitude: Option<f64>,
+    longitude: Option<f64>,
+}
+
+impl RemoteEvent {
+    fn details(&self) -> crate::entities::event::NewEvent<'_> {
+        crate::entities::event::NewEvent {
+            starts_at: self.starts_at,
+            ends_at: self.ends_at,
+            timezone: &self.timezone,
+            place_name: &self.place_name,
+            address: &self.address,
+            online_url: self.online_url.as_deref(),
+            category: self.category,
+            capacity: self.capacity,
+            join_mode: self.join_mode,
+            status: self.status,
+            remote_participants: self.participants,
+            // Given by its server for everyone.
+            online_public: true,
+            latitude: self.latitude,
+            longitude: self.longitude,
+            series_id: None,
+        }
+    }
+}
+
+/// An Event of another server (Mobilizon, Gancio...): its details, `None`
+/// for anything else.
+fn remote_event(note: &Value) -> Option<RemoteEvent> {
+    if note["type"].as_str() != Some("Event") {
+        return None;
+    }
+    let time = |name: &str| {
+        note[name].as_str().and_then(|value| DateTime::parse_from_rfc3339(value).ok()).map(|time| time.with_timezone(&Utc))
+    };
+    let starts_at = time("startTime")?;
+    let ends_at = time("endTime").filter(|end| *end >= starts_at);
+    let text = |value: &Value, max: usize| -> String { clean_text(value.as_str().unwrap_or_default().trim()).chars().take(max).collect() };
+    let location = &note["location"];
+    let address = match &location["address"] {
+        Value::String(address) => clean_text(address.trim()),
+        Value::Object(_) => ["streetAddress", "postalCode", "addressLocality", "addressRegion", "addressCountry"]
+            .iter()
+            .filter_map(|part| location["address"][part].as_str().map(str::trim).filter(|part| !part.is_empty()))
+            .collect::<Vec<_>>()
+            .join(", "),
+        _ => String::new(),
+    };
+    let attachments = match &note["attachment"] {
+        Value::Array(items) => items.clone(),
+        item @ Value::Object(_) => vec![item.clone()],
+        _ => Vec::new(),
+    };
+    let web = |url: &str| url.starts_with("https://") || url.starts_with("http://");
+    let online_url = attachments
+        .iter()
+        .filter(|item| item["type"] == "Link")
+        .filter_map(|item| item["href"].as_str())
+        .find(|url| web(url))
+        .map(str::to_string);
+    let banner = attachments
+        .iter()
+        .filter(|item| item["mediaType"].as_str().is_some_and(|kind| kind.starts_with("image/")))
+        .find_map(|item| attachment_url(&item["url"]).map(|(url, _)| url))
+        .or_else(|| attachment_url(&note["image"]["url"]).map(|(url, _)| url))
+        .filter(|url| web(url));
+    let category = note["category"].as_str().unwrap_or_default().to_ascii_uppercase();
+    let category = crate::entities::event::CATEGORIES.iter().find(|(code, _)| *code == category).map_or("MEETING", |(code, _)| code);
+    let status = note["ical:status"].as_str().or(note["status"].as_str()).unwrap_or("CONFIRMED").to_ascii_lowercase();
+    let status = match status.as_str() {
+        "cancelled" => "cancelled",
+        "tentative" => "tentative",
+        _ => "confirmed",
+    };
+    let count = |name: &str| note[name].as_i64().and_then(|value| i32::try_from(value).ok()).filter(|value| *value >= 0);
+    let timezone = text(&note["timezone"], 64);
+    Some(RemoteEvent {
+        starts_at,
+        ends_at,
+        timezone: if timezone.is_empty() { "UTC".to_string() } else { timezone },
+        place_name: text(&location["name"], crate::entities::event::PLACE_MAX_CHARS),
+        address: address.chars().take(crate::entities::event::ADDRESS_MAX_CHARS).collect(),
+        online_url,
+        category,
+        capacity: count("maximumAttendeeCapacity").filter(|capacity| *capacity > 0),
+        join_mode: if note["joinMode"].as_str() == Some("free") || note["joinMode"].is_null() { "free" } else { "restricted" },
+        status,
+        participants: count("participantCount"),
+        banner,
+        // Mobilizon gives the place's coordinates: its map.
+        latitude: location["latitude"].as_f64().filter(|latitude| (-90.0..=90.0).contains(latitude)),
+        longitude: location["longitude"].as_f64().filter(|longitude| (-180.0..=180.0).contains(longitude)),
+    })
+}
+
+/// A video or episode of another server: its kind, file, picture and
+/// length. PeerTube lists its MP4 files in `url`, by resolution (and inside
+/// its HLS link), Funkwhale its sound.
+struct RemoteMedia {
+    kind: Kind,
+    file: Option<NewAttachment>,
+    poster: Option<String>,
+    duration: Option<i32>,
+}
+
+/// Links of `url`, those inside other links (`tag`) too.
+fn links(value: &Value, found: &mut Vec<Value>) {
+    match value {
+        Value::Array(items) => items.iter().for_each(|item| links(item, found)),
+        Value::Object(fields) => {
+            if fields.contains_key("href") {
+                found.push(value.clone());
+            }
+            if let Some(tags) = fields.get("tag") {
+                links(tags, found);
+            }
+        }
+        Value::String(url) => found.push(json!({ "href": url })),
+        _ => {}
+    }
+}
+
+fn remote_media(note: &Value) -> Option<RemoteMedia> {
+    let kind = match note["type"].as_str()? {
+        "Video" => Kind::Video,
+        "Audio" => Kind::Episode,
+        _ => return None,
+    };
+    let prefix = if kind == Kind::Video { "video/" } else { "audio/" };
+    let mut found = Vec::new();
+    links(&note["url"], &mut found);
+    let usable = |link: &&Value| {
+        let href = link["href"].as_str().unwrap_or_default();
+        (href.starts_with("https://") || href.starts_with("http://"))
+            && link["mediaType"].as_str().is_some_and(|media_type| media_type.starts_with(prefix))
+    };
+    // What the media proxy can bring: the largest file up to 720p of known
+    // size under its limit, else the smallest.
+    let fits = |link: &&Value| link["size"].as_u64().is_none_or(|size| size <= crate::handlers::media::MAX_MEDIA_BYTES as u64);
+    let height = |link: &Value| link["height"].as_i64().unwrap_or(0);
+    let candidates: Vec<&Value> = found.iter().filter(usable).filter(fits).collect();
+    let chosen = candidates
+        .iter()
+        .filter(|link| height(link) <= 720)
+        .max_by_key(|link| height(link))
+        .or_else(|| candidates.iter().min_by_key(|link| height(link)))
+        .copied();
+    let size = |link: &Value, name: &str| link[name].as_i64().and_then(|value| i32::try_from(value).ok()).filter(|value| *value > 0);
+    let file = chosen
+        .map(|link| {
+            NewAttachment::new(
+                link["href"].as_str().unwrap_or_default().to_string(),
+                link["mediaType"].as_str().unwrap_or_default().to_string(),
+                "",
+                size(link, "width"),
+                size(link, "height"),
+            )
+        })
+        // Or an attachment, as Mastodon-like servers send them.
+        .or_else(|| attachments(note).into_iter().find(|attachment| attachment.media_type.starts_with(prefix)));
+    // The widest picture up to 1280 pixels, else any.
+    let mut pictures = Vec::new();
+    for field in ["icon", "image", "thumbnail"] {
+        match &note[field] {
+            Value::Array(items) => pictures.extend(items.iter().cloned()),
+            item @ (Value::Object(_) | Value::String(_)) => pictures.push(item.clone()),
+            _ => {}
+        }
+    }
+    let picture_url = |picture: &Value| match picture {
+        Value::String(url) => Some(url.clone()),
+        other => attachment_url(&other["url"]).map(|(url, _)| url).or_else(|| other["href"].as_str().map(str::to_string)),
+    };
+    let width = |picture: &Value| picture["width"].as_i64().unwrap_or(0);
+    let poster = pictures
+        .iter()
+        .filter(|picture| width(picture) <= 1280)
+        .max_by_key(|picture| width(picture))
+        .or_else(|| pictures.first())
+        .and_then(picture_url)
+        .filter(|url| url.starts_with("https://") || url.starts_with("http://"));
+    Some(RemoteMedia { kind, file, poster, duration: crate::av::parse_iso_duration(&note["duration"]) })
 }
 
 /// A comment written here as a Note replying to `in_reply_to` (the post's
@@ -629,6 +997,47 @@ pub fn undo(activity: &Value) -> Value {
     }))
 }
 
+/// A user here joins an event of another server (Mobilizon's participation).
+pub fn join(federation: &Federation, user: &User, event_id: &str, join_id: &str, organizer: &str) -> Value {
+    with_context(json!({
+        "id": join_id,
+        "type": "Join",
+        "actor": federation.actor_url(user.public_id),
+        "object": event_id,
+        "to": [organizer],
+        "participationMessage": "",
+    }))
+}
+
+/// They leave it.
+pub fn leave(federation: &Federation, user: &User, event_id: &str, join_id: &str, organizer: &str) -> Value {
+    let actor = federation.actor_url(user.public_id);
+    with_context(json!({
+        "id": format!("{actor}/leaves/{}", Utc::now().timestamp_micros()),
+        "type": "Leave",
+        "actor": actor,
+        "object": event_id,
+        "to": [organizer],
+        // Mobilizon finds the participation by its Join too.
+        "participation": join_id,
+    }))
+}
+
+/// The organizer here accepts a Join of their event.
+pub fn accept_join(actor: &str, join: &Value) -> Value {
+    accept(actor, join)
+}
+
+/// Or refuses it.
+pub fn reject_join(actor: &str, join: &Value) -> Value {
+    with_context(json!({
+        "id": format!("{actor}/rejects/{}", Utc::now().timestamp_micros()),
+        "type": "Reject",
+        "actor": actor,
+        "object": join,
+    }))
+}
+
 fn accept(actor: &str, follow: &Value) -> Value {
     with_context(json!({
         "id": format!("{actor}/accepts/{}", Utc::now().timestamp_micros()),
@@ -765,7 +1174,7 @@ async fn target_recipient(pool: &PgPool, target: Target) -> Option<Recipient> {
 /// The local user who sent the Follow an Accept or Reject answers.
 async fn follow_sender(federation: &Federation, pool: &PgPool, follow: &Value) -> Option<Recipient> {
     let public_id = object_id(follow)
-        .and_then(|id| federation.follow_owner(id))
+        .and_then(|id| federation.follow_owner(id).or_else(|| federation.join_owner(id)))
         .or_else(|| federation.local_public_id(object_id(&follow["actor"])?))?;
     user::find_by_public_id(pool, public_id)
         .await
@@ -787,13 +1196,18 @@ pub async fn recipient(federation: &Federation, pool: &PgPool, activity: &Value)
         "Follow" => local_actor(federation, pool, object_id(object)?).await,
         "Undo" => match object["type"].as_str() {
             Some("Follow") => local_actor(federation, pool, object_id(&object["object"])?).await,
-            Some("Like" | "EmojiReact" | "Announce") => match find_target(federation, pool, object_id(&object["object"])?).await {
+            Some("Like" | "EmojiReact" | "Announce" | "Join") => match find_target(federation, pool, object_id(&object["object"])?).await {
                 Some(target) => target_recipient(pool, target).await,
                 None => None,
             },
             _ => None,
         },
         "Accept" | "Reject" => follow_sender(federation, pool, object).await,
+        // Mobilizon's participation: for the event's organizer here.
+        "Join" | "Leave" => match find_target(federation, pool, object_id(object)?).await {
+            Some(target) => target_recipient(pool, target).await,
+            None => None,
+        },
         // A report: the first local account or content it's about.
         "Flag" => {
             let mut found = None;
@@ -912,6 +1326,40 @@ fn note_text(note: &Value, community: Option<(&str, &str)>) -> String {
     }
 }
 
+/// The title and Markdown text of an article of another server: an
+/// Article with a title, as WriteFreely and Friendica send them, when
+/// `PUBLISHING` is on (otherwise it's a post, see `note_text`). Its
+/// Markdown source when it sends one, or else its HTML read back.
+fn article(note: &Value) -> Option<(String, String)> {
+    if !crate::settings::services().publishing || note["type"].as_str() != Some("Article") {
+        return None;
+    }
+    let title: String = clean_text(note["name"].as_str()?.trim()).chars().take(post::TITLE_MAX_CHARS).collect();
+    if title.is_empty() {
+        return None;
+    }
+    let source = note["source"]["content"]
+        .as_str()
+        .filter(|_| note["source"]["mediaType"].as_str() == Some("text/markdown"))
+        .map(str::to_string)
+        .unwrap_or_else(|| crate::markdown::from_html(note["content"].as_str().unwrap_or_default()));
+    let body = clean_text(source.trim());
+    let body = match body.char_indices().nth(post::ARTICLE_MAX_CHARS) {
+        Some((end, _)) => format!("{}…", &body[..end]),
+        None => body,
+    };
+    Some((title, body))
+}
+
+/// Without control characters other than line breaks and tabs, like texts
+/// written here.
+fn clean_text(text: &str) -> String {
+    text.replace("\r\n", "\n")
+        .chars()
+        .filter(|letter| !letter.is_control() || matches!(letter, '\n' | '\t'))
+        .collect()
+}
+
 /// An address of an attachment: a string, a Link, or several Links (the
 /// first one, or the one with a media type, is taken).
 fn attachment_url(value: &Value) -> Option<(String, Option<String>)> {
@@ -1025,6 +1473,15 @@ pub async fn receive(
             send(federation, pool, signer, std::slice::from_ref(&sender.inbox), &accept).await?;
             tracing::info!("{} now follows community {}", sender.actor_id, community.slug);
         }
+        // The answer to a Join sent from here: before the Accept of Follows.
+        ("Accept" | "Reject", Some((Recipient::User(user), _))) if is_join_answer(federation, &activity["object"]) => {
+            receive_join_answer(pool, sender, activity, user, kind == "Accept").await?
+        }
+        ("Join", Some(_)) => receive_join(federation, pool, sender, activity).await?,
+        ("Leave", Some(_)) => receive_leave(federation, pool, sender, &activity["object"]).await?,
+        ("Undo", Some(_)) if activity["object"]["type"] == "Join" => {
+            receive_leave(federation, pool, sender, &activity["object"]["object"]).await?
+        }
         ("Undo", recipient) => receive_undo(federation, pool, sender, &activity["object"], recipient.map(|(recipient, _)| recipient)).await?,
         ("Accept", Some((Recipient::User(user), _))) => {
             let follow_id = object_id(&activity["object"]).filter(|id| federation.follow_owner(id).is_some());
@@ -1044,8 +1501,11 @@ pub async fn receive(
         }
         ("Like" | "EmojiReact", Some(_)) => receive_like(federation, pool, sender, activity).await?,
         ("Announce", Some((_, key))) => receive_announce(federation, pool, sender, activity, key).await?,
+        // Without the messenger (`DFRN` in `configs/services.conf`), ignored.
         ("Create", Some(_)) if is_message(&activity["object"], sender) => {
-            receive_message(federation, pool, sender, &activity["object"]).await?
+            if crate::settings::services().dfrn {
+                receive_message(federation, pool, sender, &activity["object"]).await?
+            }
         }
         ("Create", Some((recipient, _))) => receive_note(federation, pool, sender, &activity["object"], recipient).await?,
         // Their account was deleted.
@@ -1120,13 +1580,30 @@ pub async fn receive(
                     RemoteObject::Post(_, Some(community_id)) => community::find_by_id(pool, *community_id).await.ok().flatten(),
                     _ => None,
                 };
-                let text = note_text(note, community.as_ref().map(|community| (community.slug.as_str(), federation.domain.as_str())));
-                let attachments = attachments(note);
-                if text.is_empty() && attachments.is_empty() {
+                let is_post = matches!(object, RemoteObject::Post(..));
+                // A video, episode or event keeps its title and file or
+                // details: its `name` and `content`.
+                let media = remote_media(note).filter(|_| is_post);
+                let event = remote_event(note).filter(|_| is_post && crate::settings::services().events);
+                let named = media.is_some() || event.is_some();
+                let (title, text) = match article(note).filter(|_| is_post) {
+                    _ if named => (
+                        note["name"].as_str().map(|name| name.trim().chars().take(crate::entities::event::TITLE_MAX_CHARS).collect::<String>()),
+                        html_to_text(note["content"].as_str().unwrap_or_default()).chars().take(BODY_MAX_CHARS).collect(),
+                    ),
+                    Some((title, body)) => (Some(title), body),
+                    None => (None, note_text(note, community.as_ref().map(|community| (community.slug.as_str(), federation.domain.as_str())))),
+                };
+                let attachments = match (&media, &event) {
+                    (Some(media), _) => media.file.iter().map(|file| NewAttachment::new(file.url.clone(), file.media_type.clone(), "", file.width, file.height)).collect(),
+                    (None, Some(_)) => Vec::new(),
+                    (None, None) => attachments(note),
+                };
+                if text.is_empty() && attachments.is_empty() && !named {
                     return Ok(());
                 }
                 let sensitive = note["sensitive"].as_bool().unwrap_or(false);
-                post::update_remote(pool, &object, &text, sensitive)
+                post::update_remote(pool, &object, title.as_deref(), &text, sensitive)
                     .await
                     .map_err(|err| format!("failed to update note: {err}"))?;
                 let owner = match object {
@@ -1136,6 +1613,11 @@ pub async fn receive(
                 media::save_attachments(pool, owner, &attachments)
                     .await
                     .map_err(|err| format!("failed to update attachments: {err}"))?;
+                if let (Some(event), RemoteObject::Post(post_id, _)) = (&event, &object) {
+                    crate::entities::event::save(pool, *post_id, &event.details())
+                        .await
+                        .map_err(|err| format!("failed to update event: {err}"))?;
+                }
                 tracing::info!("updated {} on request of its author", id);
             }
         }
@@ -1281,9 +1763,37 @@ async fn store_post(
     let Some(ap_id) = note["id"].as_str() else {
         return Ok(None);
     };
-    let text = note_text(note, community.map(|(community, domain)| (community.slug.as_str(), domain)));
-    let attachments = attachments(note);
-    if text.is_empty() && attachments.is_empty() {
+    let media = remote_media(note).filter(|media| match media.kind {
+        Kind::Video => crate::settings::services().video,
+        _ => crate::settings::services().podcasts,
+    });
+    // Mobilizon's: without `EVENT-PLANNING`, a post like others.
+    let event = remote_event(note).filter(|_| crate::settings::services().events);
+    let (title, text) = match (&media, article(note)) {
+        // PeerTube's and Mobilizon's description is their `content`, their
+        // title `name`.
+        _ if event.is_some() => (
+            note["name"].as_str().map(|name| name.trim().chars().take(crate::entities::event::TITLE_MAX_CHARS).collect::<String>()),
+            html_to_text(note["content"].as_str().unwrap_or_default()).chars().take(BODY_MAX_CHARS).collect(),
+        ),
+        (Some(_), _) => (
+            note["name"].as_str().map(|name| name.trim().chars().take(crate::entities::video::TITLE_MAX_CHARS).collect::<String>()),
+            html_to_text(note["content"].as_str().unwrap_or_default()).chars().take(BODY_MAX_CHARS).collect(),
+        ),
+        (None, Some((title, body))) => (Some(title), body),
+        (None, None) => (None, note_text(note, community.map(|(community, domain)| (community.slug.as_str(), domain)))),
+    };
+    let attachments = match (&media, &event) {
+        (Some(media), _) => media.file.iter().map(|file| NewAttachment::new(file.url.clone(), file.media_type.clone(), "", file.width, file.height)).collect(),
+        // The banner is its picture, the online link is in its details.
+        (None, Some(_)) => Vec::new(),
+        (None, None) => attachments(note),
+    };
+    let poster = media.as_ref().and_then(|media| media.poster.as_deref()).or(event.as_ref().and_then(|event| event.banner.as_deref()));
+    if let Some(poster) = poster {
+        media::register(pool, poster).await.map_err(|err| format!("failed to register poster: {err}"))?;
+    }
+    if text.is_empty() && attachments.is_empty() && media.is_none() && event.is_none() {
         return Ok(None);
     }
     let page = note.get("url").and_then(|url| match url {
@@ -1293,7 +1803,15 @@ async fn store_post(
     let remote = RemotePost {
         ap_id,
         ap_url: page.as_deref().filter(|page| page.starts_with("https://") || page.starts_with("http://")),
+        title: title.as_deref(),
         body: &text,
+        kind: match (&media, &event) {
+            (Some(media), _) => media.kind,
+            (None, Some(_)) => Kind::Event,
+            (None, None) => Kind::Post,
+        },
+        duration_seconds: media.as_ref().and_then(|media| media.duration),
+        poster_url: poster,
         visibility,
         sensitive: note["sensitive"].as_bool().unwrap_or(false),
         published: published(note),
@@ -1305,8 +1823,89 @@ async fn store_post(
         media::save_attachments(pool, media::Owner::Post(post_id), &attachments)
             .await
             .map_err(|err| format!("failed to save attachments: {err}"))?;
+        if let Some(event) = &event {
+            crate::entities::event::save(pool, post_id, &event.details())
+                .await
+                .map_err(|err| format!("failed to save event: {err}"))?;
+        }
     }
     Ok(created)
+}
+
+/// Whether an Accept or Reject answers a Join sent from here.
+fn is_join_answer(federation: &Federation, object: &Value) -> bool {
+    object["type"] == "Join" || object_id(object).is_some_and(|id| federation.join_owner(id).is_some())
+}
+
+/// The organizer of an event of another server answered a user here.
+async fn receive_join_answer(pool: &PgPool, sender: &RemoteActor, activity: &Value, user: &User, accepted: bool) -> Result<(), String> {
+    let Some(join_id) = object_id(&activity["object"]) else {
+        return Ok(());
+    };
+    let role = if accepted { "going" } else { "rejected" };
+    let answered = crate::entities::event::answered(pool, join_id, role)
+        .await
+        .map_err(|err| format!("failed to save the answer to a join: {err}"))?;
+    if let Some((post_id, user_id)) = answered {
+        tracing::info!("{} {} @{} at event {}", sender.actor_id, if accepted { "accepted" } else { "refused" }, user.username, post_id);
+        if accepted && let Err(err) = notification::event_accepted(pool, user_id, None, Some(sender.id), post_id).await {
+            tracing::warn!("failed to notify @{} of their event: {}", user.username, err);
+        }
+    }
+    Ok(())
+}
+
+/// Someone of another server (Mobilizon) joins an event here: accepted at
+/// once, or waiting for the organizer when it needs approval; refused
+/// when it's cancelled, over or full.
+async fn receive_join(federation: &Federation, pool: &PgPool, sender: &RemoteActor, activity: &Value) -> Result<(), String> {
+    let (Some(join_id), Some(event_url)) = (activity["id"].as_str(), object_id(&activity["object"])) else {
+        return Ok(());
+    };
+    let Some(post_id) = federation.local_post_id(event_url) else {
+        return Ok(());
+    };
+    let post = post::find(pool, post_id, None).await.map_err(|err| format!("failed to load event: {err}"))?;
+    let Some((post, event, organizer)) = post.and_then(|post| {
+        let event = post.event.clone().filter(|_| post.is_event())?;
+        let organizer = post.author.local()?.clone();
+        Some((post, event, organizer))
+    }) else {
+        return Ok(());
+    };
+    let organizer_url = federation.actor_url(organizer.public_id);
+    let inbox = std::slice::from_ref(&sender.inbox);
+    if event.is_cancelled() || event.is_past() || event.is_full() || !crate::settings::services().events {
+        tracing::info!("refused {} at event {}: cancelled, over or full", sender.actor_id, post.id);
+        return send(federation, pool, Signer::User(organizer.id), inbox, &reject_join(&organizer_url, activity)).await;
+    }
+    let pending = event.needs_approval();
+    let message: String = clean_text(activity["participationMessage"].as_str().unwrap_or_default()).chars().take(500).collect();
+    crate::entities::event::join_remote(pool, post.id, sender.id, if pending { "pending" } else { "going" }, join_id, &message)
+        .await
+        .map_err(|err| format!("failed to save participant: {err}"))?;
+    if let Err(err) = notification::event_joined(pool, organizer.id, post.id, None, Some(sender.id), pending).await {
+        tracing::warn!("failed to notify @{} of a participant: {}", organizer.username, err);
+    }
+    tracing::info!("{} {} event {}", sender.actor_id, if pending { "asked to join" } else { "joined" }, post.id);
+    if pending {
+        return Ok(());
+    }
+    send(federation, pool, Signer::User(organizer.id), inbox, &accept_join(&organizer_url, activity)).await
+}
+
+/// They leave an event here (`Leave`, or an Undo of their Join).
+async fn receive_leave(federation: &Federation, pool: &PgPool, sender: &RemoteActor, event: &Value) -> Result<(), String> {
+    let Some(post_id) = object_id(event).and_then(|url| federation.local_post_id(url)) else {
+        return Ok(());
+    };
+    if crate::entities::event::leave_remote(pool, post_id, sender.id)
+        .await
+        .map_err(|err| format!("failed to remove participant: {err}"))?
+    {
+        tracing::info!("{} left event {}", sender.actor_id, post_id);
+    }
+    Ok(())
 }
 
 /// An Undo of a Follow, like or share. `object` is the activity undone, or
@@ -1680,6 +2279,95 @@ mod tests {
         // Plain text and Markdown sources are still preferred.
         let note = json!({ "content": "<p>x</p>", "source": { "content": "*hello*", "mediaType": "text/markdown" } });
         assert_eq!(note_text(&note, None), "*hello*");
+    }
+
+    #[test]
+    fn writefreely_articles_are_read() {
+        // As WriteFreely sends them: HTML only.
+        let note = json!({
+            "type": "Article",
+            "name": "On trains",
+            "content": "<p>They are <strong>slow</strong>.</p><h2>Why</h2><p>Because.</p>",
+        });
+        assert_eq!(article(&note), Some(("On trains".to_string(), "They are **slow**.\n\n## Why\n\nBecause.".to_string())));
+        // The Markdown source when there is one, as Tison sends it.
+        let note = json!({ "type": "Article", "name": "T", "content": "<p>x</p>", "source": { "content": "*x*", "mediaType": "text/markdown" } });
+        assert_eq!(article(&note).map(|(_, body)| body), Some("*x*".to_string()));
+        // Not an article: a Note, or no title.
+        assert_eq!(article(&json!({ "type": "Note", "name": "T", "content": "x" })), None);
+        assert_eq!(article(&json!({ "type": "Article", "name": " ", "content": "x" })), None);
+    }
+
+    #[test]
+    fn peertube_videos_are_read() {
+        // As PeerTube sends them: MP4 files by resolution inside the HLS link.
+        let video = json!({
+            "type": "Video",
+            "name": "Sunset",
+            "duration": "PT95S",
+            "url": [
+                { "type": "Link", "mediaType": "text/html", "href": "https://tube.example/w/abc" },
+                { "type": "Link", "mediaType": "application/x-mpegURL", "href": "https://tube.example/master.m3u8", "tag": [
+                    { "type": "Link", "mediaType": "video/mp4", "href": "https://tube.example/1080.mp4", "height": 1080, "size": 900000000 },
+                    { "type": "Link", "mediaType": "video/mp4", "href": "https://tube.example/720.mp4", "height": 720, "size": 50000000, "width": 1280 },
+                    { "type": "Link", "mediaType": "video/mp4", "href": "https://tube.example/360.mp4", "height": 360, "size": 9000000 },
+                ]},
+            ],
+            "icon": [
+                { "type": "Image", "url": "https://tube.example/small.jpg", "width": 280 },
+                { "type": "Image", "url": "https://tube.example/big.jpg", "width": 850 },
+            ],
+        });
+        let media = remote_media(&video).unwrap();
+        assert_eq!(media.kind, Kind::Video);
+        assert_eq!(media.file.map(|file| (file.url, file.height)), Some(("https://tube.example/720.mp4".to_string(), Some(720))));
+        assert_eq!(media.poster.as_deref(), Some("https://tube.example/big.jpg"));
+        assert_eq!(media.duration, Some(95));
+        // Funkwhale's sounds.
+        let audio = json!({ "type": "Audio", "url": [{ "type": "Link", "mediaType": "audio/mpeg", "href": "https://fw.example/listen/1.mp3" }], "duration": 300 });
+        let media = remote_media(&audio).unwrap();
+        assert_eq!((media.kind, media.duration), (Kind::Episode, Some(300)));
+        assert_eq!(media.file.map(|file| file.url), Some("https://fw.example/listen/1.mp3".to_string()));
+        assert!(remote_media(&json!({ "type": "Note" })).is_none());
+    }
+
+    #[test]
+    fn mobilizon_events_are_read() {
+        // As Mobilizon sends them.
+        let event = json!({
+            "type": "Event",
+            "name": "Picnic in the park",
+            "startTime": "2026-11-14T13:00:00+01:00",
+            "endTime": "2026-11-14T17:00:00+01:00",
+            "timezone": "Europe/Paris",
+            "category": "OUTDOORS_ADVENTURE",
+            "joinMode": "restricted",
+            "ical:status": "TENTATIVE",
+            "maximumAttendeeCapacity": 30,
+            "participantCount": 12,
+            "location": {
+                "type": "Place",
+                "name": "Parc Monceau",
+                "address": { "type": "PostalAddress", "streetAddress": "35 Boulevard de Courcelles", "postalCode": "75008", "addressLocality": "Paris", "addressCountry": "France" },
+            },
+            "attachment": [
+                { "type": "Document", "mediaType": "image/jpeg", "url": "https://mobilizon.example/media/banner.jpg", "name": "Banner" },
+                { "type": "Link", "mediaType": "text/html", "name": "Website", "href": "https://meet.example/picnic" },
+            ],
+        });
+        let found = remote_event(&event).unwrap();
+        assert_eq!(found.starts_at.to_rfc3339(), "2026-11-14T12:00:00+00:00");
+        assert_eq!(found.ends_at.map(|end| end.to_rfc3339()).as_deref(), Some("2026-11-14T16:00:00+00:00"));
+        assert_eq!((found.timezone.as_str(), found.category, found.join_mode, found.status), ("Europe/Paris", "OUTDOORS_ADVENTURE", "restricted", "tentative"));
+        assert_eq!((found.capacity, found.participants), (Some(30), Some(12)));
+        assert_eq!(found.place_name, "Parc Monceau");
+        assert_eq!(found.address, "35 Boulevard de Courcelles, 75008, Paris, France");
+        assert_eq!(found.online_url.as_deref(), Some("https://meet.example/picnic"));
+        assert_eq!(found.banner.as_deref(), Some("https://mobilizon.example/media/banner.jpg"));
+        // An end before its start is dropped; without a start, not an event.
+        assert!(remote_event(&json!({ "type": "Event", "startTime": "2026-11-14T13:00:00Z", "endTime": "2026-11-14T12:00:00Z" })).unwrap().ends_at.is_none());
+        assert!(remote_event(&json!({ "type": "Event", "name": "x" })).is_none());
+        assert!(remote_event(&json!({ "type": "Note", "startTime": "2026-11-14T13:00:00Z" })).is_none());
     }
 
     #[test]

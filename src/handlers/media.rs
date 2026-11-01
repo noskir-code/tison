@@ -22,7 +22,7 @@ use crate::{AppState, API::linker, entities::media};
 
 const CACHE_DIR: &str = "cache/media";
 /// Larger files aren't proxied: a few minutes of video.
-const MAX_MEDIA_BYTES: usize = 64 * 1024 * 1024;
+pub const MAX_MEDIA_BYTES: usize = 64 * 1024 * 1024;
 /// Cached files unused for this long are deleted, see `clean_cache`.
 const KEEP_DAYS: u64 = 30;
 

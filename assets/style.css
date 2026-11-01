@@ -183,7 +183,7 @@ footer {
 }
 
 .margin {
-    margin: 2em 0em;
+    margin: 3.75em 0em;
 }
 
 .full-height {
@@ -255,7 +255,7 @@ div .small.text {
 
 .fixed {
     position: fixed;
-    z-index: 1;
+    z-index: 10;
 }
 
 
@@ -462,6 +462,7 @@ nav.profile-tabs a {
     min-width: 6em;
     padding: 0.8em 1em;
     text-align: center;
+    white-space: nowrap;
     border-bottom: solid 0.2em transparent;
 }
 
@@ -1074,8 +1075,11 @@ form.inline {
     margin: 0;
 }
 
-/* Media of posts and comments from other servers, see macros/post.html. */
+/* Media of posts and comments under their text, like on Mastodon, see
+   `attachments` in macros/post.html. Up to 4 pictures fill a 16:9 gallery:
+   side by side, the first one tall with 3, 2 by 2 with 4. */
 .attachments {
+    position: relative;
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0.25em;
@@ -1086,7 +1090,24 @@ form.inline {
     grid-template-columns: minmax(0, 1fr);
 }
 
+.attachments.gallery {
+    aspect-ratio: 16 / 9;
+    gap: 2px;
+    border-radius: 0.5em;
+    overflow: hidden;
+}
+
+.attachments.count-3,
+.attachments.count-4 {
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+}
+
+.attachments.count-3 > .attachment:first-child {
+    grid-row: span 2;
+}
+
 .attachment {
+    position: relative;
     display: block;
     width: 100%;
     border-radius: 0.5em;
@@ -1108,6 +1129,17 @@ video.attachment {
     object-fit: contain;
 }
 
+.attachments.gallery .attachment {
+    height: 100%;
+    border-radius: 0;
+}
+
+.attachments.gallery .attachment img,
+.attachments.gallery video.attachment {
+    height: 100%;
+    max-height: none;
+}
+
 audio.attachment {
     background-color: transparent;
 }
@@ -1117,13 +1149,71 @@ audio.attachment {
     color: var(--text);
 }
 
-.sensitive-media summary {
-    cursor: pointer;
-    padding: 0.75em;
-    margin: 0.5em 0;
+/* Sensitive media: blurred under a cover until it's clicked, then a "Hide"
+   button puts the cover back. A checkbox, so without JavaScript too. */
+.attachments.sensitive {
+    min-height: 8em;
     border-radius: 0.5em;
-    background-color: var(--button);
-    color: var(--text-button);
+    overflow: hidden;
+}
+
+.attachments.sensitive > .attachment {
+    filter: blur(1.5em);
+    pointer-events: none;
+}
+
+.media-cover {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1em;
+    text-align: center;
+    color: white;
+    background-color: rgba(0, 0, 0, 0.45);
+    cursor: pointer;
+}
+
+.media-cover-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25em;
+}
+
+.media-cover-text span {
+    font-size: 0.85em;
+}
+
+.media-hide {
+    display: none;
+}
+
+.attachments.sensitive:has(.media-reveal:checked) > .attachment {
+    filter: none;
+    pointer-events: auto;
+}
+
+.attachments.sensitive .media-cover:has(.media-reveal:checked) {
+    inset: 0.5em auto auto 0.5em;
+    padding: 0.2em 0.6em;
+    border-radius: 0.3em;
+    font-size: 0.85em;
+    background-color: rgba(0, 0, 0, 0.65);
+}
+
+.media-cover:has(.media-reveal:checked) .media-cover-text {
+    display: none;
+}
+
+.media-cover:has(.media-reveal:checked) .media-hide {
+    display: inline;
+}
+
+.media-cover:has(.media-reveal:focus-visible) {
+    outline: solid 0.2em var(--text);
+    outline-offset: -0.2em;
 }
 
 /* A search field with its magnifier button: the bar at the top of every
@@ -2250,4 +2340,2224 @@ body:has(.conversation) {
 
 .instance-form input[name="reason"] {
     flex: 2 1 14em;
+}
+
+/* Photo posts, like on Pixelfed (see macros/post.html): the photos go from
+   one edge of the card to the other, the caption comes after the actions. */
+.photo-post .post-header {
+    margin-bottom: 0.75em;
+}
+
+.photo-frame {
+    position: relative;
+    /* A set width: with only `aspect-ratio`, the height limit would make
+       the frame narrower than the card. */
+    width: calc(100% + 3em);
+    margin: 0 -1.5em 0.5em;
+    max-height: 42em;
+    overflow: hidden;
+    background-color: black;
+}
+
+.photo-track {
+    display: flex;
+    height: 100%;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scroll-behavior: smooth;
+    scrollbar-width: none;
+}
+
+.photo-track::-webkit-scrollbar {
+    display: none;
+}
+
+.photo-track:focus-visible {
+    outline: solid 0.2em var(--text);
+    outline-offset: -0.2em;
+}
+
+.photo-slide {
+    position: relative;
+    flex: 0 0 100%;
+    margin: 0;
+    scroll-snap-align: center;
+}
+
+.photo-slide img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    user-select: none;
+}
+
+/* The author wrote an alt text: shown on hover, read by screen readers. */
+.photo-alt {
+    position: absolute;
+    left: 0.6em;
+    bottom: 0.6em;
+    padding: 0.1em 0.4em;
+    border-radius: 0.3em;
+    font-size: 0.7em;
+    font-weight: bold;
+    color: white;
+    background-color: rgba(0, 0, 0, 0.65);
+    cursor: help;
+}
+
+.photo-nav {
+    position: absolute;
+    top: 50%;
+    width: 2em;
+    height: 2em;
+    margin-top: -1em;
+    border: none;
+    border-radius: 50%;
+    font-size: 1.2em;
+    line-height: 1;
+    color: black;
+    background-color: rgba(255, 255, 255, 0.85);
+    cursor: pointer;
+}
+
+.photo-nav[hidden] {
+    display: none;
+}
+
+.photo-nav.previous {
+    left: 0.5em;
+}
+
+.photo-nav.next {
+    right: 0.5em;
+}
+
+.photo-count {
+    position: absolute;
+    top: 0.6em;
+    right: 0.6em;
+    padding: 0.15em 0.5em;
+    border-radius: 1em;
+    font-size: 0.8em;
+    color: white;
+    background-color: rgba(0, 0, 0, 0.6);
+}
+
+.photo-dots {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0.6em;
+    display: flex;
+    justify-content: center;
+    gap: 0.3em;
+    pointer-events: none;
+}
+
+.photo-dots span {
+    width: 0.4em;
+    height: 0.4em;
+    border-radius: 50%;
+    background-color: rgba(255, 255, 255, 0.5);
+}
+
+.photo-dots span.active {
+    background-color: white;
+}
+
+/* Sensitive photos: blurred under a cover, until the checkbox is ticked. */
+.photo-frame.sensitive .photo-slide img {
+    filter: blur(2em);
+    transform: scale(1.1);
+}
+
+.photo-cover {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5em;
+    padding: 1em;
+    text-align: center;
+    color: white;
+    background-color: rgba(0, 0, 0, 0.35);
+    cursor: pointer;
+}
+
+.photo-reveal:checked ~ .photo-cover {
+    display: none;
+}
+
+.photo-reveal:checked ~ .photo-track .photo-slide img {
+    filter: none;
+    transform: none;
+}
+
+.photo-reveal:focus-visible ~ .photo-cover .button {
+    outline: solid 0.2em white;
+}
+
+.photo-caption {
+    margin: 0.5em 0 0;
+}
+
+.post-body .photo-caption-author {
+    font-weight: bold;
+    color: var(--text);
+    text-decoration: none;
+}
+
+.post-body .photo-caption-author:hover {
+    text-decoration: underline;
+}
+
+/* A heart over the photo for the double-click like, see system.js. */
+.photo-liked::after {
+    content: "♥";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    font-size: 6em;
+    line-height: 1;
+    color: white;
+    text-shadow: 0 0 0.2em rgba(0, 0, 0, 0.5);
+    transform: translate(-50%, -50%);
+    animation: photo-liked 0.8s ease-out forwards;
+    pointer-events: none;
+}
+
+@keyframes photo-liked {
+    0% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
+    20% { opacity: 1; transform: translate(-50%, -50%) scale(1.1); }
+    100% { opacity: 0; transform: translate(-50%, -50%) scale(1); }
+}
+
+/* The photos of the post form. */
+.photo-picker {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5em 0.75em;
+    margin: 0.5em 0;
+}
+
+.photo-add {
+    position: relative;
+    cursor: pointer;
+}
+
+/* The file field covers the button: clicking anywhere on it opens the
+   file chooser, and it stays reachable with the keyboard. */
+.photo-add input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    opacity: 0;
+    cursor: pointer;
+}
+
+.photo-add:focus-within {
+    outline: solid 0.2em var(--text);
+}
+
+.photo-picker .post-username {
+    flex: 1 1 15em;
+    font-size: 0.85em;
+}
+
+.photo-previews {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(9em, 1fr));
+    gap: 0.5em;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.photo-previews[hidden],
+.photo-sensitive[hidden] {
+    display: none;
+}
+
+.photo-previews li {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3em;
+}
+
+.photo-previews img {
+    width: 100%;
+    aspect-ratio: 1;
+    object-fit: cover;
+    border-radius: 0.4em;
+    background-color: var(--button);
+}
+
+.photo-previews textarea {
+    width: 100%;
+    box-sizing: border-box;
+    min-height: 3.5em;
+    font-size: 0.85em;
+    resize: vertical;
+}
+
+.photo-sensitive {
+    display: flex;
+    align-items: center;
+    gap: 0.4em;
+    font-size: 0.9em;
+}
+
+/* A profile's photos, three squares a row like on Pixelfed. */
+.photo-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.25em;
+}
+
+.photo-grid-item {
+    position: relative;
+    display: block;
+    aspect-ratio: 1;
+    overflow: hidden;
+    border-radius: 0.25em;
+    background-color: var(--button);
+}
+
+.photo-grid-item img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.2s;
+}
+
+.photo-grid-item.sensitive img {
+    filter: blur(1em);
+    transform: scale(1.1);
+}
+
+.photo-grid-many,
+.photo-grid-sensitive {
+    position: absolute;
+    top: 0.4em;
+    right: 0.4em;
+    padding: 0 0.3em;
+    border-radius: 0.3em;
+    font-size: 0.85em;
+    color: white;
+    background-color: rgba(0, 0, 0, 0.55);
+}
+
+.photo-grid-sensitive {
+    top: auto;
+    right: auto;
+    left: 0.4em;
+    bottom: 0.4em;
+}
+
+.photo-grid-counts {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    color: white;
+    background-color: rgba(0, 0, 0, 0.45);
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+
+.photo-grid-item:hover .photo-grid-counts,
+.photo-grid-item:focus-visible .photo-grid-counts {
+    opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .photo-track {
+        scroll-behavior: auto;
+    }
+
+    .photo-liked::after {
+        animation: none;
+        opacity: 0;
+    }
+
+    .photo-grid-item img,
+    .photo-grid-counts {
+        transition: none;
+    }
+}
+
+/*
+Articles, like on WriteFreely: written in the Article tab of the post form,
+see `composer` and `article_card` / `article_full` in macros/post.html.
+*/
+
+/* The Post and Article tabs: radio buttons, so they work without JavaScript. */
+.composer-tabs {
+    display: flex;
+    margin: -0.5em 0 1em;
+    border-bottom: solid 0.1em var(--button);
+}
+
+.composer-tabs label {
+    flex: 1;
+    padding: 0.6em 1em;
+    text-align: center;
+    border-bottom: solid 0.2em transparent;
+    margin-bottom: -0.1em;
+    cursor: pointer;
+}
+
+.composer-tabs label:hover {
+    filter: brightness(var(--hover-brightness));
+    background-color: var(--button);
+}
+
+#compose-post:checked ~ .composer-tabs label[for="compose-post"],
+#compose-article:checked ~ .composer-tabs label[for="compose-article"] {
+    font-weight: bold;
+    border-bottom-color: var(--text);
+}
+
+#compose-post:focus-visible ~ .composer-tabs label[for="compose-post"],
+#compose-article:focus-visible ~ .composer-tabs label[for="compose-article"] {
+    outline: solid 0.15em var(--text);
+    outline-offset: -0.15em;
+}
+
+#compose-article:checked ~ .composer-post,
+#compose-post:checked ~ .composer-article {
+    display: none;
+}
+
+.article-title-field {
+    width: 100%;
+    box-sizing: border-box;
+    margin-bottom: 0.5em;
+    padding: 0.4em 0.5em;
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 1.4em;
+    font-weight: bold;
+    color: var(--text);
+    background-color: var(--background);
+    border: solid 0.1em var(--button);
+    border-radius: 0.3em;
+}
+
+.composer-article textarea {
+    width: 100%;
+    box-sizing: border-box;
+    resize: vertical;
+}
+
+.composer-article textarea,
+.edit-form .article-title-field + label + textarea {
+    font-family: ui-monospace, "Cascadia Mono", "DejaVu Sans Mono", monospace;
+    font-size: 0.95em;
+    line-height: 1.5;
+}
+
+.markdown-help {
+    margin-bottom: 0.75em;
+    font-size: 0.9em;
+}
+
+.markdown-help summary {
+    cursor: pointer;
+    color: var(--light-text);
+}
+
+.markdown-help dl {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 0.35em 1em;
+    margin: 0.5em 0;
+}
+
+.markdown-help dd {
+    margin: 0;
+    color: var(--light-text);
+}
+
+.markdown-help code {
+    font-size: 0.95em;
+}
+
+@media (max-width: 40em) {
+    .markdown-help dl {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .markdown-help dd {
+        margin-bottom: 0.4em;
+    }
+}
+
+/* In lists: the title, the start and the reading time. */
+.article-title {
+    margin: 0.4em 0 0.2em;
+    font-family: Georgia, "Times New Roman", serif;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+}
+
+.article-card .article-title {
+    font-size: 1.4em;
+}
+
+.article-card .article-title a {
+    color: var(--text);
+    text-decoration: none;
+}
+
+.article-card .article-title a:hover,
+.article-list-title:hover {
+    text-decoration: underline;
+}
+
+.article-excerpt {
+    margin: 0.3em 0;
+    line-height: 1.5;
+    color: var(--light-text);
+    overflow-wrap: anywhere;
+}
+
+.article-meta {
+    margin: 0.2em 0 0.6em;
+    font-size: 0.9em;
+    color: var(--light-text);
+}
+
+/* The article's page: a text made for reading. */
+.article .article-title {
+    font-size: 2em;
+}
+
+.article-body {
+    font-size: 1.1em;
+    line-height: 1.7;
+    overflow-wrap: anywhere;
+}
+
+/* Every element: `*` sets the interface's font. Code keeps its own. */
+.article-body,
+.article-body :not(code, pre) {
+    font-family: Georgia, "Times New Roman", serif;
+}
+
+.article-body > :first-child {
+    margin-top: 0.5em;
+}
+
+.article-body h1,
+.article-body h2,
+.article-body h3,
+.article-body h4,
+.article-body h5,
+.article-body h6 {
+    margin: 1.4em 0 0.4em;
+    line-height: 1.25;
+}
+
+.article-body h1 {
+    font-size: 1.5em;
+}
+
+.article-body h2 {
+    font-size: 1.3em;
+}
+
+.article-body h3 {
+    font-size: 1.15em;
+}
+
+.article-body h4,
+.article-body h5,
+.article-body h6 {
+    font-size: 1em;
+}
+
+.article-body p,
+.article-body ul,
+.article-body ol {
+    margin: 0 0 1em;
+}
+
+.article-body li + li {
+    margin-top: 0.25em;
+}
+
+.article-body blockquote {
+    margin: 0 0 1em;
+    padding: 0.1em 1em;
+    border-left: solid 0.25em var(--button);
+    color: var(--light-text);
+    font-style: italic;
+}
+
+.article-body blockquote > :last-child {
+    margin-bottom: 0;
+}
+
+.article-body img {
+    display: block;
+    max-width: 100%;
+    max-height: 36em;
+    width: auto;
+    height: auto;
+    margin: 0.5em auto;
+    border-radius: 0.3em;
+}
+
+.article-body code {
+    font-family: ui-monospace, "Cascadia Mono", "DejaVu Sans Mono", monospace;
+    font-size: 0.85em;
+    padding: 0.1em 0.3em;
+    border-radius: 0.25em;
+    background-color: var(--button);
+}
+
+.article-body pre {
+    margin: 0 0 1em;
+    padding: 0.75em 1em;
+    overflow-x: auto;
+    border-radius: 0.4em;
+    background-color: var(--button);
+    line-height: 1.45;
+}
+
+.article-body pre code {
+    padding: 0;
+    background: none;
+    overflow-wrap: normal;
+}
+
+.article-body hr {
+    margin: 1.5em auto;
+    width: 30%;
+    border: none;
+    border-top: solid 0.1em var(--light-text);
+}
+
+.article-body a {
+    text-decoration: underline;
+}
+
+/* The profile's Articles tab: their blog. */
+.article-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.article-list li {
+    padding: 0.8em 0;
+    border-top: solid 0.1em var(--button);
+}
+
+.article-list li:first-child {
+    border-top: none;
+    padding-top: 0;
+}
+
+.article-list-title {
+    display: block;
+    text-decoration: none;
+    margin-bottom: 0.2em;
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 1.25em;
+    font-weight: bold;
+    color: var(--text);
+    overflow-wrap: anywhere;
+}
+
+/* An article in a feed: a large preview card like Mastodon's, its picture
+   across the top. Without a picture, a small card with a mark. */
+.link-card.article-preview {
+    flex-direction: column;
+    margin-top: 0.4em;
+}
+
+.article-preview .link-card-image {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 1.91;
+    border-right: none;
+    border-bottom: solid 0.1em var(--button);
+}
+
+.article-preview.sensitive .link-card-image {
+    filter: blur(1.5em);
+}
+
+.article-preview .link-card-text {
+    padding: 0.75em 1em;
+    gap: 0.25em;
+}
+
+.article-preview .link-card-title {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 1.2em;
+    line-height: 1.3;
+}
+
+.article-preview .link-card-description {
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    line-height: 1.45;
+}
+
+.article-preview-author {
+    margin-top: 0.2em;
+    font-size: 0.85em;
+    color: var(--light-text);
+}
+
+.link-card.article-preview.no-picture {
+    flex-direction: row;
+}
+
+.article-preview.no-picture .article-preview-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 5.5em;
+    height: auto;
+    aspect-ratio: auto;
+    border-bottom: none;
+    border-right: solid 0.1em var(--button);
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 1.6em;
+    color: var(--light-text);
+}
+
+@media (max-width: 40em) {
+    .article-preview.no-picture .article-preview-icon {
+        width: 3.5em;
+    }
+}
+
+/*
+Videos (PeerTube), live streams (Owncast) and podcasts (Funkwhale,
+Castopod): see `media_post` and `video_grid` in macros/post.html, and the
+pages videos.html, live.html and podcast*.html.
+*/
+
+.media-title {
+    margin: 0.5em 0 0.2em;
+    font-size: 1.3em;
+    line-height: 1.3;
+    overflow-wrap: anywhere;
+}
+
+h1.media-title {
+    font-size: 1.6em;
+}
+
+.media-title a {
+    color: var(--text);
+    text-decoration: none;
+}
+
+.media-title a:hover {
+    text-decoration: underline;
+}
+
+.media-meta {
+    margin: 0 0 0.5em;
+}
+
+/* The player: 16:9, black, edge to edge in the card like Pixelfed's photos. */
+.video-frame {
+    position: relative;
+    width: calc(100% + 3em);
+    margin: 0.5em -1.5em;
+    aspect-ratio: 16 / 9;
+    background-color: black;
+    overflow: hidden;
+}
+
+.video-frame video {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.video-frame.sensitive video {
+    filter: blur(2em);
+    pointer-events: none;
+}
+
+.video-frame.sensitive:has(.media-reveal:checked) video {
+    filter: none;
+    pointer-events: auto;
+}
+
+.video-frame .media-cover:has(.media-reveal:checked) {
+    inset: 0.5em auto auto 0.5em;
+    padding: 0.2em 0.6em;
+    border-radius: 0.3em;
+    font-size: 0.85em;
+    background-color: rgba(0, 0, 0, 0.65);
+}
+
+.live-badge {
+    position: absolute;
+    top: 0.6em;
+    left: 0.6em;
+    padding: 0.1em 0.5em;
+    border-radius: 0.3em;
+    font-size: 0.75em;
+    font-weight: bold;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: white;
+    background-color: hsl(0, 75%, 48%);
+}
+
+.live-waiting {
+    position: absolute;
+    inset: auto 0 40% 0;
+    margin: 0;
+    text-align: center;
+    color: white;
+    pointer-events: none;
+}
+
+.live-dot {
+    display: inline-block;
+    width: 0.6em;
+    height: 0.6em;
+    margin-right: 0.4em;
+    vertical-align: 0.1em;
+    border-radius: 50%;
+    background-color: hsl(0, 75%, 50%);
+    animation: live-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes live-pulse {
+    50% {
+        opacity: 0.35;
+    }
+}
+
+.live-now-banner {
+    padding: 0.6em 0.9em;
+    border-radius: 0.5em;
+    background-color: var(--button);
+}
+
+/* Converting, failed, ended. */
+.media-state {
+    margin: 0.5em 0;
+    padding: 1.5em 1em;
+    border-radius: 0.5em;
+    text-align: center;
+    color: var(--light-text);
+    background-color: var(--button);
+}
+
+.media-state.failed {
+    color: var(--error);
+}
+
+/* Too large for the media proxy: a link to its server. */
+.video-elsewhere {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: calc(100% + 3em);
+    margin: 0.5em -1.5em;
+    aspect-ratio: 16 / 9;
+    overflow: hidden;
+    color: white;
+    background-color: black;
+    text-decoration: none;
+}
+
+.video-elsewhere img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    opacity: 0.6;
+}
+
+.video-elsewhere span {
+    position: relative;
+    padding: 0.5em 1em;
+    border-radius: 2em;
+    font-weight: bold;
+    background-color: rgba(0, 0, 0, 0.6);
+}
+
+/* Episodes: the cover next to the titles, then the player. */
+.episode-head {
+    display: flex;
+    gap: 1em;
+    align-items: center;
+    margin-top: 0.5em;
+}
+
+.episode-cover {
+    flex-shrink: 0;
+    width: 6em;
+    height: 6em;
+    border-radius: 0.5em;
+    object-fit: cover;
+    background-color: var(--button);
+}
+
+.episode-cover.placeholder,
+.podcast-cover.placeholder,
+.video-thumb-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2em;
+    color: var(--light-text);
+}
+
+.episode-titles {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.episode-titles .media-title {
+    margin: 0.1em 0;
+}
+
+.episode-podcast {
+    font-size: 0.85em;
+    font-weight: bold;
+    color: var(--light-text);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.episode-player {
+    display: block;
+    width: 100%;
+    margin: 0.75em 0 0.5em;
+}
+
+/* The Videos page and the profile's Videos tab, like PeerTube's lists. */
+.media-page-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5em;
+}
+
+.media-page-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5em;
+}
+
+.video-grid,
+.podcast-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(13em, 1fr));
+    gap: 1.25em 1em;
+    margin: 0.5em 0 1em;
+    padding: 0;
+    list-style: none;
+}
+
+.video-grid .empty,
+.podcast-grid .empty {
+    grid-column: 1 / -1;
+}
+
+.video-thumb,
+.podcast-tile {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25em;
+    color: var(--text);
+    text-decoration: none;
+}
+
+.video-thumb-picture {
+    position: relative;
+    display: block;
+    aspect-ratio: 16 / 9;
+    border-radius: 0.5em;
+    overflow: hidden;
+    background-color: black;
+}
+
+.video-thumb-picture img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.2s;
+}
+
+.video-thumb:hover .video-thumb-picture img {
+    transform: scale(1.04);
+}
+
+.video-thumb-placeholder {
+    width: 100%;
+    height: 100%;
+    background-color: var(--button);
+}
+
+.video-duration {
+    position: absolute;
+    right: 0.4em;
+    bottom: 0.4em;
+    padding: 0.05em 0.35em;
+    border-radius: 0.25em;
+    font-size: 0.8em;
+    font-weight: bold;
+    color: white;
+    background-color: rgba(0, 0, 0, 0.75);
+}
+
+.video-thumb-title,
+.podcast-tile strong {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    line-height: 1.3;
+}
+
+.video-thumb:hover .video-thumb-title,
+.podcast-tile:hover strong {
+    text-decoration: underline;
+}
+
+/* Podcasts. */
+.podcast-grid {
+    grid-template-columns: repeat(auto-fill, minmax(10em, 1fr));
+}
+
+.podcast-cover {
+    display: block;
+    width: 100%;
+    aspect-ratio: 1;
+    border-radius: 0.5em;
+    object-fit: cover;
+    background-color: var(--button);
+}
+
+.podcast-head {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.25em;
+    align-items: flex-end;
+}
+
+.podcast-head h1 {
+    margin: 0 0 0.25em;
+    overflow-wrap: anywhere;
+}
+
+.podcast-cover.large {
+    width: 11em;
+    font-size: 1em;
+}
+
+.podcast-cover.large.placeholder {
+    font-size: 4em;
+    width: 2.75em;
+}
+
+.podcast-page form {
+    margin-top: 0.75em;
+}
+
+/* Upload and live forms. */
+.media-form form {
+    flex-direction: column;
+    /* A wrapping column makes Firefox measure rows at their narrowest,
+       doubling the height of side-by-side fields. */
+    flex-wrap: nowrap;
+    align-items: stretch;
+}
+
+.media-form select {
+    padding: 0.4em;
+    color: var(--text);
+    background-color: var(--background);
+    border: solid 0.1em var(--button);
+    border-radius: 0.3em;
+}
+
+.media-form .button {
+    align-self: flex-start;
+}
+
+.profile-edit label.checkbox-line {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+    font-weight: normal;
+}
+
+.profile-edit label.checkbox-line input {
+    flex: none;
+    min-width: 0;
+}
+
+.upload-progress {
+    width: 100%;
+    height: 0.6em;
+}
+
+.copy-field {
+    display: flex;
+    gap: 0.5em;
+    margin-bottom: 0.75em;
+}
+
+.copy-field input {
+    flex: 1;
+    min-width: 0;
+    padding: 0.4em;
+    font-family: ui-monospace, "Cascadia Mono", "DejaVu Sans Mono", monospace;
+    font-size: 0.9em;
+    color: var(--text);
+    background-color: var(--background);
+    border: solid 0.1em var(--button);
+    border-radius: 0.3em;
+}
+
+.success {
+    color: var(--success);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .live-dot {
+        animation: none;
+    }
+
+    .video-thumb-picture img {
+        transition: none;
+    }
+}
+
+.media-form .action {
+    align-self: flex-start;
+}
+
+/* A video's thumbnail: 1280×720, shown 16:9 like on the Videos page. */
+.thumbnail-preview {
+    width: 100%;
+    max-width: 24em;
+    aspect-ratio: 16 / 9;
+    margin-bottom: 0.75em;
+    border-radius: 0.5em;
+    overflow: hidden;
+    background-color: black;
+}
+
+.thumbnail-preview[hidden] {
+    display: none;
+}
+
+.thumbnail-preview img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+/* Under a video: its downloads, like PeerTube's. */
+.video-tools {
+    display: flex;
+    justify-content: flex-end;
+    margin: 0.25em 0 0.5em;
+    font-size: 0.9em;
+}
+
+.video-downloads {
+    margin-left: auto;
+}
+
+.video-downloads summary {
+    cursor: pointer;
+    color: var(--light-text);
+    text-align: right;
+}
+
+.video-downloads ul {
+    margin: 0.4em 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.video-downloads li {
+    display: flex;
+    justify-content: space-between;
+    gap: 1em;
+    padding: 0.15em 0;
+}
+
+/*
+Uploads of videos and episodes (macros/upload.html): the file area, and
+the upload button turning into a progress ring with its percentage.
+*/
+.field-label {
+    font-weight: bold;
+}
+
+.upload-drop {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.35em;
+    width: 100%;
+    padding: 1.75em 1em;
+    border: dashed 0.15em var(--light-text);
+    border-radius: 0.75em;
+    text-align: center;
+    background-color: var(--background);
+    cursor: pointer;
+    transition: border-color 0.15s, background-color 0.15s;
+}
+
+.profile-edit label.upload-drop {
+    font-weight: normal;
+}
+
+.upload-drop:hover,
+.upload-drop.dragging,
+.upload-drop:focus-within {
+    border-color: var(--text);
+    background-color: var(--main);
+}
+
+.upload-drop.chosen {
+    border-style: solid;
+}
+
+.upload-drop strong {
+    overflow-wrap: anywhere;
+}
+
+.upload-drop-icon {
+    color: var(--light-text);
+}
+
+.upload-drop.chosen .upload-drop-icon {
+    color: var(--success);
+}
+
+/* Hidden but focusable: Tab reaches it, Enter or Space opens the picker. */
+.profile-edit .upload-drop-input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    min-width: 0;
+    height: 100%;
+    opacity: 0;
+    cursor: pointer;
+}
+
+.upload-send {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5em 1em;
+}
+
+.upload-send .field-help {
+    margin: 0;
+}
+
+.media-form .upload-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6em;
+    align-self: center;
+    min-height: 2.6em;
+}
+
+.upload-button .progress-ring {
+    display: none;
+}
+
+.upload-button.uploading {
+    cursor: progress;
+    opacity: 1;
+}
+
+.upload-button.uploading .progress-ring {
+    display: inline-grid;
+}
+
+.progress-ring {
+    display: inline-grid;
+    place-items: center;
+    width: 2.6em;
+    height: 2.6em;
+    flex: none;
+}
+
+.progress-ring svg,
+.progress-ring-percent {
+    grid-area: 1 / 1;
+}
+
+.progress-ring svg {
+    width: 100%;
+    height: 100%;
+    transform: rotate(-90deg);
+}
+
+.progress-ring circle {
+    fill: none;
+    stroke-width: 3.2;
+}
+
+.progress-ring-track {
+    stroke: var(--button);
+}
+
+.progress-ring-done {
+    stroke: var(--success);
+    stroke-linecap: round;
+    stroke-dasharray: 0 100;
+    transition: stroke-dasharray 0.25s;
+}
+
+.progress-ring-percent {
+    font-size: 0.68em;
+    font-weight: bold;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Waiting or saving: no number, the arc turns. */
+.progress-ring.spinning svg {
+    animation: ring-spin 1s linear infinite;
+}
+
+@keyframes ring-spin {
+    to {
+        transform: rotate(270deg);
+    }
+}
+
+/* The conversion of a video: a larger ring over its text. */
+.media-state.conversion {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5em;
+}
+
+.media-state.conversion p {
+    margin: 0;
+}
+
+.conversion-ring .progress-ring {
+    width: 4.5em;
+    height: 4.5em;
+    font-size: 1.1em;
+}
+
+.conversion-ring[hidden] {
+    display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .progress-ring.spinning svg {
+        animation-duration: 3s;
+    }
+
+    .progress-ring-done,
+    .upload-drop {
+        transition: none;
+    }
+}
+
+/* The Videos page's "Converting now": the ring over the card's picture. */
+.converting-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35em;
+}
+
+.converting-card .video-thumb-picture {
+    display: grid;
+    place-items: center;
+    background-color: var(--button);
+}
+
+.converting-card .video-thumb-picture img {
+    position: absolute;
+    inset: 0;
+    opacity: 0.35;
+}
+
+.converting-card .conversion-ring {
+    position: relative;
+}
+
+.converting-card .conversion-ring .progress-ring {
+    width: 3.75em;
+    height: 3.75em;
+}
+
+.converting-line {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5em;
+}
+
+.converting-open {
+    padding: 0.25em 0.8em;
+    font-size: 0.9em;
+}
+
+.converting-card.ready .converting-open {
+    color: white;
+    background-color: var(--success);
+}
+
+.converting-card.failed [data-conversion-text] {
+    color: var(--error);
+}
+
+/*
+The video player (macros/post.html, `setupPlayers` in system.js): our
+controls at the bottom instead of the browser's, like PeerTube's.
+*/
+.custom-player video {
+    cursor: pointer;
+}
+
+.custom-player:focus {
+    outline: none;
+}
+
+.custom-player:focus-visible {
+    outline: solid 0.2em var(--success);
+    outline-offset: -0.2em;
+}
+
+/* While paused: a big play button in the middle. */
+.player-big-play {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    z-index: 1;
+    display: grid;
+    place-items: center;
+    width: 4.5em;
+    height: 4.5em;
+    margin: -2.25em 0 0 -2.25em;
+    padding: 0 0 0 0.25em;
+    border: none;
+    border-radius: 50%;
+    color: white;
+    background-color: rgba(0, 0, 0, 0.6);
+    cursor: pointer;
+    transition: transform 0.15s, background-color 0.15s;
+}
+
+.player-big-play:hover {
+    transform: scale(1.08);
+    background-color: rgba(0, 0, 0, 0.8);
+}
+
+.player-big-play[hidden],
+.player-spinner[hidden] {
+    display: none;
+}
+
+.player-spinner {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 3em;
+    height: 3em;
+    margin: -1.5em 0 0 -1.5em;
+    border: solid 0.3em rgba(255, 255, 255, 0.3);
+    border-top-color: white;
+    border-radius: 50%;
+    pointer-events: none;
+    animation: ring-spin 0.9s linear infinite;
+}
+
+/* The bar: on a shade at the bottom, hidden after a while of playing. */
+.player-controls {
+    position: absolute;
+    inset: auto 0 0 0;
+    z-index: 2;
+    padding: 2.5em 0.6em 0.35em;
+    color: white;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.75), rgba(0, 0, 0, 0.35) 55%, transparent);
+    transition: opacity 0.25s;
+}
+
+.player-controls[hidden] {
+    display: none;
+}
+
+.custom-player.idle .player-controls {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.custom-player.idle {
+    cursor: none;
+}
+
+/* Under the cover of a sensitive video, until it's shown. */
+.video-frame.sensitive:not(:has(.media-reveal:checked)) :is(.player-controls, .player-big-play) {
+    display: none;
+}
+
+/* The position: loaded part, played part, and the handle to move. */
+.player-seek {
+    position: relative;
+    height: 1em;
+    margin: 0 0.25em;
+}
+
+.player-seek::before,
+.player-buffered,
+.player-played {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0.4em;
+    height: 0.25em;
+    border-radius: 0.125em;
+    pointer-events: none;
+    transition: height 0.1s, top 0.1s;
+}
+
+.player-seek::before {
+    right: 0;
+    background-color: rgba(255, 255, 255, 0.25);
+}
+
+.player-buffered {
+    width: 0;
+    background-color: rgba(255, 255, 255, 0.45);
+}
+
+.player-played {
+    width: 0;
+    background-color: var(--success);
+}
+
+.player-seek:hover::before,
+.player-seek:hover .player-buffered,
+.player-seek:hover .player-played {
+    top: 0.325em;
+    height: 0.4em;
+}
+
+.player-controls input[type="range"] {
+    margin: 0;
+    background: transparent;
+    cursor: pointer;
+    -webkit-appearance: none;
+    appearance: none;
+}
+
+.player-seek input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+}
+
+.player-controls input[type="range"]::-webkit-slider-runnable-track {
+    height: 100%;
+    background: transparent;
+}
+
+.player-controls input[type="range"]::-moz-range-track {
+    background: transparent;
+}
+
+.player-controls input[type="range"]::-webkit-slider-thumb {
+    width: 0.85em;
+    height: 0.85em;
+    margin-top: 0.075em;
+    border: none;
+    border-radius: 50%;
+    background: white;
+    -webkit-appearance: none;
+    appearance: none;
+}
+
+.player-controls input[type="range"]::-moz-range-thumb {
+    width: 0.85em;
+    height: 0.85em;
+    border: none;
+    border-radius: 50%;
+    background: white;
+}
+
+.player-seek input::-webkit-slider-thumb {
+    opacity: 0;
+}
+
+.player-seek input::-moz-range-thumb {
+    opacity: 0;
+}
+
+.player-seek:hover input::-webkit-slider-thumb,
+.player-seek input:focus-visible::-webkit-slider-thumb {
+    opacity: 1;
+}
+
+.player-seek:hover input::-moz-range-thumb,
+.player-seek input:focus-visible::-moz-range-thumb {
+    opacity: 1;
+}
+
+.player-controls input[type="range"]:focus-visible {
+    outline: solid 0.15em white;
+    outline-offset: 0.1em;
+}
+
+/* The buttons: play, sound and level, time... quality and full screen. */
+.player-row {
+    display: flex;
+    align-items: center;
+    gap: 0.15em;
+    margin-top: 0.15em;
+}
+
+.player-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3em;
+    height: 2.2em;
+    min-width: 2.2em;
+    justify-content: center;
+    padding: 0 0.4em;
+    border: none;
+    border-radius: 0.4em;
+    font: inherit;
+    font-size: 0.9em;
+    font-weight: bold;
+    color: white;
+    background: none;
+    cursor: pointer;
+}
+
+.player-button:hover {
+    background-color: rgba(255, 255, 255, 0.15);
+}
+
+.player-button:focus-visible,
+.player-big-play:focus-visible,
+.quality-menu button:focus-visible {
+    outline: solid 0.15em white;
+    outline-offset: 0.05em;
+}
+
+.player-button[hidden] {
+    display: none;
+}
+
+.player-button .when-playing,
+.custom-player.playing .player-button .when-paused,
+.player-button .leave,
+.video-frame.full .player-button .enter {
+    display: none;
+}
+
+.custom-player.playing .player-button .when-playing,
+.video-frame.full .player-button .leave {
+    display: block;
+}
+
+/* Sound: the waves follow the level, crossed out when muted. */
+.player-button .sound-off,
+.custom-player.muted .player-button .sound-low,
+.custom-player.muted .player-button .sound-high,
+.custom-player.quiet .player-button .sound-high {
+    display: none;
+}
+
+.custom-player.muted .player-button .sound-off {
+    display: block;
+}
+
+.player-volume {
+    display: flex;
+    align-items: center;
+}
+
+/* The level beside the sound button, where the browser had it. On small
+   players it opens on hover or focus, like on PeerTube. */
+.player-volume input[type="range"] {
+    width: 5em;
+    height: 1.2em;
+    margin: 0 0.4em 0 0.2em;
+    transition: width 0.2s, opacity 0.2s;
+}
+
+@media (max-width: 40em) {
+    .player-volume input[type="range"] {
+        width: 0;
+        margin: 0;
+        opacity: 0;
+    }
+
+    .player-volume:hover input[type="range"],
+    .player-volume:focus-within input[type="range"] {
+        width: 4.5em;
+        margin: 0 0.4em 0 0.2em;
+        opacity: 1;
+    }
+}
+
+.player-volume input[type="range"]::-webkit-slider-runnable-track {
+    height: 0.25em;
+    border-radius: 0.125em;
+    background: linear-gradient(to right, white var(--level, 100%), rgba(255, 255, 255, 0.3) var(--level, 100%));
+}
+
+.player-volume input[type="range"]::-webkit-slider-thumb {
+    margin-top: -0.3em;
+}
+
+.player-volume input[type="range"]::-moz-range-track {
+    height: 0.25em;
+    border-radius: 0.125em;
+    background: rgba(255, 255, 255, 0.3);
+}
+
+.player-volume input[type="range"]::-moz-range-progress {
+    height: 0.25em;
+    border-radius: 0.125em;
+    background: white;
+}
+
+.player-time {
+    margin-left: 0.35em;
+    font-size: 0.85em;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.player-spacer {
+    flex: 1;
+}
+
+/* Quality: the gear opens its menu above the bar. */
+.quality-control {
+    position: relative;
+}
+
+.quality-button svg {
+    transition: transform 0.3s;
+}
+
+.quality-control.open .quality-button svg {
+    transform: rotate(60deg);
+}
+
+.quality-control.open .quality-button {
+    background-color: rgba(255, 255, 255, 0.15);
+}
+
+.quality-menu {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 0.4em);
+    display: flex;
+    flex-direction: column;
+    min-width: 9em;
+    max-height: 14em;
+    padding: 0.3em;
+    overflow-y: auto;
+    border-radius: 0.5em;
+    background-color: rgba(20, 20, 20, 0.94);
+}
+
+.quality-menu[hidden] {
+    display: none;
+}
+
+.quality-menu button {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+    padding: 0.4em 0.6em 0.4em 1.8em;
+    border: none;
+    border-radius: 0.3em;
+    font: inherit;
+    font-size: 0.85em;
+    text-align: left;
+    color: white;
+    background: none;
+    cursor: pointer;
+}
+
+.quality-menu button:hover {
+    background-color: rgba(255, 255, 255, 0.15);
+}
+
+.quality-menu button[aria-checked="true"] {
+    font-weight: bold;
+}
+
+.quality-menu button[aria-checked="true"]::before {
+    content: "✓";
+    position: absolute;
+    left: 0.6em;
+}
+
+.quality-detail {
+    margin-left: auto;
+    font-size: 0.8em;
+    font-weight: normal;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+/* The whole player in full screen, its controls with it. */
+.video-frame:fullscreen {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    aspect-ratio: auto;
+    border-radius: 0;
+}
+
+.video-frame:fullscreen .player-controls {
+    font-size: 1.15em;
+    padding: 3em 1.2em 0.6em;
+}
+
+/* Small players (phones): no time when there is no room, the menu fits. */
+@media (max-width: 30em) {
+    .player-controls {
+        padding: 2em 0.3em 0.2em;
+    }
+
+    .player-time {
+        font-size: 0.75em;
+    }
+
+    .quality-menu {
+        max-height: 9em;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .player-controls,
+    .player-big-play,
+    .player-volume input[type="range"],
+    .quality-button svg,
+    .player-seek::before,
+    .player-buffered,
+    .player-played {
+        transition: none;
+    }
+
+    .player-spinner {
+        animation-duration: 3s;
+    }
+}
+
+/* Opened to play, but the browser wants a click first: a button to play
+   it with sound. */
+.player-start {
+    position: absolute;
+    top: 0.75em;
+    left: 0.75em;
+    z-index: 2;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4em;
+    padding: 0.4em 0.8em;
+    border: none;
+    border-radius: 2em;
+    font: inherit;
+    font-size: 0.9em;
+    font-weight: bold;
+    color: black;
+    background-color: white;
+    cursor: pointer;
+    box-shadow: 0 0.1em 0.5em rgba(0, 0, 0, 0.4);
+}
+
+.player-start[hidden] {
+    display: none;
+}
+
+.player-start:focus-visible {
+    outline: solid 0.15em var(--success);
+    outline-offset: 0.1em;
+}
+
+/*
+Events, like Mobilizon's (macros/post.html, events.html, event_form.html).
+*/
+
+/* The date block: month over day, like a calendar sheet. */
+.event-date {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 3.6em;
+    height: 3.9em;
+    overflow: hidden;
+    border: solid 0.1em var(--button);
+    border-radius: 0.5em;
+    background-color: var(--background);
+    line-height: 1;
+}
+
+.event-date-month {
+    width: 100%;
+    padding: 0.25em 0;
+    font-size: 0.7em;
+    font-weight: bold;
+    letter-spacing: 0.06em;
+    text-align: center;
+    color: white;
+    background-color: var(--error);
+}
+
+.event-date-day {
+    padding-top: 0.2em;
+    font-size: 1.5em;
+    font-weight: bold;
+    color: var(--text);
+}
+
+.event-when {
+    font-size: 0.85em;
+    font-weight: bold;
+    color: var(--error);
+}
+
+.event-title {
+    overflow-wrap: anywhere;
+}
+
+.event-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3em;
+}
+
+.event-badges:empty {
+    display: none;
+}
+
+.event-badge {
+    padding: 0.05em 0.5em;
+    border-radius: 1em;
+    font-size: 0.75em;
+    font-weight: bold;
+    color: var(--light-text);
+    background-color: var(--button);
+}
+
+.event-badge.going {
+    color: white;
+    background-color: var(--success);
+}
+
+.event-badge.cancelled {
+    color: white;
+    background-color: var(--error);
+}
+
+/* The Events page: one line each. */
+.event-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5em;
+    margin: 0.5em 0 1.25em;
+    padding: 0;
+    list-style: none;
+}
+
+.event-row,
+.event-card-body {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.9em;
+}
+
+.event-row {
+    padding: 0.75em;
+    border: solid 0.1em var(--button);
+    border-radius: 0.6em;
+    color: var(--text);
+    background-color: var(--background);
+    text-decoration: none;
+}
+
+.event-row:hover,
+.event-card:hover {
+    border-color: var(--light-text);
+}
+
+.event-row-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15em;
+    flex: 1;
+    min-width: 0;
+}
+
+.event-row-banner {
+    flex: none;
+    width: 8em;
+    aspect-ratio: 16 / 9;
+    border-radius: 0.4em;
+    object-fit: cover;
+}
+
+.event-row.cancelled .event-title,
+.event-card.cancelled .event-title {
+    text-decoration: line-through;
+}
+
+@media (max-width: 40em) {
+    .event-row-banner {
+        display: none;
+    }
+}
+
+/* In feeds: the banner over the date and details. */
+.event-card {
+    display: block;
+    margin: 0.6em 0;
+    overflow: hidden;
+    border: solid 0.1em var(--button);
+    border-radius: 0.6em;
+    color: var(--text);
+    background-color: var(--background);
+    text-decoration: none;
+}
+
+.event-card-body {
+    padding: 0.75em;
+}
+
+.event-banner {
+    display: block;
+    width: 100%;
+    aspect-ratio: 2.5;
+    object-fit: cover;
+    background-color: var(--button);
+}
+
+.event-banner.large {
+    width: calc(100% + 3em);
+    margin: -1.5em -1.5em 1em;
+    border-radius: 0.5em 0.5em 0 0;
+}
+
+.event-banner.preview {
+    width: 100%;
+    max-width: 24em;
+    border-radius: 0.5em;
+}
+
+/* Its page. */
+.event-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 1em;
+}
+
+.event-head .event-date {
+    font-size: 1.15em;
+}
+
+.event-head h1 {
+    margin: 0.1em 0 0.2em;
+    line-height: 1.2;
+}
+
+.event-category {
+    margin: 0;
+    font-size: 0.8em;
+    font-weight: bold;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--light-text);
+}
+
+.event-status {
+    margin: 0.75em 0 0;
+    padding: 0.5em 0.8em;
+    border-radius: 0.4em;
+    font-weight: bold;
+    background-color: var(--button);
+}
+
+.event-status.cancelled {
+    color: white;
+    background-color: var(--error);
+}
+
+.event-facts {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 0.5em 1.25em;
+    margin: 1em 0;
+}
+
+.event-facts dt {
+    font-weight: bold;
+    color: var(--light-text);
+}
+
+.event-facts dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.event-join,
+.event-organizer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.6em;
+    margin: 0.75em 0;
+}
+
+.event-join form,
+.event-organizer form {
+    margin: 0;
+}
+
+.event-you {
+    margin: 0;
+    font-weight: bold;
+}
+
+.event-you.going {
+    color: var(--success);
+}
+
+.event-organizer {
+    padding-top: 0.6em;
+    border-top: solid 0.1em var(--button);
+}
+
+/* The form. */
+.event-form-times {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5em 1em;
+}
+
+.event-form-times > div {
+    display: flex;
+    flex: 1 1 14em;
+    flex-direction: column;
+    gap: 0.35em;
+}
+
+.event-form-where {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35em;
+    padding: 0.75em 1em;
+    border: solid 0.1em var(--button);
+    border-radius: 0.5em;
+}
+
+.event-form-where legend {
+    font-weight: bold;
+}
+
+.event-participants li {
+    flex-wrap: wrap;
+    gap: 0.5em;
+}
+
+.participant-identity {
+    gap: 0.5em;
+    margin-right: auto;
+    color: var(--text);
+    text-decoration: none;
+}
+
+.participant-identity:hover strong {
+    text-decoration: underline;
+}
+
+.event-form-times input {
+    flex: none;
+}
+
+/* An event's map: OpenStreetMap, a pin on the place. */
+.event-map {
+    display: block;
+    width: 100%;
+    height: 18em;
+    margin: 0 0 0.75em;
+    border: solid 0.1em var(--button);
+    border-radius: 0.5em;
+}
+
+/* A community's events, in its side column: smaller lines. */
+.community-events .event-row {
+    gap: 0.6em;
+    padding: 0.5em;
+    font-size: 0.9em;
+}
+
+.community-events .event-row-banner {
+    display: none;
+}
+
+.community-events .event-date {
+    font-size: 0.85em;
+}
+
+/* The counts under a profile's name open its lists: the open one stands out. */
+.profile-counts a.active {
+    text-decoration: underline;
+    text-decoration-thickness: 0.15em;
+    text-underline-offset: 0.3em;
+}
+
+/* A live stream in our player: LIVE where videos have their time. */
+.player-live {
+    display: inline-flex;
+    align-items: center;
+    margin-left: 0.35em;
+    font-size: 0.8em;
+    font-weight: bold;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.video-frame.live .live-waiting {
+    z-index: 1;
 }

@@ -1,0 +1,67 @@
+{% extends "base.html" %} {% import "macros/post.html" as posts_ui %} {% import "macros/upload.html" as upload_ui %}
+{% block head %}<link rel="alternate" type="application/rss+xml" title="{{ podcast.title }}" href="{{ feed_url }}" />{% endblock %}
+{% block content %}
+<section class="box content podcast-page">
+    <div class="podcast-head">
+        {% if let Some(cover) = podcast.cover_url %}
+        <img src="{{ cover }}" alt="Cover of {{ podcast.title }}" class="podcast-cover large" />
+        {% else %}
+        <span class="podcast-cover large placeholder" aria-hidden="true">🎙</span>
+        {% endif %}
+        <div>
+            <h1>{{ podcast.title }}</h1>
+            <p class="post-meta">By <a href="/user/{{ podcast.username }}">{{ podcast.author_name }}</a> · {{ podcast.category }} · {{ podcast.episode_count }} episode{% if podcast.episode_count != 1 %}s{% endif %}{% if podcast.explicit %} · Explicit{% endif %}</p>
+        </div>
+    </div>
+    {% if !podcast.description.is_empty() %}
+    <p class="post-body">{{ podcast.description_html()|safe }}</p>
+    {% endif %}
+    <label for="podcast-feed">Follow in a podcast app (RSS)</label>
+    <div class="copy-field">
+        <input id="podcast-feed" type="text" value="{{ feed_url }}" readonly />
+        <button type="button" class="button" data-copy="{{ feed_url }}" hidden>Copy</button>
+    </div>
+    {% if is_owner %}
+    <form action="/podcasts/{{ podcast.id }}/delete" method="post" data-confirm="The podcast and all its episodes will be deleted." data-confirm-label="Delete the podcast">
+        <button type="submit" class="action danger">Delete the podcast</button>
+    </form>
+    {% endif %}
+</section>
+
+{% if is_owner %}
+<section class="box content profile-edit media-form" id="new-episode">
+    <h2>New episode</h2>
+    {% if let Some(message) = error %}
+    <p class="error">{{ message }}</p>
+    {% endif %}
+    <form action="/podcasts/{{ podcast.id }}/episodes" method="post" enctype="multipart/form-data" data-upload-progress>
+        <span class="field-label">Sound</span>
+        {% call upload_ui::drop_zone("episode-file", "audio", "audio/*,video/*", "Choose a sound", "or drop it here") %}{% endcall %}
+        <p class="field-help">Up to {{ max_mb }} MB, MP3, WAV, FLAC, M4A, Ogg…: it's converted to MP3 for every podcast app.</p>
+        <label for="episode-title">Title</label>
+        <input id="episode-title" type="text" name="title" maxlength="{{ title_max_chars }}" required />
+        <label for="episode-description">Show notes</label>
+        <textarea id="episode-description" name="description" rows="5" maxlength="{{ description_max_chars }}"></textarea>
+        <label for="episode-visibility">Who can see it</label>
+        <select id="episode-visibility" name="visibility">
+            {% for visibility in visibilities %}
+            <option value="{{ visibility.as_str() }}">{{ visibility.label() }}</option>
+            {% endfor %}
+        </select>
+        {% call upload_ui::upload_button("Publish the episode") %}{% endcall %}
+    </form>
+</section>
+{% endif %}
+
+<section class="box content media-page">
+    <h2>Episodes</h2>
+    {% if episodes.is_empty() %}<p class="empty">No episode yet.</p>{% endif %}
+</section>
+{% if !episodes.is_empty() %}
+<div class="flex center vertical full-width posts">
+    {% for post in episodes %}
+    {% call posts_ui::post_card(post, layout.viewer.is_some(), return_to, true, false) %}{% endcall %}
+    {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

@@ -116,6 +116,21 @@
             {% endif %}
         </section>
 
+        {# The events it organizes, like a Mobilizon group's. #}
+        {% if crate::settings::services().events && (!events.is_empty() || membership.is_member) %}
+        <section class="box content community-events">
+            <h2>Events</h2>
+            <ul class="event-list">
+                {% for post in events %}
+                {% call posts_ui::event_row(post) %}{% endcall %}
+                {% else %}
+                <li class="empty">No event planned.</li>
+                {% endfor %}
+            </ul>
+            {% if membership.is_member && !community.is_banned() %}<a href="/events/new?community={{ community.id }}" class="button">New event</a>{% endif %}
+        </section>
+        {% endif %}
+
         <section class="box content">
             <h2>Rules</h2>
             {% for rule in rules %}

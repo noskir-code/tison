@@ -210,9 +210,40 @@ impl Attachment {
         self.kind() == MediaKind::Audio
     }
 
-    /// Where the page loads it from, see the module.
+    /// Where the page loads it from, see the module. Photos posted here are
+    /// loaded from here.
     pub fn proxy_url(&self) -> String {
-        proxy_url(&self.url)
+        if is_local(&self.url) { self.url.clone() } else { proxy_url(&self.url) }
+    }
+
+    /// The alt text, or the photo's place in the post when there is none.
+    /// References: as Askama gives them.
+    pub fn alt(&self, position: &usize, count: &usize) -> String {
+        let (position, count) = (*position, *count);
+        match (self.description.is_empty(), count) {
+            (false, _) => self.description.clone(),
+            (true, 1) => "Photo".to_string(),
+            (true, _) => format!("Photo {} of {count}", position + 1),
+        }
+    }
+
+    /// `alt` of the first photo of `count`, for the profile grid.
+    pub fn first_alt(&self, count: usize) -> String {
+        self.alt(&0, &count)
+    }
+}
+
+/// The CSS classes of the media of a post or comment, see
+/// `macros/post.html`: up to 4 pictures make a gallery like on Mastodon,
+/// anything else (videos, sounds, more pictures) a plain grid.
+pub fn layout(attachments: &[Attachment]) -> &'static str {
+    let pictures = attachments.iter().all(|attachment| attachment.is_image() || attachment.is_video());
+    match attachments.len() {
+        1 => "single",
+        2 if pictures => "gallery count-2",
+        3 if pictures => "gallery count-3",
+        4 if pictures => "gallery count-4",
+        _ => "",
     }
 }
 
@@ -236,6 +267,32 @@ impl NewAttachment {
             height,
         }
     }
+}
+
+/// Uploaded here (`/public/uploads/...`, see `handlers::image`).
+pub fn is_local(url: &str) -> bool {
+    url.starts_with("/public/uploads/")
+}
+
+/// Deletes the photos uploaded here among `urls`.
+pub async fn remove_local_files(urls: &[String]) {
+    for url in urls.iter().filter(|url| is_local(url)) {
+        let Some(path) = url.strip_prefix('/') else { continue };
+        if path.contains("..") {
+            continue;
+        }
+        if let Err(err) = tokio::fs::remove_file(path).await {
+            tracing::warn!("failed to remove {}: {}", path, err);
+        }
+    }
+}
+
+/// The photos uploaded here for a post.
+pub async fn local_files(pool: &PgPool, post_id: i64) -> Result<Vec<String>, sqlx::Error> {
+    sqlx::query_scalar("SELECT url FROM attachments WHERE post_id = $1 AND url LIKE '/public/uploads/%'")
+        .bind(post_id)
+        .fetch_all(pool)
+        .await
 }
 
 /// What the attachments belong to.
@@ -272,6 +329,9 @@ pub async fn save_attachments(pool: &PgPool, owner: Owner, attachments: &[NewAtt
         .bind(position as i32)
         .execute(&mut *transaction)
         .await?;
+        if is_local(&attachment.url) {
+            continue;
+        }
         sqlx::query("INSERT INTO remote_media (hash, url) VALUES ($1, $2) ON CONFLICT (hash) DO NOTHING")
             .bind(hash(&attachment.url))
             .bind(&attachment.url)
@@ -341,5 +401,22 @@ mod tests {
         assert_eq!(attachment("https://x/a.MP4?x=1", "").kind(), MediaKind::Video);
         assert_eq!(attachment("https://x/a.ogg", "").kind(), MediaKind::Audio);
         assert_eq!(attachment("https://x/a.pdf", "application/pdf").kind(), MediaKind::Other);
+    }
+
+    #[test]
+    fn up_to_four_pictures_make_a_gallery() {
+        let attachment = |url: &str| Attachment {
+            url: url.to_string(),
+            media_type: String::new(),
+            description: String::new(),
+            width: None,
+            height: None,
+        };
+        let photo = attachment("https://x/a.jpg");
+        assert_eq!(layout(&[photo.clone()]), "single");
+        assert_eq!(layout(&[photo.clone(), attachment("https://x/b.mp4"), photo.clone()]), "gallery count-3");
+        assert_eq!(layout(&vec![photo.clone(); 4]), "gallery count-4");
+        assert_eq!(layout(&vec![photo.clone(); 5]), "");
+        assert_eq!(layout(&[photo, attachment("https://x/c.ogg")]), "");
     }
 }

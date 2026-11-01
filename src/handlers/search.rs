@@ -104,12 +104,14 @@ pub async fn search_page(
             tracing::error!("failed to search users: {}", err);
             Vec::new()
         });
-        communities = community::list(&pool, Some(search.trim_start_matches(['@', '!'])))
-            .await
-            .unwrap_or_else(|err| {
-                tracing::error!("failed to search communities: {}", err);
-                Vec::new()
-            });
+        if crate::settings::services().content_aggregator {
+            communities = community::list(&pool, Some(search.trim_start_matches(['@', '!'])))
+                .await
+                .unwrap_or_else(|err| {
+                    tracing::error!("failed to search communities: {}", err);
+                    Vec::new()
+                });
+        }
     }
     let own_handle = match (&layout.viewer, &state.federation) {
         (Some(viewer), Some(federation)) if viewer.federation_enabled => {
@@ -151,7 +153,11 @@ pub async fn suggest(State(state): State<AppState>, Query(query): Query<HashMap<
         return empty();
     }
     let users = user::search(pool, search, SUGGEST_SIZE).await;
-    let communities = community::search_limited(pool, Some(search.trim_start_matches(['@', '!'])), SUGGEST_SIZE).await;
+    let communities = if crate::settings::services().content_aggregator {
+        community::search_limited(pool, Some(search.trim_start_matches(['@', '!'])), SUGGEST_SIZE).await
+    } else {
+        Ok(Vec::new())
+    };
     let (users, communities) = match (users, communities) {
         (Ok(users), Ok(communities)) => (users, communities),
         (Err(err), _) | (_, Err(err)) => {
@@ -274,7 +280,9 @@ async fn local_page(pool: &sqlx::PgPool, name: &str) -> Result<Found, String> {
     if let Some(found) = user::find_by_username(pool, name).await.map_err(failed)? {
         return Ok(Found::Local(format!("/user/{}", found.username)));
     }
-    if let Some(found) = community::find_by_slug(pool, name).await.map_err(failed)? {
+    if crate::settings::services().content_aggregator
+        && let Some(found) = community::find_by_slug(pool, name).await.map_err(failed)?
+    {
         return Ok(Found::Local(format!("/community/{}", found.slug)));
     }
     Err(format!("Nobody is called {name} here."))

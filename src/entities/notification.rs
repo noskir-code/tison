@@ -83,10 +83,22 @@ pub enum Kind {
     JoinRequest,
     /// A moderator accepted the user in a private community.
     JoinApproved,
+    /// Someone is going to the user's event.
+    EventJoin,
+    /// Someone asked to come to the user's event (it needs approval).
+    EventRequest,
+    /// The organizer accepted the user at their event.
+    EventAccepted,
+    /// An event the user goes to was cancelled.
+    EventCancelled,
+    /// An event the user goes to starts within a day.
+    EventTomorrow,
+    /// An event the user goes to starts within the hour.
+    EventSoon,
 }
 
 impl Kind {
-    const ALL: [Self; 11] = [
+    const ALL: [Self; 17] = [
         Self::Like,
         Self::Comment,
         Self::Reply,
@@ -98,6 +110,12 @@ impl Kind {
         Self::FriendAccepted,
         Self::JoinRequest,
         Self::JoinApproved,
+        Self::EventJoin,
+        Self::EventRequest,
+        Self::EventAccepted,
+        Self::EventCancelled,
+        Self::EventTomorrow,
+        Self::EventSoon,
     ];
 
     /// Stored in the database.
@@ -114,6 +132,12 @@ impl Kind {
             Self::FriendAccepted => "friend_accepted",
             Self::JoinRequest => "join_request",
             Self::JoinApproved => "join_approved",
+            Self::EventJoin => "event_join",
+            Self::EventRequest => "event_request",
+            Self::EventAccepted => "event_accepted",
+            Self::EventCancelled => "event_cancelled",
+            Self::EventTomorrow => "event_tomorrow",
+            Self::EventSoon => "event_soon",
         }
     }
 
@@ -135,6 +159,12 @@ impl Kind {
             Self::FriendAccepted => "accepted your friend request",
             Self::JoinRequest => "asked to join",
             Self::JoinApproved => "accepted you in",
+            Self::EventJoin => "is going to your event",
+            Self::EventRequest => "asked to come to your event",
+            Self::EventAccepted => "accepted you at the event",
+            Self::EventCancelled => "cancelled the event",
+            Self::EventTomorrow => "· reminder: the event starts within a day",
+            Self::EventSoon => "· reminder: the event starts within the hour",
         }
     }
 
@@ -574,6 +604,100 @@ pub async fn join_approved(pool: &PgPool, community_id: i64, user_id: i32, moder
     Ok(())
 }
 
+/// Someone joined (`pending`: asked to join) the event `post_id` of
+/// `organizer_id`: a user here, or an account of another server.
+pub async fn event_joined(
+    pool: &PgPool,
+    organizer_id: i32,
+    post_id: i64,
+    user_id: Option<i32>,
+    remote_actor_id: Option<i64>,
+    pending: bool,
+) -> Result<(), sqlx::Error> {
+    if user_id == Some(organizer_id) {
+        return Ok(());
+    }
+    sqlx::query(signalled!(
+        "added",
+        "INSERT INTO notifications (user_id, kind, actor_user_id, remote_actor_id, post_id) VALUES ($1, $2, $3, $4, $5)"
+    ))
+    .bind(organizer_id)
+    .bind(if pending { Kind::EventRequest } else { Kind::EventJoin }.as_str())
+    .bind(user_id)
+    .bind(remote_actor_id)
+    .bind(post_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// The organizer accepted `user_id` at their event.
+pub async fn event_accepted(pool: &PgPool, user_id: i32, organizer_id: Option<i32>, remote_organizer_id: Option<i64>, post_id: i64) -> Result<(), sqlx::Error> {
+    sqlx::query(signalled!(
+        "added",
+        "INSERT INTO notifications (user_id, kind, actor_user_id, remote_actor_id, post_id) VALUES ($1, $2, $3, $4, $5)"
+    ))
+    .bind(user_id)
+    .bind(Kind::EventAccepted.as_str())
+    .bind(organizer_id)
+    .bind(remote_organizer_id)
+    .bind(post_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// The event's participants here hear it was cancelled.
+pub async fn event_cancelled(pool: &PgPool, participant_ids: &[i32], organizer_id: i32, post_id: i64) -> Result<(), sqlx::Error> {
+    sqlx::query(signalled!(
+        "added",
+        "INSERT INTO notifications (user_id, kind, actor_user_id, post_id)
+         SELECT participant, $1, $2, $3 FROM UNNEST($4::integer[]) AS participant WHERE participant <> $2"
+    ))
+    .bind(Kind::EventCancelled.as_str())
+    .bind(organizer_id)
+    .bind(post_id)
+    .bind(participant_ids)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Reminds the participants here of the events they go to: within a day
+/// of their start, then within the hour (once each, see
+/// `event::REMINDERS_TABLE`). The organizer is the notification's actor.
+/// Returns how many were sent.
+pub async fn event_reminders(pool: &PgPool) -> Result<usize, sqlx::Error> {
+    // Like `signalled!`, which can't hold these data-changing steps.
+    let sent = sqlx::query(
+        "WITH due AS (
+             SELECT ep.post_id, ep.user_id, p.user_id AS organizer, p.remote_actor_id,
+                    CASE WHEN ev.starts_at <= NOW() + INTERVAL '1 hour' THEN 'event_soon' ELSE 'event_tomorrow' END AS kind
+             FROM event_participants ep
+             JOIN events ev ON ev.post_id = ep.post_id
+             JOIN posts p ON p.id = ep.post_id
+             WHERE ep.user_id IS NOT NULL AND ep.role = 'going' AND ev.status <> 'cancelled'
+               AND ev.starts_at > NOW() AND ev.starts_at <= NOW() + INTERVAL '24 hours'
+         ),
+         fresh AS (
+             INSERT INTO event_reminders (post_id, user_id, kind)
+             SELECT post_id, user_id, kind FROM due
+             ON CONFLICT DO NOTHING
+             RETURNING post_id, user_id, kind
+         ),
+         added AS (
+             INSERT INTO notifications (user_id, kind, actor_user_id, remote_actor_id, post_id)
+             SELECT f.user_id, f.kind, d.organizer, d.remote_actor_id, f.post_id
+             FROM fresh f JOIN due d ON d.post_id = f.post_id AND d.user_id = f.user_id AND d.kind = f.kind
+             RETURNING user_id, id
+         )
+         SELECT pg_notify('bonfire_notifications', user_id::text || ':added:' || id::text) FROM added",
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(sent.len())
+}
+
 /// `follower_id` followed `user_id`.
 pub async fn user_followed(pool: &PgPool, user_id: i32, follower_id: i32) -> Result<(), sqlx::Error> {
     sqlx::query(signalled!(
@@ -691,6 +815,19 @@ macro_rules! not_muted {
     };
 }
 
+/// Hides the notifications of the services turned off, see `service_on!`:
+/// those about communities, and those about friends.
+macro_rules! service_shown {
+    () => {
+        concat!(
+            "(", crate::entities::service_on!(aggregator), " OR (n.community_id IS NULL
+                AND n.kind NOT IN ('join_request', 'join_approved')
+                AND NOT EXISTS (SELECT 1 FROM posts sp WHERE sp.id = n.post_id AND sp.community_id IS NOT NULL)))
+             AND (", crate::entities::service_on!(dfrn), " OR n.kind NOT IN ('friend_request', 'friend_accepted'))"
+        )
+    };
+}
+
 macro_rules! notification_select {
     () => {
         concat!(
@@ -698,7 +835,7 @@ macro_rules! notification_select {
                     n.post_id, n.comment_id,
                     a.id AS remote_id, a.actor_id AS remote_url, a.username AS remote_username,
                     a.icon_url AS remote_icon, cm.slug AS community_slug, cm.name AS community_name,
-                    LEFT(p.body, $2) AS post_excerpt, LENGTH(p.body) > $2 AS post_truncated,
+                    COALESCE(p.title, LEFT(p.body, $2)) AS post_excerpt, p.title IS NULL AND LENGTH(p.body) > $2 AS post_truncated,
                     LEFT(c.body, $2) AS comment_excerpt, ",
             user_columns!("u."),
             " FROM notifications n
@@ -709,6 +846,8 @@ macro_rules! notification_select {
               LEFT JOIN communities cm ON cm.id = n.community_id
              WHERE n.user_id = $1 AND ",
             not_muted!(),
+            " AND ",
+            service_shown!(),
             "
                AND ($4::bigint IS NULL OR n.id = $4)
                AND ($5::bigint IS NULL OR n.id < $5)
@@ -758,7 +897,9 @@ pub async fn find(pool: &PgPool, user_id: i32, id: i64) -> Result<Option<Notific
 pub async fn unread_count(pool: &PgPool, user_id: i32) -> Result<i64, sqlx::Error> {
     sqlx::query_scalar(concat!(
         "SELECT COUNT(*) FROM notifications n WHERE n.user_id = $1 AND n.read_at IS NULL AND ",
-        not_muted!()
+        not_muted!(),
+        " AND ",
+        service_shown!()
     ))
         .bind(user_id)
         .fetch_one(pool)

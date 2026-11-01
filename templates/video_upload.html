@@ -1,0 +1,35 @@
+{% extends "base.html" %} {% import "macros/upload.html" as upload_ui %} {% block content %}
+<section class="box content profile-edit media-form">
+    <h1>Upload a video</h1>
+    {% if let Some(message) = error %}
+    <p class="error">{{ message }}</p>
+    {% endif %}
+    <form action="/videos/upload" method="post" enctype="multipart/form-data" data-upload-progress>
+        <span class="field-label">Video</span>
+        {% call upload_ui::drop_zone("video-file", "video", "video/*", "Choose a video", "or drop it here") %}{% endcall %}
+        <p class="field-help">Up to {{ max_mb }} MB, in any format: it's converted for every browser in every quality from its own size down to 144p. Its location and camera details are removed.</p>
+
+        <label for="video-thumbnail">Thumbnail (optional)</label>
+        <input id="video-thumbnail" type="file" name="thumbnail" accept="image/jpeg,image/png,image/gif,image/webp" data-thumbnail-input />
+        <div class="thumbnail-preview" hidden><img alt="The chosen thumbnail" data-thumbnail-preview /></div>
+        <p class="field-help">A picture shown before the video plays and in lists, cropped to 1280×720 (16:9) from its middle. Without one, a frame of the video is used.</p>
+
+        <label for="video-title">Title</label>
+        <input id="video-title" type="text" name="title" maxlength="{{ title_max_chars }}" required />
+
+        <label for="video-description">Description</label>
+        <textarea id="video-description" name="description" rows="5" maxlength="{{ description_max_chars }}"></textarea>
+
+        <label for="video-visibility">Who can see it</label>
+        <select id="video-visibility" name="visibility">
+            {% for visibility in visibilities %}
+            <option value="{{ visibility.as_str() }}">{{ visibility.label() }}</option>
+            {% endfor %}
+        </select>
+
+        <label class="checkbox-line"><input type="checkbox" name="sensitive" value="on" /> Sensitive: blur it until clicked</label>
+
+        {% call upload_ui::upload_button("Upload the video") %}{% endcall %}
+    </form>
+</section>
+{% endblock %}

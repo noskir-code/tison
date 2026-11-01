@@ -4,7 +4,15 @@
 {% endif %}{% endblock %}
 {% block content %}
 <div class="flex center vertical full-width posts">
+    {% if post.is_event() %}
+    {% call posts_ui::event_full(post, layout.viewer.is_some(), return_to, can_moderate) %}{% endcall %}
+    {% else if post.is_video() || post.is_live() || post.is_episode() %}
+    {% call posts_ui::media_post(post, layout.viewer.is_some(), return_to, can_moderate, true) %}{% endcall %}
+    {% else if post.is_article() %}
+    {% call posts_ui::article_full(post, layout.viewer.is_some(), return_to, can_moderate) %}{% endcall %}
+    {% else %}
     {% call posts_ui::post_card(post, layout.viewer.is_some(), return_to, false, can_moderate) %}{% endcall %}
+    {% endif %}
 
     <section class="box content comments" id="comments">
         <h2>Comments</h2>

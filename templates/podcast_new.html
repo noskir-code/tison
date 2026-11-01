@@ -1,0 +1,33 @@
+{% extends "base.html" %} {% block content %}
+<section class="box content profile-edit media-form">
+    <h1>New podcast</h1>
+    {% if let Some(message) = error %}
+    <p class="error">{{ message }}</p>
+    {% endif %}
+    <form action="/podcasts" method="post" enctype="multipart/form-data">
+        <label for="podcast-title">Title</label>
+        <input id="podcast-title" type="text" name="title" maxlength="{{ title_max_chars }}" required />
+
+        <label for="podcast-description">Description</label>
+        <textarea id="podcast-description" name="description" rows="4" maxlength="{{ description_max_chars }}"></textarea>
+
+        <label for="podcast-cover">Cover</label>
+        <input id="podcast-cover" type="file" name="cover" accept="image/jpeg,image/png" />
+        <p class="field-help">Square, JPEG or PNG, at least 1400×1400 pixels for Apple Podcasts.</p>
+
+        <label for="podcast-category">Category</label>
+        <select id="podcast-category" name="category">
+            {% for category in categories %}
+            <option value="{{ category }}"{% if *category == "Society & Culture" %} selected{% endif %}>{{ category }}</option>
+            {% endfor %}
+        </select>
+
+        <label for="podcast-language">Language</label>
+        <input id="podcast-language" type="text" name="language" value="en" maxlength="8" pattern="[A-Za-z-]{2,8}" />
+        <p class="field-help">A code like en, fr or pt-BR.</p>
+
+        <label class="checkbox-line"><input type="checkbox" name="explicit" value="on" /> Explicit content</label>
+        <button type="submit" class="button">Create podcast</button>
+    </form>
+</section>
+{% endblock %}

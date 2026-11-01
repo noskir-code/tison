@@ -1,0 +1,38 @@
+{% extends "base.html" %} {% import "macros/post.html" as posts_ui %}
+{% block content %}
+<section class="box content media-page">
+    <div class="media-page-head">
+        <h1>Podcasts</h1>
+        {% if layout.viewer.is_some() %}
+        <div class="media-page-actions"><a href="/podcasts/new" class="button">New podcast</a></div>
+        {% endif %}
+    </div>
+    <ul class="podcast-grid">
+        {% for podcast in podcasts %}
+        <li>
+            <a href="/podcasts/{{ podcast.id }}" class="podcast-tile">
+                {% if let Some(cover) = podcast.cover_url %}
+                <img src="{{ cover }}" alt="" class="podcast-cover" loading="lazy" />
+                {% else %}
+                <span class="podcast-cover placeholder" aria-hidden="true">🎙</span>
+                {% endif %}
+                <strong>{{ podcast.title }}</strong>
+                <span class="post-meta">{{ podcast.author_name }} · {{ podcast.episode_count }} episode{% if podcast.episode_count != 1 %}s{% endif %}</span>
+            </a>
+        </li>
+        {% else %}
+        <li class="empty">No podcast yet.{% if layout.viewer.is_some() %} Start the first one.{% endif %}</li>
+        {% endfor %}
+    </ul>
+</section>
+{% if !episodes.is_empty() %}
+<section class="box content media-page">
+    <h2>Newest episodes</h2>
+</section>
+<div class="flex center vertical full-width posts">
+    {% for post in episodes %}
+    {% call posts_ui::post_card(post, layout.viewer.is_some(), "/podcasts", true, false) %}{% endcall %}
+    {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

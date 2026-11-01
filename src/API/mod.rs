@@ -186,6 +186,17 @@ impl Federation {
         format!("{}/follows/{actor_id}/{}", self.actor_url(public_id), sqlx::types::chrono::Utc::now().timestamp_micros())
     }
 
+    /// Id of a Join of the event `post_id` sent by a local user, see `join_owner`.
+    pub fn join_url(&self, public_id: i64, post_id: i64) -> String {
+        format!("{}/joins/{post_id}/{}", self.actor_url(public_id), sqlx::types::chrono::Utc::now().timestamp_micros())
+    }
+
+    /// Public id of the user who sent the Join `url`, see `join_url`.
+    pub fn join_owner(&self, url: &str) -> Option<i64> {
+        let (public_id, rest) = url.strip_prefix(&self.base_url)?.strip_prefix("/ap/users/")?.split_once('/')?;
+        rest.starts_with("joins/").then(|| public_id.parse().ok()).flatten()
+    }
+
     /// Public id of the local user whose actor address is `url`.
     pub fn local_public_id(&self, url: &str) -> Option<i64> {
         url.strip_prefix(&self.base_url)?

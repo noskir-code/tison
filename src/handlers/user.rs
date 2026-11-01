@@ -12,7 +12,6 @@ use tower_sessions::Session;
 
 use crate::{
     AppState,
-    entities::comment::{self, ProfileComment},
     entities::follow::{self, Counts, Listed},
     entities::friend::{self, Added, State as FriendState},
     entities::notification,
@@ -134,7 +133,12 @@ fn server_error(err: sqlx::Error) -> EditError {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ProfileTab {
     Posts,
-    Comments,
+    /// Like a Pixelfed profile, with `IMAGESHARING` and `IMAGESYSTEM` on.
+    Photos,
+    /// Their blog, like on WriteFreely, with `PUBLISHING` on.
+    Articles,
+    /// Their channel, like on PeerTube, with `VIDEO` on.
+    Videos,
     Friends,
     Followers,
     Following,
@@ -142,9 +146,11 @@ enum ProfileTab {
 }
 
 impl ProfileTab {
-    const ALL: [Self; 6] = [
+    const ALL: [Self; 8] = [
         Self::Posts,
-        Self::Comments,
+        Self::Photos,
+        Self::Articles,
+        Self::Videos,
         Self::Friends,
         Self::Followers,
         Self::Following,
@@ -154,7 +160,9 @@ impl ProfileTab {
     fn slug(self) -> &'static str {
         match self {
             Self::Posts => "posts",
-            Self::Comments => "comments",
+            Self::Photos => "photos",
+            Self::Articles => "articles",
+            Self::Videos => "videos",
             Self::About => "about",
             Self::Friends => "friends",
             Self::Followers => "followers",
@@ -165,7 +173,9 @@ impl ProfileTab {
     fn label(self) -> &'static str {
         match self {
             Self::Posts => "Posts",
-            Self::Comments => "Comments",
+            Self::Photos => "Photos",
+            Self::Articles => "Articles",
+            Self::Videos => "Videos",
             Self::About => "About me",
             Self::Friends => "Friends",
             Self::Followers => "Followers",
@@ -173,10 +183,31 @@ impl ProfileTab {
         }
     }
 
-    /// Unknown or missing values open the posts.
+    /// Friends only with `DFRN` on in `configs/services.conf`, photos with
+    /// `IMAGESHARING` and `IMAGESYSTEM` (a Pixelfed profile), articles with
+    /// `PUBLISHING`.
+    fn shown(self) -> bool {
+        let services = crate::settings::services();
+        match self {
+            Self::Friends => services.dfrn,
+            Self::Photos => services.image_sharing && services.image_system,
+            Self::Articles => services.publishing,
+            Self::Videos => services.video,
+            _ => true,
+        }
+    }
+
+    /// In the tab bar. The followers and following lists open from their
+    /// counts under the name instead.
+    fn in_bar(self) -> bool {
+        self.shown() && !matches!(self, Self::Followers | Self::Following)
+    }
+
+    /// Unknown, hidden or missing values open the posts.
     fn from_query(value: Option<&String>) -> Self {
         value
             .and_then(|slug| Self::ALL.into_iter().find(|tab| tab.slug() == slug))
+            .filter(|tab| tab.shown())
             .unwrap_or(Self::Posts)
     }
 }
@@ -191,6 +222,7 @@ struct TabLink {
 fn tab_links(username: &str, current: ProfileTab) -> Vec<TabLink> {
     ProfileTab::ALL
         .into_iter()
+        .filter(|tab| tab.in_bar())
         .map(|tab| TabLink {
             label: tab.label(),
             url: match tab {
@@ -244,8 +276,12 @@ struct UserTemplate {
     about: Vec<AboutRow>,
     /// Only loaded for the posts tab.
     posts: Vec<Post>,
-    /// Only loaded for the comments tab.
-    comments: Vec<ProfileComment>,
+    /// Only loaded for the photos tab.
+    photos: Vec<Post>,
+    /// Only loaded for the articles tab.
+    articles: Vec<Post>,
+    /// Only loaded for the videos tab.
+    videos: Vec<Post>,
     /// Followers or followed accounts, for those tabs.
     accounts: Vec<Listed>,
     counts: Counts,
@@ -323,12 +359,34 @@ pub async fn user_page(
     } else {
         Vec::new()
     };
-    let comments = if tab == ProfileTab::Comments {
+    let photos = if tab == ProfileTab::Photos {
         let viewer_id = layout.viewer.as_ref().map(|viewer| viewer.id);
-        comment::by_author(pool, user.id, viewer_id)
+        post::photos_by_author(pool, user.id, viewer_id)
             .await
             .unwrap_or_else(|err| {
-                tracing::error!("failed to load comments of {}: {}", user.username, err);
+                tracing::error!("failed to load photos of {}: {}", user.username, err);
+                Vec::new()
+            })
+    } else {
+        Vec::new()
+    };
+    let articles = if tab == ProfileTab::Articles {
+        let viewer_id = layout.viewer.as_ref().map(|viewer| viewer.id);
+        post::articles_by_author(pool, user.id, viewer_id)
+            .await
+            .unwrap_or_else(|err| {
+                tracing::error!("failed to load articles of {}: {}", user.username, err);
+                Vec::new()
+            })
+    } else {
+        Vec::new()
+    };
+    let videos = if tab == ProfileTab::Videos {
+        let viewer_id = layout.viewer.as_ref().map(|viewer| viewer.id);
+        post::media_list(pool, viewer_id, post::MediaList::VideosBy(user.id))
+            .await
+            .unwrap_or_else(|err| {
+                tracing::error!("failed to load videos of {}: {}", user.username, err);
                 Vec::new()
             })
     } else {
@@ -351,8 +409,9 @@ pub async fn user_page(
         Some(viewer) if !is_own_profile => Some(follow::is_following(pool, viewer.id, user.id).await.unwrap_or(false)),
         _ => None,
     };
+    let dfrn = crate::settings::services().dfrn;
     let friendship = match &layout.viewer {
-        Some(viewer) if !is_own_profile => Some(friend::state(pool, viewer.id, user.id).await.unwrap_or(FriendState::None)),
+        Some(viewer) if !is_own_profile && dfrn => Some(friend::state(pool, viewer.id, user.id).await.unwrap_or(FriendState::None)),
         _ => None,
     };
     let friend_count = friend::count(pool, user.id).await.unwrap_or_else(|err| {
@@ -396,7 +455,9 @@ pub async fn user_page(
         tabs: tab_links(&user.username, tab),
         about: about_rows(&user, is_own_profile),
         posts,
-        comments,
+        photos,
+        articles,
+        videos,
         return_to: format!("/user/{}", user.username),
         user,
         is_own_profile,

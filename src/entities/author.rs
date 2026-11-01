@@ -126,6 +126,14 @@ impl Author {
         }
     }
 
+    /// The server of a remote account, like `peertube.example`.
+    pub fn host(&self) -> String {
+        match self {
+            Self::Local(_) => "Tison".to_string(),
+            Self::Remote(remote) => remote.host.clone(),
+        }
+    }
+
     /// `@alice` or `@alice@misskey.io`.
     pub fn handle(&self) -> String {
         format!("@{}", self.mention())

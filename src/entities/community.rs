@@ -233,9 +233,10 @@ impl Community {
         self.status == Status::Banned
     }
 
-    /// Public and not banned: what other Fediverse servers can see.
+    /// Public and not banned, with the communities on (`CONTENT-AGGREGATOR`
+    /// in `configs/services.conf`): what other Fediverse servers can see.
     pub fn is_federated(&self) -> bool {
-        self.is_public() && !self.is_banned()
+        crate::settings::services().content_aggregator && self.is_public() && !self.is_banned()
     }
 
     /// First letter of the name, shown when there is no photo.

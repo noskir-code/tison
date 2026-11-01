@@ -13,6 +13,11 @@ use crate::entities::{
 };
 
 pub const BODY_MAX_CHARS: usize = 10_000;
+/// Articles, like on WriteFreely: a title and a longer Markdown text.
+pub const TITLE_MAX_CHARS: usize = 200;
+pub const ARTICLE_MAX_CHARS: usize = 100_000;
+/// Characters of an article shown in lists.
+const ARTICLE_EXCERPT_CHARS: usize = 280;
 /// Posts shown at once on a page, newest first.
 pub const PAGE_SIZE: i64 = 50;
 
@@ -36,6 +41,25 @@ pub const TABLE: Table = Table {
         Column::new("community_id", "BIGINT")
             .nullable()
             .references("communities(id) ON DELETE CASCADE"),
+        // Set for an article (WriteFreely's Article), its body is Markdown
+        // then, see `crate::markdown`. Videos, episodes and live streams
+        // have one too.
+        Column::new("title", "TEXT").nullable(),
+        // What it is, see `Kind`. Articles are `post` with a title.
+        Column::new("kind", "TEXT").default("'post'"),
+        // Videos and episodes: `processing` (only their author sees them,
+        // see `av::jobs`), `ready` or `failed`. Live streams: `live` or
+        // `ended`. NULL for the others.
+        Column::new("media_status", "TEXT").nullable(),
+        // The uploaded file waiting for ffmpeg, outside `public`.
+        Column::new("media_source", "TEXT").nullable(),
+        Column::new("duration_seconds", "INTEGER").nullable(),
+        // The picture of a video, from ffmpeg or its server.
+        Column::new("poster_url", "TEXT").nullable(),
+        // An episode of this podcast, deleted with it.
+        Column::new("podcast_id", "BIGINT")
+            .nullable()
+            .references("podcasts(id) ON DELETE CASCADE"),
         Column::new("body", "TEXT"),
         Column::new("visibility", "TEXT").default("'public'"),
         // Its media are hidden until clicked, like on Mastodon.
@@ -83,6 +107,48 @@ pub const SHARES_TABLE: Table = Table {
         Index::new("post_shares_user_created_at_idx", "user_id, created_at DESC"),
     ],
 };
+
+/// What a post is: written, or a video, podcast episode or live stream
+/// (see `crate::av`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Kind {
+    Post,
+    /// Like PeerTube's.
+    Video,
+    /// Like Funkwhale's and Castopod's, in a podcast or from another server.
+    Episode,
+    /// Like Owncast's: live from OBS, then its replay (a video) if kept.
+    Live,
+    /// Like Mobilizon's, see `entities::event`.
+    Event,
+}
+
+impl Kind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Post => "post",
+            Self::Video => "video",
+            Self::Episode => "episode",
+            Self::Live => "live",
+            Self::Event => "event",
+        }
+    }
+
+    fn parse(value: &str) -> Self {
+        [Self::Video, Self::Episode, Self::Live, Self::Event]
+            .into_iter()
+            .find(|kind| kind.as_str() == value)
+            .unwrap_or(Self::Post)
+    }
+}
+
+/// The podcast of an episode, as shown on it.
+#[derive(Clone, Debug)]
+pub struct PostPodcast {
+    pub id: i64,
+    pub title: String,
+    pub cover_url: Option<String>,
+}
 
 /// Who can see a post. "Friends" and "Following" will come with relationships.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -153,6 +219,18 @@ pub struct Sharer {
 /// A post with its author and reactions, as seen by one viewer.
 pub struct Post {
     pub id: i64,
+    pub kind: Kind,
+    /// Articles, videos, episodes and live streams have one.
+    pub title: Option<String>,
+    /// See the `media_status` column.
+    pub media_status: Option<String>,
+    pub duration_seconds: Option<i32>,
+    pub poster_url: Option<String>,
+    pub podcast: Option<PostPodcast>,
+    /// The HLS of a stream going on, see `av::live`.
+    pub live_playlist: Option<String>,
+    /// When and where, for an event.
+    pub event: Option<crate::entities::event::EventDetails>,
     pub body: String,
     pub visibility: Visibility,
     pub sensitive: bool,
@@ -175,6 +253,8 @@ pub struct Post {
     pub shared_by: Option<Sharer>,
     /// Media of posts received from other servers.
     pub attachments: Vec<Attachment>,
+    /// The qualities of a video made here, best first (see `av::LEVELS`).
+    pub video_files: Vec<crate::entities::video::VideoFile>,
     /// The card of its first link, when it has no media.
     pub preview: Option<LinkPreview>,
 }
@@ -184,6 +264,21 @@ impl Post {
         let visibility: String = row.try_get("visibility")?;
         Ok(Self {
             id: row.try_get("post_id")?,
+            kind: Kind::parse(&row.try_get::<String, _>("kind")?),
+            title: row.try_get("title")?,
+            media_status: row.try_get("media_status")?,
+            duration_seconds: row.try_get("duration_seconds")?,
+            poster_url: row.try_get("poster_url")?,
+            live_playlist: row.try_get("live_playlist")?,
+            event: crate::entities::event::EventDetails::from_row(row)?,
+            podcast: match row.try_get::<Option<i64>, _>("podcast_id")? {
+                Some(id) => Some(PostPodcast {
+                    id,
+                    title: row.try_get::<Option<String>, _>("podcast_title")?.unwrap_or_default(),
+                    cover_url: row.try_get("podcast_cover")?,
+                }),
+                None => None,
+            },
             body: row.try_get("body")?,
             // An unknown value is treated as the most restrictive one.
             visibility: Visibility::parse(&visibility).unwrap_or(Visibility::Private),
@@ -214,12 +309,140 @@ impl Post {
                 _ => None,
             },
             attachments: Vec::new(),
+            video_files: Vec::new(),
             preview: None,
         })
     }
 
     pub fn is_private(&self) -> bool {
         self.visibility == Visibility::Private
+    }
+
+    /// Only pictures: shown like on Pixelfed with `IMAGESHARING` and
+    /// `IMAGESYSTEM` on in `configs/services.conf`, see `macros/post.html`.
+    pub fn is_photo_post(&self) -> bool {
+        let services = crate::settings::services();
+        services.image_sharing
+            && services.image_system
+            && !self.attachments.is_empty()
+            && self.attachments.iter().all(|attachment| attachment.is_image())
+    }
+
+    /// The shape of the photo frame, from the first photo: between 4:5
+    /// (portrait) and 1.91:1 (landscape) like Pixelfed and Instagram, square
+    /// when its size is unknown. A CSS `aspect-ratio`.
+    pub fn photo_ratio(&self) -> String {
+        let ratio = self
+            .attachments
+            .first()
+            .and_then(|photo| Some(photo.width? as f64 / photo.height? as f64))
+            .filter(|ratio| ratio.is_finite() && *ratio > 0.0)
+            .unwrap_or(1.0)
+            .clamp(0.8, 1.91);
+        format!("{ratio:.4}")
+    }
+
+    /// Written as an article, here or on WriteFreely: its page shows it
+    /// whole, lists show its title and start.
+    pub fn is_article(&self) -> bool {
+        self.kind == Kind::Post && self.title.is_some()
+    }
+
+    pub fn is_video(&self) -> bool {
+        self.kind == Kind::Video
+    }
+
+    pub fn is_episode(&self) -> bool {
+        self.kind == Kind::Episode
+    }
+
+    pub fn is_live(&self) -> bool {
+        self.kind == Kind::Live
+    }
+
+    pub fn is_event(&self) -> bool {
+        self.kind == Kind::Event && self.event.is_some()
+    }
+
+    /// Being live now.
+    pub fn is_on_air(&self) -> bool {
+        self.is_live() && self.media_status.as_deref() == Some("live")
+    }
+
+    /// Waiting for ffmpeg, or failed: only its author sees it.
+    pub fn is_processing(&self) -> bool {
+        self.media_status.as_deref() == Some("processing")
+    }
+
+    pub fn has_failed(&self) -> bool {
+        self.media_status.as_deref() == Some("failed")
+    }
+
+    /// The file of a video or episode, through the media proxy when it's
+    /// from another server.
+    pub fn media_url(&self) -> Option<String> {
+        self.attachments
+            .iter()
+            .find(|attachment| attachment.is_video() || attachment.is_audio())
+            .map(Attachment::proxy_url)
+    }
+
+    /// The picture of a video, or the cover of an episode's podcast.
+    pub fn poster(&self) -> Option<String> {
+        let url = self
+            .poster_url
+            .clone()
+            .or_else(|| self.podcast.as_ref().and_then(|podcast| podcast.cover_url.clone()))?;
+        Some(if media::is_local(&url) { url } else { media::proxy_url(&url) })
+    }
+
+    pub fn duration_label(&self) -> Option<String> {
+        self.duration_seconds.filter(|seconds| *seconds > 0).map(crate::av::duration_label)
+    }
+
+    pub fn title_text(&self) -> &str {
+        self.title.as_deref().unwrap_or_default()
+    }
+
+    /// The article as HTML, pictures of other servers through the media
+    /// proxy.
+    pub fn article_html(&self) -> String {
+        crate::markdown::to_html(&self.body, &|address| match media::is_local(address) {
+            true => address.to_string(),
+            false => media::proxy_url(address),
+        })
+    }
+
+    /// The start of the article, as text, for lists.
+    pub fn article_excerpt(&self) -> String {
+        let text = crate::markdown::to_text(&self.body);
+        match text.char_indices().nth(ARTICLE_EXCERPT_CHARS) {
+            Some((end, _)) => format!("{}…", text[..end].trim_end()),
+            None => text,
+        }
+    }
+
+    /// The picture of its preview card in feeds, like Mastodon's: its first
+    /// picture, else its first attached one.
+    pub fn article_picture(&self) -> Option<String> {
+        match crate::markdown::first_picture(&self.body) {
+            Some(address) if media::is_local(&address) => Some(address),
+            Some(address) => Some(media::proxy_url(&address)),
+            None => self.attachments.iter().find(|attachment| attachment.is_image()).map(Attachment::proxy_url),
+        }
+    }
+
+    /// Where it was published, on its preview card: this site, or the
+    /// server of a remote author (a WriteFreely blog...).
+    pub fn article_site(&self) -> String {
+        match &self.ap_url {
+            Some(url) => crate::entities::author::host_of(url).trim_start_matches("www.").to_string(),
+            None => "Tison".to_string(),
+        }
+    }
+
+    pub fn reading_minutes(&self) -> usize {
+        crate::markdown::reading_minutes(&self.body)
     }
 
     /// The text as HTML, with clickable addresses, see `linkify`.
@@ -272,7 +495,12 @@ macro_rules! like_count {
 macro_rules! post_select {
     ($shared_by:literal, $shared_by_url:literal) => {
         concat!(
-            "SELECT p.id AS post_id, p.body, p.visibility, p.sensitive, p.created_at AS posted_at,
+            "SELECT p.id AS post_id, p.kind, p.title, p.media_status, p.duration_seconds, p.poster_url,
+                    p.podcast_id, pod.title AS podcast_title, pod.cover_url AS podcast_cover,
+                    CASE WHEN p.kind = 'live' AND p.media_status = 'live' THEN p.media_source END AS live_playlist, ",
+            crate::entities::event::event_columns!(),
+            ",
+                    p.body, p.visibility, p.sensitive, p.created_at AS posted_at,
                     p.edited_at, p.ap_id, p.ap_url,
                     COALESCE(p.user_id = $1, FALSE) AS is_own, ",
             like_count!(),
@@ -294,7 +522,9 @@ macro_rules! post_select {
             " FROM posts p
               LEFT JOIN users u ON u.id = p.user_id
               LEFT JOIN federation_actors ra ON ra.id = p.remote_actor_id
-              LEFT JOIN communities cm ON cm.id = p.community_id"
+              LEFT JOIN communities cm ON cm.id = p.community_id
+              LEFT JOIN podcasts pod ON pod.id = p.podcast_id
+              LEFT JOIN events ev ON ev.post_id = p.id"
         )
     };
 }
@@ -307,7 +537,10 @@ macro_rules! post_select {
 /// server to someone not following their author.
 macro_rules! post_visible {
     () => {
+        concat!(
         "((NOT EXISTS (SELECT 1 FROM users su WHERE su.id = p.user_id AND su.suspended_at IS NOT NULL))
+          AND (p.media_status IS NULL OR p.media_status IN ('ready', 'live', 'ended') OR COALESCE(p.user_id = $1, FALSE))
+          AND (p.community_id IS NULL OR ", crate::entities::service_on!(aggregator), ")
           AND (NOT EXISTS (SELECT 1 FROM federation_actors la JOIN instance_policies lp ON lp.domain = la.host
                 WHERE la.id = p.remote_actor_id AND lp.policy = 'limited'
                   AND NOT EXISTS (SELECT 1 FROM federation_following lf
@@ -317,7 +550,7 @@ macro_rules! post_visible {
                 SELECT 1 FROM community_members mm WHERE mm.community_id = cm.id AND mm.user_id = $1)))))
           OR (p.visibility = 'followers' AND p.remote_actor_id IS NOT NULL AND EXISTS (
                 SELECT 1 FROM federation_following ff
-                WHERE ff.actor_id = p.remote_actor_id AND ff.user_id = $1 AND ff.accepted))))"
+                WHERE ff.actor_id = p.remote_actor_id AND ff.user_id = $1 AND ff.accepted))))")
     };
 }
 pub(crate) use post_visible;
@@ -372,11 +605,329 @@ pub async fn create(
     .await
 }
 
+/// An article, see `crate::markdown`.
+pub async fn create_article(pool: &PgPool, user_id: i32, title: &str, body: &str, visibility: Visibility) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar("INSERT INTO posts (user_id, title, body, visibility) VALUES ($1, $2, $3, $4) RETURNING id")
+        .bind(user_id)
+        .bind(title)
+        .bind(body)
+        .bind(visibility.as_str())
+        .fetch_one(pool)
+        .await
+}
+
+/// How many articles the profile lists.
+pub const ARTICLES_SHOWN: i64 = 100;
+
+/// Articles of a local user, newest first: their blog, like on WriteFreely.
+pub async fn articles_by_author(pool: &PgPool, author_id: i32, viewer_id: Option<i32>) -> Result<Vec<Post>, sqlx::Error> {
+    let rows = sqlx::query(concat!(
+        post_select!("NULL::text", "NULL::text"),
+        // Written articles: not videos, episodes, live streams or events,
+        // which have a title too.
+        " WHERE p.user_id = $2 AND p.kind = 'post' AND p.title IS NOT NULL AND ",
+        post_visible!(),
+        " ORDER BY p.created_at DESC, p.id DESC
+         LIMIT $3"
+    ))
+    .bind(viewer_id)
+    .bind(author_id)
+    .bind(ARTICLES_SHOWN)
+    .fetch_all(pool)
+    .await?;
+    to_posts(pool, rows).await
+}
+
+/// A post with photos, see `photo`: saved with them, or not at all.
+pub async fn create_with_photos(
+    pool: &PgPool,
+    user_id: i32,
+    body: &str,
+    visibility: Visibility,
+    sensitive: bool,
+    photos: &[media::NewAttachment],
+) -> Result<i64, sqlx::Error> {
+    let post_id: i64 = sqlx::query_scalar(
+        "INSERT INTO posts (user_id, body, visibility, sensitive) VALUES ($1, $2, $3, $4) RETURNING id",
+    )
+    .bind(user_id)
+    .bind(body)
+    .bind(visibility.as_str())
+    .bind(sensitive)
+    .fetch_one(pool)
+    .await?;
+    if let Err(err) = media::save_attachments(pool, media::Owner::Post(post_id), photos).await {
+        sqlx::query("DELETE FROM posts WHERE id = $1").bind(post_id).execute(pool).await?;
+        return Err(err);
+    }
+    Ok(post_id)
+}
+
+/// How many photo posts the profile grid shows.
+pub const PHOTOS_SHOWN: i64 = 60;
+
+/// Posts of a local user with pictures, newest first: their profile grid,
+/// like on Pixelfed.
+pub async fn photos_by_author(pool: &PgPool, author_id: i32, viewer_id: Option<i32>) -> Result<Vec<Post>, sqlx::Error> {
+    let rows = sqlx::query(concat!(
+        post_select!("NULL::text", "NULL::text"),
+        " WHERE p.user_id = $2
+           AND EXISTS (SELECT 1 FROM attachments pa WHERE pa.post_id = p.id AND pa.media_type LIKE 'image/%')
+           AND ",
+        post_visible!(),
+        " ORDER BY p.created_at DESC, p.id DESC
+         LIMIT $3"
+    ))
+    .bind(viewer_id)
+    .bind(author_id)
+    .bind(PHOTOS_SHOWN)
+    .fetch_all(pool)
+    .await?;
+    to_posts(pool, rows).await
+}
+
+/// Lists of the Videos and Podcasts pages and the profile's Videos tab.
+#[derive(Clone, Copy)]
+pub enum MediaList {
+    /// The newest videos, ready to watch.
+    Videos,
+    /// Streams going on.
+    LiveNow,
+    /// A user's videos, those still converting for themselves.
+    VideosBy(i32),
+    /// A podcast's episodes.
+    Episodes(i64),
+    /// The newest episodes, here and from other servers.
+    LatestEpisodes,
+    /// A user's videos and episodes still converting: only for themselves.
+    ConvertingBy(i32),
+}
+
+/// How many posts a media list shows.
+pub const MEDIA_SHOWN: i64 = 60;
+
+/// One of the `MediaList`s, newest first. `$2` is the user or podcast id.
+macro_rules! media_query {
+    ($filter:literal) => {
+        concat!(
+            post_select!("NULL::text", "NULL::text"),
+            " WHERE ",
+            $filter,
+            " AND ",
+            post_visible!(),
+            " ORDER BY p.created_at DESC, p.id DESC LIMIT $3"
+        )
+    };
+}
+
+pub async fn media_list(pool: &PgPool, viewer_id: Option<i32>, list: MediaList) -> Result<Vec<Post>, sqlx::Error> {
+    let (query, id) = match list {
+        MediaList::Videos => (media_query!("p.kind = 'video' AND p.media_status = 'ready' AND $2::bigint IS NULL"), None),
+        MediaList::LiveNow => (media_query!("p.kind = 'live' AND p.media_status = 'live' AND $2::bigint IS NULL"), None),
+        MediaList::VideosBy(user_id) => (media_query!("p.kind = 'video' AND p.user_id = $2"), Some(i64::from(user_id))),
+        MediaList::Episodes(podcast_id) => (media_query!("p.kind = 'episode' AND p.podcast_id = $2"), Some(podcast_id)),
+        MediaList::LatestEpisodes => (media_query!("p.kind = 'episode' AND p.media_status = 'ready' AND $2::bigint IS NULL"), None),
+        MediaList::ConvertingBy(user_id) => (
+            media_query!("p.kind IN ('video', 'episode') AND p.media_status = 'processing' AND p.user_id = $2 AND p.user_id = $1"),
+            Some(i64::from(user_id)),
+        ),
+    };
+    let rows = sqlx::query(query).bind(viewer_id).bind(id).bind(MEDIA_SHOWN).fetch_all(pool).await?;
+    to_posts(pool, rows).await
+}
+
+/// Lists of the Events page.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum EventList {
+    /// Not over yet, the soonest first.
+    Upcoming,
+    /// Over, the latest first.
+    Past,
+    /// The viewer's: organized, going or asked, not over.
+    Mine(i32),
+    /// A community's, not over: the events it organizes.
+    Community(i64),
+    /// The dates of a recurring event, not over.
+    Series(i64),
+}
+
+/// How many events a list shows.
+pub const EVENTS_SHOWN: i64 = 100;
+
+/// Not over: not ended, or started less than 4 hours ago without an end.
+macro_rules! event_not_over {
+    () => {
+        "COALESCE(ev.ends_at, ev.starts_at + INTERVAL '4 hours') >= NOW()"
+    };
+}
+
+pub async fn events(pool: &PgPool, viewer_id: Option<i32>, list: EventList) -> Result<Vec<Post>, sqlx::Error> {
+    let (query, user_id) = match list {
+        EventList::Upcoming => (
+            concat!(
+                post_select!("NULL::text", "NULL::text"),
+                " WHERE p.kind = 'event' AND $2::bigint IS NULL AND ", event_not_over!(), " AND ", post_visible!(),
+                " ORDER BY ev.starts_at, p.id LIMIT $3"
+            ),
+            None,
+        ),
+        EventList::Past => (
+            concat!(
+                post_select!("NULL::text", "NULL::text"),
+                " WHERE p.kind = 'event' AND $2::bigint IS NULL AND NOT ", event_not_over!(), " AND ", post_visible!(),
+                " ORDER BY ev.starts_at DESC, p.id DESC LIMIT $3"
+            ),
+            None,
+        ),
+        EventList::Mine(user_id) => (
+            concat!(
+                post_select!("NULL::text", "NULL::text"),
+                " WHERE p.kind = 'event' AND ", event_not_over!(),
+                " AND (p.user_id = $2 OR EXISTS (SELECT 1 FROM event_participants mp
+                       WHERE mp.post_id = p.id AND mp.user_id = $2 AND mp.role IN ('going', 'pending')))
+                  AND ", post_visible!(),
+                " ORDER BY ev.starts_at, p.id LIMIT $3"
+            ),
+            Some(i64::from(user_id)),
+        ),
+        EventList::Community(community_id) => (
+            concat!(
+                post_select!("NULL::text", "NULL::text"),
+                " WHERE p.kind = 'event' AND p.community_id = $2 AND ", event_not_over!(), " AND ", post_visible!(),
+                " ORDER BY ev.starts_at, p.id LIMIT $3"
+            ),
+            Some(community_id),
+        ),
+        EventList::Series(series_id) => (
+            concat!(
+                post_select!("NULL::text", "NULL::text"),
+                " WHERE p.kind = 'event' AND ev.series_id = $2 AND ", event_not_over!(), " AND ", post_visible!(),
+                " ORDER BY ev.starts_at, p.id LIMIT $3"
+            ),
+            Some(series_id),
+        ),
+    };
+    let rows = sqlx::query(query).bind(viewer_id).bind(user_id).bind(EVENTS_SHOWN).fetch_all(pool).await?;
+    to_posts(pool, rows).await
+}
+
+/// A new event written here, with its details (see `entities::event`).
+pub async fn create_event(
+    pool: &PgPool,
+    user_id: i32,
+    title: &str,
+    body: &str,
+    banner_url: Option<&str>,
+    community_id: Option<i64>,
+    event: &crate::entities::event::NewEvent<'_>,
+) -> Result<i64, sqlx::Error> {
+    let post_id: i64 = sqlx::query_scalar(
+        "INSERT INTO posts (user_id, kind, title, body, visibility, poster_url, community_id)
+         VALUES ($1, 'event', $2, $3, 'public', $4, $5) RETURNING id",
+    )
+    .bind(user_id)
+    .bind(title)
+    .bind(body)
+    .bind(banner_url)
+    .bind(community_id)
+    .fetch_one(pool)
+    .await?;
+    if let Err(err) = crate::entities::event::save(pool, post_id, event).await {
+        sqlx::query("DELETE FROM posts WHERE id = $1").bind(post_id).execute(pool).await?;
+        return Err(err);
+    }
+    Ok(post_id)
+}
+
+/// The organizer's changes of an event, and its banner (`None` keeps it).
+pub async fn update_event(
+    pool: &PgPool,
+    post_id: i64,
+    user_id: i32,
+    title: &str,
+    body: &str,
+    banner_url: Option<&str>,
+    event: &crate::entities::event::NewEvent<'_>,
+) -> Result<bool, sqlx::Error> {
+    let updated = sqlx::query(
+        "UPDATE posts SET title = $3, body = $4, poster_url = COALESCE($5, poster_url), edited_at = NOW(), updated_at = NOW(),
+                link_checked = FALSE
+         WHERE id = $1 AND user_id = $2 AND kind = 'event'",
+    )
+    .bind(post_id)
+    .bind(user_id)
+    .bind(title)
+    .bind(body)
+    .bind(banner_url)
+    .execute(pool)
+    .await?
+    .rows_affected()
+        > 0;
+    if updated {
+        crate::entities::event::save(pool, post_id, event).await?;
+    }
+    Ok(updated)
+}
+
+/// A video or episode uploaded here, waiting for ffmpeg (see `av::jobs`).
+pub struct NewMedia<'a> {
+    pub kind: Kind,
+    pub title: &'a str,
+    pub body: &'a str,
+    pub visibility: Visibility,
+    pub sensitive: bool,
+    pub podcast_id: Option<i64>,
+    /// The uploaded file, outside `public`.
+    pub source: &'a str,
+    /// A thumbnail chosen by the author, else ffmpeg makes one.
+    pub poster_url: Option<&'a str>,
+}
+
+pub async fn create_media(pool: &PgPool, user_id: i32, media: &NewMedia<'_>) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar(
+        "INSERT INTO posts (user_id, kind, title, body, visibility, sensitive, podcast_id, media_status, media_source, poster_url)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'processing', $8, $9) RETURNING id",
+    )
+    .bind(user_id)
+    .bind(media.kind.as_str())
+    .bind(media.title)
+    .bind(media.body)
+    .bind(media.visibility.as_str())
+    .bind(media.sensitive)
+    .bind(media.podcast_id)
+    .bind(media.source)
+    .bind(media.poster_url)
+    .fetch_one(pool)
+    .await
+}
+
+/// A new thumbnail for the author's video; the old one is returned to be
+/// deleted. `None` when it isn't their video.
+pub async fn set_poster(pool: &PgPool, post_id: i64, user_id: i32, poster_url: &str) -> Result<Option<Option<String>>, sqlx::Error> {
+    sqlx::query_scalar(
+        "UPDATE posts p SET poster_url = $3, updated_at = NOW()
+         FROM (SELECT poster_url FROM posts WHERE id = $1) old
+         WHERE p.id = $1 AND p.user_id = $2 AND p.kind = 'video'
+         RETURNING old.poster_url",
+    )
+    .bind(post_id)
+    .bind(user_id)
+    .bind(poster_url)
+    .fetch_optional(pool)
+    .await
+}
+
 /// A post of another server: what it says, read from its Note.
 pub struct RemotePost<'a> {
     pub ap_id: &'a str,
     pub ap_url: Option<&'a str>,
+    /// Articles, videos and episodes.
+    pub title: Option<&'a str>,
     pub body: &'a str,
+    /// A video (PeerTube) or episode (Funkwhale), with its length and picture.
+    pub kind: Kind,
+    pub duration_seconds: Option<i32>,
+    pub poster_url: Option<&'a str>,
     pub visibility: Visibility,
     pub sensitive: bool,
     pub published: Option<DateTime<Utc>>,
@@ -392,8 +943,10 @@ pub async fn create_remote(
     post: &RemotePost<'_>,
 ) -> Result<Option<i64>, sqlx::Error> {
     sqlx::query_scalar(
-        "INSERT INTO posts (remote_actor_id, community_id, ap_id, ap_url, body, created_at, visibility, sensitive)
-         VALUES ($1, $2, $3, $4, $5, COALESCE($6, NOW()), $7, $8)
+        "INSERT INTO posts (remote_actor_id, community_id, ap_id, ap_url, body, created_at, visibility, sensitive, title,
+                            kind, duration_seconds, poster_url, media_status)
+         VALUES ($1, $2, $3, $4, $5, COALESCE($6, NOW()), $7, $8, $9, $10, $11, $12,
+                 CASE WHEN $10 IN ('post', 'event') THEN NULL ELSE 'ready' END)
          ON CONFLICT (ap_id) DO NOTHING
          RETURNING id",
     )
@@ -405,19 +958,25 @@ pub async fn create_remote(
     .bind(post.published)
     .bind(post.visibility.as_str())
     .bind(post.sensitive)
+    .bind(post.title)
+    .bind(post.kind.as_str())
+    .bind(post.duration_seconds)
+    .bind(post.poster_url)
     .fetch_optional(pool)
     .await
 }
 
-/// Changes the text of the user's own post. Returns `false` when it isn't theirs.
-pub async fn update_own(pool: &PgPool, post_id: i64, user_id: i32, body: &str) -> Result<bool, sqlx::Error> {
+/// Changes the text of the user's own post, and the title of an article
+/// (`None` keeps it a post). Returns `false` when it isn't theirs.
+pub async fn update_own(pool: &PgPool, post_id: i64, user_id: i32, title: Option<&str>, body: &str) -> Result<bool, sqlx::Error> {
     Ok(sqlx::query(
-        "UPDATE posts SET body = $3, edited_at = NOW(), updated_at = NOW(), link_checked = FALSE
+        "UPDATE posts SET body = $3, title = $4, edited_at = NOW(), updated_at = NOW(), link_checked = FALSE
          WHERE id = $1 AND user_id = $2",
     )
     .bind(post_id)
     .bind(user_id)
     .bind(body)
+    .bind(title)
     .execute(pool)
     .await?
     .rows_affected()
@@ -426,12 +985,40 @@ pub async fn update_own(pool: &PgPool, post_id: i64, user_id: i32, body: &str) -
 
 /// Deletes a post with its comments and reactions.
 pub async fn delete(pool: &PgPool, post_id: i64) -> Result<bool, sqlx::Error> {
-    Ok(sqlx::query("DELETE FROM posts WHERE id = $1")
+    let mut photos = media::local_files(pool, post_id).await?;
+    // Every quality of a video (its attachment is one of them).
+    for url in crate::entities::video::file_urls(pool, post_id).await? {
+        if !photos.contains(&url) {
+            photos.push(url);
+        }
+    }
+    // A video's picture, and an upload still waiting for ffmpeg.
+    // Not a picture other posts still show: the dates of a recurring event
+    // share their banner.
+    let (poster, source): (Option<String>, Option<String>) = sqlx::query_as(
+        "SELECT CASE WHEN EXISTS (SELECT 1 FROM posts o WHERE o.poster_url = p.poster_url AND o.id <> p.id)
+                     THEN NULL ELSE p.poster_url END,
+                p.media_source
+         FROM posts p WHERE p.id = $1",
+    )
+            .bind(post_id)
+            .fetch_optional(pool)
+            .await?
+            .unwrap_or_default();
+    photos.extend(poster.filter(|url| media::is_local(url)));
+    if let Some(source) = source {
+        let _ = tokio::fs::remove_file(source).await;
+    }
+    let deleted = sqlx::query("DELETE FROM posts WHERE id = $1")
         .bind(post_id)
         .execute(pool)
         .await?
         .rows_affected()
-        > 0)
+        > 0;
+    if deleted {
+        media::remove_local_files(&photos).await;
+    }
+    Ok(deleted)
 }
 
 /// A post or comment stored from another server, by its ActivityPub id.
@@ -465,20 +1052,25 @@ pub async fn find_remote_object(pool: &PgPool, remote_actor_id: i64, ap_id: &str
     .transpose()
 }
 
-/// A post or comment edited on its server.
-pub async fn update_remote(pool: &PgPool, object: &RemoteObject, body: &str, sensitive: bool) -> Result<(), sqlx::Error> {
-    let (query, id) = match object {
-        RemoteObject::Post(id, _) => (
-            "UPDATE posts SET body = $1, sensitive = $3, edited_at = NOW(), updated_at = NOW(), link_checked = FALSE
+/// A post or comment edited on its server. `title` is kept for a comment.
+pub async fn update_remote(pool: &PgPool, object: &RemoteObject, title: Option<&str>, body: &str, sensitive: bool) -> Result<(), sqlx::Error> {
+    let query = match object {
+        RemoteObject::Post(id, _) => sqlx::query(
+            "UPDATE posts SET body = $1, sensitive = $3, title = $4, edited_at = NOW(), updated_at = NOW(), link_checked = FALSE
              WHERE id = $2",
-            *id,
-        ),
-        RemoteObject::Comment(id) => (
-            "UPDATE comments SET body = $1, sensitive = $3, edited_at = NOW(), updated_at = NOW() WHERE id = $2",
-            *id,
-        ),
+        )
+        .bind(body)
+        .bind(*id)
+        .bind(sensitive)
+        .bind(title),
+        RemoteObject::Comment(id) => {
+            sqlx::query("UPDATE comments SET body = $1, sensitive = $3, edited_at = NOW(), updated_at = NOW() WHERE id = $2")
+                .bind(body)
+                .bind(*id)
+                .bind(sensitive)
+        }
     };
-    sqlx::query(query).bind(body).bind(id).bind(sensitive).execute(pool).await?;
+    query.execute(pool).await?;
     Ok(())
 }
 
@@ -515,11 +1107,19 @@ pub async fn find_by_ap_id(pool: &PgPool, ap_id: &str) -> Result<Option<i64>, sq
 /// their first link.
 async fn to_posts(pool: &PgPool, rows: Vec<PgRow>) -> Result<Vec<Post>, sqlx::Error> {
     let mut posts = rows.iter().map(Post::from_row).collect::<Result<Vec<_>, _>>()?;
-    let remote: Vec<i64> = posts.iter().filter(|post| post.author.is_remote()).map(|post| post.id).collect();
-    let mut attachments = media::for_posts(pool, &remote).await?;
+    let ids: Vec<i64> = posts.iter().map(|post| post.id).collect();
+    let mut attachments = media::for_posts(pool, &ids).await?;
+    let video_ids: Vec<i64> = posts.iter().filter(|post| post.is_video()).map(|post| post.id).collect();
+    let mut video_files = match video_ids.is_empty() {
+        true => Default::default(),
+        false => crate::entities::video::files_for(pool, &video_ids).await?,
+    };
     for post in &mut posts {
         if let Some(found) = attachments.remove(&post.id) {
             post.attachments = found;
+        }
+        if let Some(found) = video_files.remove(&post.id) {
+            post.video_files = found;
         }
     }
     let links: Vec<Option<String>> = posts
@@ -566,7 +1166,7 @@ pub async fn feed(pool: &PgPool, viewer_id: i32) -> Result<Vec<Post>, sqlx::Erro
             SELECT followed_id FROM user_follows WHERE follower_id = $1
             UNION
             SELECT CASE WHEN requester_id = $1 THEN addressee_id ELSE requester_id END FROM friendships
-            WHERE (requester_id = $1 OR addressee_id = $1) AND accepted
+            WHERE (requester_id = $1 OR addressee_id = $1) AND accepted AND ", crate::entities::service_on!(dfrn), "
          ), entries AS (
             SELECT p.id AS entry_post_id, p.created_at AS entry_at, NULL::integer AS sharer_user_id,
                    NULL::bigint AS sharer_actor_id

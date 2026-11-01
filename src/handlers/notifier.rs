@@ -121,7 +121,57 @@ async fn post_audience(pool: &PgPool, post: &Post, author: &User) -> Audience {
         Ok(commenters) => audience.remote_actors.extend(commenters),
         Err(err) => tracing::warn!("failed to load commenters of post {}: {}", post.id, err),
     }
+    // An event's participants of other servers hear of its changes.
+    if post.is_event() {
+        match crate::entities::event::remote_participant_ids(pool, post.id).await {
+            Ok(participants) => audience.remote_actors.extend(participants),
+            Err(err) => tracing::warn!("failed to load participants of event {}: {}", post.id, err),
+        }
+    }
     audience
+}
+
+/// A user here joins (`join`) or leaves an event of another server: told to
+/// its organizer, like Mobilizon's participants. `join_id` is the Join.
+pub async fn event_participation(state: &AppState, pool: &PgPool, user: &User, post: &Post, join_id: &str, join: bool) {
+    let (Some(federation), Some(event_id), crate::entities::author::Author::Remote(organizer)) =
+        (state.federation.as_deref(), post.ap_id.as_deref(), &post.author)
+    else {
+        return;
+    };
+    let audience = Audience {
+        remote_actors: vec![organizer.actor_id.clone()],
+        ..Audience::default()
+    };
+    let activity = match join {
+        true => activities::join(federation, user, event_id, join_id, &organizer.actor_id),
+        false => activities::leave(federation, user, event_id, join_id, &organizer.actor_id),
+    };
+    queue(federation, pool, Signer::User(user.id), &audience, &activity).await;
+}
+
+/// The organizer here answers a Join from another server: `actor` is the
+/// participant's ActivityPub id, `join_id` their Join.
+pub async fn event_answer(state: &AppState, pool: &PgPool, organizer: &User, post: &Post, actor: &str, join_id: &str, accepted: bool) {
+    let Some(federation) = state.federation.as_deref() else {
+        return;
+    };
+    let join = serde_json::json!({
+        "id": join_id,
+        "type": "Join",
+        "actor": actor,
+        "object": activities::note_id(federation, post),
+    });
+    let organizer_url = federation.actor_url(organizer.public_id);
+    let answer = match accepted {
+        true => activities::accept_join(&organizer_url, &join),
+        false => activities::reject_join(&organizer_url, &join),
+    };
+    let audience = Audience {
+        remote_actors: vec![actor.to_string()],
+        ..Audience::default()
+    };
+    queue(federation, pool, Signer::User(organizer.id), &audience, &answer).await;
 }
 
 /// Where a comment written here goes: the commenter's followers and those of

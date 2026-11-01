@@ -1,11 +1,24 @@
-{# Form to write a post. `composer` is `handlers::post::Composer`. #}
+{% import "macros/upload.html" as upload_ui %}
+{# Form to write a post, or an article in its own tab (`PUBLISHING`), like
+   on WriteFreely. `composer` is `handlers::post::Composer`. The tabs are
+   radio buttons, so they work without JavaScript. #}
 {% macro composer(composer) %}
 <section class="box content composer">
+    {% if composer.articles %}
+    <h2 class="visually-hidden">Create</h2>
+    <input type="radio" name="composer-kind" id="compose-post" class="composer-switch visually-hidden"{% if !composer.article_open %} checked{% endif %} />
+    <input type="radio" name="composer-kind" id="compose-article" class="composer-switch visually-hidden"{% if composer.article_open %} checked{% endif %} />
+    <div class="composer-tabs">
+        <label for="compose-post">Post</label>
+        <label for="compose-article">Article</label>
+    </div>
+    {% else %}
     <h2>Create a post</h2>
+    {% endif %}
     {% if let Some(message) = composer.error %}
     <p class="error">{{ message }}</p>
     {% endif %}
-    <form action="/posts" method="post">
+    <form action="/posts" method="post" enctype="multipart/form-data" class="composer-post" data-photo-composer data-upload-progress>
         <input type="hidden" name="page" value="{{ composer.page }}" />
         <label for="post-body" class="visually-hidden">Post</label>
         <textarea
@@ -14,8 +27,25 @@
             placeholder="What do you want to share?"
             maxlength="{{ composer.body_max_chars }}"
             rows="4"
-            required
+            {% if !composer.photos %}required{% endif %}
         ></textarea>
+        {# Photos, like on Pixelfed: system.js shows them with a field for
+           their alt text. Without JavaScript they go without one. #}
+        {% if composer.photos %}
+        <div class="photo-picker">
+            <label class="button photo-add">
+                Add photos
+                <input type="file" name="photos" accept="image/jpeg,image/png,image/gif,image/webp" multiple data-max="{{ composer.max_photos }}" />
+            </label>
+            <span class="post-username" data-photo-hint>Up to {{ composer.max_photos }} photos: JPEG, PNG, GIF or WebP. Their location and camera details are removed.</span>
+            <ul class="photo-previews" data-photo-previews hidden></ul>
+            <label class="photo-sensitive" data-photo-sensitive hidden>
+                <input type="checkbox" name="sensitive" value="on" /> Sensitive: blur the photos until clicked
+            </label>
+            <progress class="upload-progress" max="100" value="0" data-upload-bar hidden></progress>
+            <p class="post-username" data-upload-status hidden></p>
+        </div>
+        {% endif %}
         <div class="flex center space-between">
             <label>
                 Who can see it
@@ -28,19 +58,65 @@
             <button type="submit" class="button">Publish</button>
         </div>
     </form>
+    {% if composer.articles %}
+    <form action="/posts" method="post" enctype="multipart/form-data" class="composer-article">
+        <input type="hidden" name="page" value="{{ composer.page }}" />
+        <input type="hidden" name="kind" value="article" />
+        <label for="article-title" class="visually-hidden">Title</label>
+        <input type="text" id="article-title" name="title" class="article-title-field" placeholder="Title" maxlength="{{ composer.title_max_chars }}" required />
+        <label for="article-body" class="visually-hidden">Article</label>
+        <textarea
+            id="article-body"
+            name="body"
+            placeholder="Write your article. Markdown works: **bold**, *italic*, ## Heading, [link](https://...)"
+            maxlength="{{ composer.article_max_chars }}"
+            rows="14"
+            required
+        ></textarea>
+        <details class="markdown-help">
+            <summary>How to format</summary>
+            <dl>
+                <dt><code># Heading</code>, <code>## Smaller</code></dt><dd>Headings, at the start of a line</dd>
+                <dt><code>**bold**</code>, <code>*italic*</code>, <code>~~struck~~</code></dt><dd>Emphasis</dd>
+                <dt><code>[words](https://...)</code></dt><dd>A link; addresses written as they are work too</dd>
+                <dt><code>![description](https://...)</code></dt><dd>A picture from the web</dd>
+                <dt><code>&gt; text</code></dt><dd>A quote</dd>
+                <dt><code>- item</code>, <code>1. item</code></dt><dd>Lists</dd>
+                <dt><code>`code`</code>, <code>```</code> on its own line</dt><dd>Code, in a line or as a block</dd>
+                <dt><code>---</code></dt><dd>A separating line</dd>
+            </dl>
+            <p class="post-username">An empty line starts a new paragraph. Articles are shared with the Fediverse like on WriteFreely: Mastodon shows their title and a link.</p>
+        </details>
+        <div class="flex center space-between">
+            <label>
+                Who can see it
+                <select name="visibility">
+                    {% for visibility in composer.visibilities %}
+                    <option value="{{ visibility.as_str() }}">{{ visibility.label() }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <button type="submit" class="button">Publish the article</button>
+        </div>
+    </form>
+    {% endif %}
 </section>
 {% endmacro %}
 
-{# Pictures, videos and sounds of a post or comment from another server,
-   loaded through the media proxy. Hidden behind a click when `sensitive`. #}
+{# Pictures, videos and sounds of a post or comment, under its text like on
+   Mastodon (`IMAGESYSTEM=false`, or not only photos), those of other
+   servers loaded through the media proxy. Up to 4 make a gallery, see
+   `media::layout`. Sensitive ones are blurred until "Show", which works
+   without JavaScript, and can be hidden again. #}
 {% macro attachments(attachments, sensitive) %}
 {% if !attachments.is_empty() %}
-{% if sensitive %}<details class="sensitive-media"><summary>Sensitive media, show</summary>{% endif %}
-<div class="attachments{% if attachments.len() == 1 %} single{% endif %}">
+{% let count = attachments.len() %}
+<div class="attachments {{ crate::entities::media::layout(attachments) }}{% if sensitive %} sensitive{% endif %}">
     {% for attachment in attachments %}
     {% if attachment.is_image() %}
     <a href="{{ attachment.proxy_url() }}" class="attachment" target="_blank" rel="noopener">
-        <img src="{{ attachment.proxy_url() }}" alt="{{ attachment.description }}" loading="lazy"{% if let Some(width) = attachment.width %} width="{{ width }}"{% endif %}{% if let Some(height) = attachment.height %} height="{{ height }}"{% endif %} />
+        <img src="{{ attachment.proxy_url() }}" alt="{{ attachment.alt(loop.index0, count) }}" loading="lazy"{% if let Some(width) = attachment.width %} width="{{ width }}"{% endif %}{% if let Some(height) = attachment.height %} height="{{ height }}"{% endif %} />
+        {% if !attachment.description.is_empty() %}<span class="photo-alt" title="{{ attachment.description }}">ALT</span>{% endif %}
     </a>
     {% else if attachment.is_video() %}
     <video src="{{ attachment.proxy_url() }}" class="attachment" controls preload="metadata"{% if !attachment.description.is_empty() %} aria-label="{{ attachment.description }}"{% endif %}></video>
@@ -50,20 +126,19 @@
     <a href="{{ attachment.url }}" class="attachment file" rel="nofollow noopener">{% if attachment.description.is_empty() %}Attached file{% else %}{{ attachment.description }}{% endif %}</a>
     {% endif %}
     {% endfor %}
+    {% if sensitive %}
+    <label class="media-cover">
+        <input type="checkbox" class="media-reveal visually-hidden" />
+        <span class="media-cover-text"><strong>Sensitive content</strong> <span>Click to show</span></span>
+        <span class="media-hide">Hide</span>
+    </label>
+    {% endif %}
 </div>
-{% if sensitive %}</details>{% endif %}
 {% endif %}
 {% endmacro %}
 
-{# One post with its author and actions. `signed_in` shows the buttons,
-   `return_to` is the page they come back to after a like or a share,
-   `collapse` cuts long posts with a "Show more" button (done by system.js),
-   `moderate` shows "Remove" to the moderators of the post's community. #}
-{% macro post_card(post, signed_in, return_to, collapse, moderate) %}
-<article class="box content post" id="post-{{ post.id }}">
-    {% if let Some(sharer) = post.shared_by %}
-    <p class="post-shared-by">Shared by <a href="{{ sharer.url }}">@{{ sharer.name }}</a></p>
-    {% endif %}
+{# The author and the date of a post. #}
+{% macro post_header(post) %}
     <header class="post-header">
         <a href="{{ post.author.profile_url() }}" class="post-author">
             {% if let Some(url) = post.author.photo_url() %}
@@ -84,31 +159,13 @@
             {% if let Some(edited) = post.edited_at_iso() %} · <span title="{{ edited }}">edited</span>{% endif %}
         </a>
     </header>
-    {% if let Some(community) = post.community %}
-    <p class="post-community">in <a href="/community/{{ community.slug }}">{{ community.name }}</a>{% if !community.is_public %} · <span class="only-you">Members only</span>{% endif %}</p>
-    {% endif %}
-    {% if !post.body.is_empty() %}
-    <p class="post-body" id="post-{{ post.id }}-body"{% if collapse %} data-collapsible{% endif %}>{{ post.body_html()|safe }}</p>
-    {% endif %}
-    {% call attachments(post.attachments.as_slice(), post.sensitive) %}{% endcall %}
-    {# The card of its first link, see src/preview.rs. #}
-    {% if let Some(preview) = post.preview %}
-    <a href="{{ preview.url }}" class="link-card{% if preview.image_url.is_none() %} no-image{% endif %}" rel="nofollow noopener noreferrer ugc" target="_blank">
-        {% if let Some(image) = preview.image_proxy_url() %}
-        <img src="{{ image }}" alt="" loading="lazy" class="link-card-image" />
-        {% endif %}
-        <span class="link-card-text">
-            <span class="link-card-site">{{ preview.site() }}</span>
-            <strong class="link-card-title">{{ preview.title }}</strong>
-            {% if !preview.description.is_empty() %}
-            <span class="link-card-description">{{ preview.description }}</span>
-            {% endif %}
-        </span>
-    </a>
-    {% endif %}
+{% endmacro %}
+
+{# Like, comments, share and the others, see `post_card`. #}
+{% macro post_actions(post, signed_in, return_to, moderate) %}
     <footer class="post-actions">
         {% if signed_in %}
-        <form action="/posts/{{ post.id }}/like" method="post">
+        <form action="/posts/{{ post.id }}/like" method="post" id="post-{{ post.id }}-like">
             <input type="hidden" name="return" value="{{ return_to }}" />
             <button type="submit" class="action{% if post.liked %} active{% endif %}" aria-pressed="{{ post.liked }}">
                 {% if post.liked %}Liked{% else %}Like{% endif %} · {{ post.like_count }}
@@ -157,7 +214,526 @@
         {% endif %}
         {% endif %}
     </footer>
+{% endmacro %}
+
+{# The photos of a post, like on Pixelfed: one frame shaped like the first
+   photo, swiped (or moved with the arrows, by system.js) when there are
+   several. A sensitive post is blurred until "See photos", which works
+   without JavaScript. Double-clicking likes the post, see system.js. #}
+{% macro photos(post) %}
+{% let count = post.attachments.len() %}
+<div class="photo-frame{% if post.sensitive %} sensitive{% endif %}" style="aspect-ratio: {{ post.photo_ratio() }}" data-carousel>
+    {% if post.sensitive %}
+    <input type="checkbox" class="photo-reveal visually-hidden" id="reveal-{{ post.id }}" />
+    <label for="reveal-{{ post.id }}" class="photo-cover">
+        <strong>Sensitive content</strong>
+        <span>The author marked {% if count == 1 %}this photo{% else %}these photos{% endif %} as sensitive.</span>
+        <span class="button">See {% if count == 1 %}photo{% else %}photos{% endif %}</span>
+    </label>
+    {% endif %}
+    <div class="photo-track" tabindex="0" aria-label="Photos of the post" data-photo-track>
+        {% for photo in post.attachments %}
+        <figure class="photo-slide">
+            <img src="{{ photo.proxy_url() }}" alt="{{ photo.alt(loop.index0, count) }}" loading="lazy"{% if let Some(width) = photo.width %} width="{{ width }}"{% endif %}{% if let Some(height) = photo.height %} height="{{ height }}"{% endif %} data-like-target="post-{{ post.id }}-like" />
+            {% if !photo.description.is_empty() %}<span class="photo-alt" title="{{ photo.description }}">ALT</span>{% endif %}
+        </figure>
+        {% endfor %}
+    </div>
+    {% if count > 1 %}
+    <button type="button" class="photo-nav previous" aria-label="Previous photo" data-photo-previous hidden>‹</button>
+    <button type="button" class="photo-nav next" aria-label="Next photo" data-photo-next hidden>›</button>
+    <span class="photo-count" data-photo-count>1 / {{ count }}</span>
+    <span class="photo-dots" aria-hidden="true">{% for photo in post.attachments %}<span{% if loop.first %} class="active"{% endif %}></span>{% endfor %}</span>
+    {% endif %}
+</div>
+{% endmacro %}
+
+{# Events, like Mobilizon's (see `entities::event`). Times are written in
+   UTC and turned into the viewer's own by system.js (`data-event-time`). #}
+{% macro event_date(event) %}
+<span class="event-date" aria-hidden="true" data-event-date="{{ event.starts_iso() }}">
+    <span class="event-date-month">{{ event.month_label() }}</span>
+    <span class="event-date-day">{{ event.day_label() }}</span>
+</span>
+{% endmacro %}
+
+{# Cancelled, tentative, full, waiting for approval... #}
+{% macro event_badges(event) %}
+{% if event.is_cancelled() %}<span class="event-badge cancelled">Cancelled</span>
+{% else if event.is_past() %}<span class="event-badge">Over</span>
+{% else %}
+{% if event.is_tentative() %}<span class="event-badge">To be confirmed</span>{% endif %}
+{% if event.is_full() %}<span class="event-badge">Full</span>{% endif %}
+{% if event.is_going() %}<span class="event-badge going">Going</span>{% else if event.is_pending() %}<span class="event-badge">Asked</span>{% endif %}
+{% endif %}
+{% endmacro %}
+
+{# One line of the Events page. #}
+{% macro event_row(post) %}
+{% if let Some(event) = post.event %}
+<li>
+    <a href="/posts/{{ post.id }}" class="event-row{% if event.is_cancelled() %} cancelled{% endif %}">
+        {% call event_date(event) %}{% endcall %}
+        <span class="event-row-text">
+            <span class="event-when"><time datetime="{{ event.starts_iso() }}" data-event-time>{{ event.starts_label() }}</time></span>
+            <strong class="event-title">{{ post.title_text() }}</strong>
+            <span class="post-meta">{% if event.is_online() %}Online{% else %}{{ event.where_label() }}{% endif %} · {{ event.going }} going{% if post.author.is_remote() %} · {{ post.author.host() }}{% endif %}</span>
+            <span class="event-badges">{% call event_badges(event) %}{% endcall %}</span>
+        </span>
+        {% if let Some(banner) = post.poster() %}<img src="{{ banner }}" alt="" class="event-row-banner" loading="lazy" />{% endif %}
+    </a>
+</li>
+{% endif %}
+{% endmacro %}
+
+{# An event in feeds: its banner, date, title, place, who goes. #}
+{% macro event_card(post, signed_in, return_to, moderate) %}
+{% if let Some(event) = post.event %}
+<article class="box content post event-post" id="post-{{ post.id }}">
+    {% if let Some(sharer) = post.shared_by %}
+    <p class="post-shared-by">Shared by <a href="{{ sharer.url }}">@{{ sharer.name }}</a></p>
+    {% endif %}
+    {% call post_header(post) %}{% endcall %}
+    <a href="/posts/{{ post.id }}" class="event-card{% if event.is_cancelled() %} cancelled{% endif %}">
+        {% if let Some(banner) = post.poster() %}<img src="{{ banner }}" alt="" class="event-banner" loading="lazy" />{% endif %}
+        <span class="event-card-body">
+            {% call event_date(event) %}{% endcall %}
+            <span class="event-row-text">
+                <span class="event-when"><time datetime="{{ event.starts_iso() }}" data-event-time>{{ event.starts_label() }}</time></span>
+                <strong class="event-title">{{ post.title_text() }}</strong>
+                <span class="post-meta">{% if event.is_online() %}Online{% else %}{{ event.where_label() }}{% endif %} · {{ event.going }} going{% if let Some(left) = event.places_left() %} · {{ left }} places left{% endif %}</span>
+                <span class="event-badges">{% call event_badges(event) %}{% endcall %}</span>
+            </span>
+        </span>
+    </a>
+    {% call post_actions(post, signed_in, return_to, moderate) %}{% endcall %}
 </article>
+{% endif %}
+{% endmacro %}
+
+{# The page of an event: when, where, who goes, joining it, adding it to a
+   calendar, and the organizer's tools. #}
+{% macro event_full(post, signed_in, return_to, moderate) %}
+{% if let Some(event) = post.event %}
+<article class="box content post event-page" id="post-{{ post.id }}">
+    {% if let Some(banner) = post.poster() %}<img src="{{ banner }}" alt="" class="event-banner large" />{% endif %}
+    <div class="event-head">
+        {% call event_date(event) %}{% endcall %}
+        <div>
+            <p class="event-category">{{ event.category_label() }}</p>
+            <h1 class="event-title">{{ post.title_text() }}</h1>
+            <p class="post-meta">Organized by {% if let Some(community) = post.community %}<a href="/community/{{ community.slug }}">{{ community.name }}</a> · <a href="{{ post.author.profile_url() }}">{{ post.author.display_name() }}</a>{% else %}<a href="{{ post.author.profile_url() }}">{{ post.author.display_name() }}</a>{% endif %}{% if post.author.is_remote() %} on {{ post.author.host() }}{% endif %}</p>
+        </div>
+    </div>
+    {% if event.is_cancelled() %}
+    <p class="event-status cancelled">This event is cancelled.</p>
+    {% else if event.is_tentative() %}
+    <p class="event-status">The date is still to be confirmed.</p>
+    {% endif %}
+    <dl class="event-facts">
+        <dt>When</dt>
+        <dd>
+            <time datetime="{{ event.starts_iso() }}" data-event-time>{{ event.starts_label() }}</time>
+            {% if let Some(end) = event.ends_iso() %} → <time datetime="{{ end }}" data-event-time data-event-end>{{ event.ends_label().unwrap_or_default() }}</time>{% endif %}
+            <span class="post-meta event-zone" data-event-zone="{{ event.timezone }}"></span>
+        </dd>
+        {% if let Some(repeat) = event.repeat_label() %}
+        <dt>Repeats</dt>
+        <dd>{{ repeat }}{% if let Some(series) = event.series %} · <a href="/events?series={{ series.0 }}">All dates</a>{% endif %}</dd>
+        {% endif %}
+        {% if !event.where_label().is_empty() %}
+        <dt>Where</dt>
+        <dd>{{ event.where_label() }}{% if let Some(map) = event.map_url() %} · <a href="{{ map }}" rel="nofollow noopener noreferrer" target="_blank">Open in OpenStreetMap</a>{% endif %}</dd>
+        {% endif %}
+        {% if let Some(online) = event.online_url %}
+        <dt>Online</dt>
+        {% if event.online_public || event.is_going() || post.is_own || moderate %}
+        <dd><a href="{{ online }}" rel="nofollow noopener noreferrer ugc" target="_blank" class="event-online">{{ online }}</a>{% if !event.online_public %} <span class="post-meta">· only participants see it</span>{% endif %}</dd>
+        {% else %}
+        <dd class="post-meta">The link is shown to participants.</dd>
+        {% endif %}
+        {% endif %}
+        <dt>Going</dt>
+        <dd>{{ event.going }}{% if let Some(capacity) = event.capacity %} of {{ capacity }} places{% if let Some(left) = event.places_left() %} · {{ left }} left{% endif %}{% endif %}{% if event.needs_approval() %} · the organizer accepts participants{% endif %}</dd>
+    </dl>
+    {# OpenStreetMap's map, a pin on the place (see `geocode`). #}
+    {% if let Some(map) = event.map_embed_url() %}
+    <iframe class="event-map" src="{{ map }}" title="Map of {{ event.where_label() }}" loading="lazy" referrerpolicy="no-referrer"></iframe>
+    {% endif %}
+
+    <div class="event-join" id="event">
+        {% if event.is_cancelled() %}
+        {% else if event.is_past() %}
+        <p class="post-meta">This event is over.</p>
+        {% else if !signed_in %}
+        <a href="/login" class="button primary">Log in to join</a>
+        {% else if post.is_own %}
+        <p class="event-you">You organize this event.</p>
+        {% else if event.is_going() %}
+        <p class="event-you going">You're going ✓</p>
+        <form action="/events/{{ post.id }}/leave" method="post" data-confirm="You won't be on the list anymore." data-confirm-label="Leave the event">
+            <button type="submit" class="action">Leave</button>
+        </form>
+        {% else if event.is_pending() %}
+        <p class="event-you">{% if post.author.is_remote() %}Waiting for {{ post.author.host() }} to confirm…{% else %}Waiting for the organizer's answer…{% endif %}</p>
+        <form action="/events/{{ post.id }}/leave" method="post">
+            <button type="submit" class="action">Cancel the request</button>
+        </form>
+        {% else if event.viewer_role.as_deref() == Some("rejected") %}
+        <p class="event-you">The organizer declined your request.</p>
+        {% else if event.is_full() %}
+        <p class="event-you">No places left.</p>
+        {% else %}
+        <form action="/events/{{ post.id }}/join" method="post">
+            <button type="submit" class="button primary">{% if event.needs_approval() %}Ask to join{% else %}Join{% endif %}</button>
+        </form>
+        {% endif %}
+        <a href="/events/{{ post.id }}/calendar.ics" class="button" download>Add to calendar</a>
+    </div>
+    {% if post.can_edit() || moderate %}
+    <div class="event-organizer">
+        <a href="/events/{{ post.id }}/edit" class="action">Edit the event</a>
+        {% if let Some(series) = event.series %}{% if series.2 > event.starts_at %}
+        <form action="/events/{{ post.id }}/stop-repeating" method="post" data-confirm="No new dates after those already planned." data-confirm-label="Stop repeating">
+            <button type="submit" class="action">Stop repeating</button>
+        </form>
+        {% endif %}{% endif %}
+        <a href="/events/{{ post.id }}/participants" class="action">Participants{% if event.pending > 0 %} <span class="badge">{{ event.pending }}</span>{% endif %}</a>
+        <form action="/events/{{ post.id }}/cancel" method="post"{% if !event.is_cancelled() %} data-confirm="Participants are told the event is cancelled." data-confirm-label="Cancel the event"{% endif %}>
+            <button type="submit" class="action{% if !event.is_cancelled() %} danger{% endif %}">{% if event.is_cancelled() %}Confirm it again{% else %}Cancel the event{% endif %}</button>
+        </form>
+    </div>
+    {% endif %}
+    {% if !post.body.is_empty() %}
+    <p class="post-body event-description">{{ post.body_html()|safe }}</p>
+    {% endif %}
+    {% call post_actions(post, signed_in, return_to, moderate) %}{% endcall %}
+</article>
+{% endif %}
+{% endmacro %}
+
+{# The controls of our player (`setupPlayers` in system.js), over the
+   video at the bottom: play, sound and level, the position and time (or
+   LIVE for a stream), quality and full screen. #}
+{% macro player_chrome(post, live) %}
+    <button type="button" class="player-big-play" aria-label="Play" data-player-big-play hidden>
+        <svg viewBox="0 0 24 24" width="36" height="36" aria-hidden="true" focusable="false"><path d="M8 5.5v13l10.5-6.5Z" fill="currentColor" /></svg>
+    </button>
+    <span class="player-spinner" aria-hidden="true" data-player-spinner hidden></span>
+    <button type="button" class="player-start" data-player-start hidden>
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4Z" fill="currentColor" /><path d="M15 9.5a3.5 3.5 0 0 1 0 5M17.5 7a7 7 0 0 1 0 10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg>
+        Play with sound
+    </button>
+    <div class="player-controls" data-player-controls hidden>
+        {% if !live %}
+        <div class="player-seek">
+            <span class="player-buffered" data-player-buffered></span>
+            <span class="player-played" data-player-played></span>
+            <input type="range" min="0" max="1000" step="1" value="0" aria-label="Position in the video" data-player-seek />
+        </div>
+        {% endif %}
+        <div class="player-row">
+            <button type="button" class="player-button" aria-label="Play" data-player-play>
+                <svg class="when-paused" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><path d="M8 5.5v13l10.5-6.5Z" fill="currentColor" /></svg>
+                <svg class="when-playing" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z" fill="currentColor" /></svg>
+            </button>
+            <div class="player-volume">
+                <button type="button" class="player-button" aria-label="Mute" data-player-mute>
+                    <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false">
+                        <path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4Z" fill="currentColor" />
+                        <path class="sound-low" d="M15 9.5a3.5 3.5 0 0 1 0 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                        <path class="sound-high" d="M17.5 7a7 7 0 0 1 0 10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                        <path class="sound-off" d="M15.5 9.5l5 5M20.5 9.5l-5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                    </svg>
+                </button>
+                <input type="range" min="0" max="1" step="0.05" value="1" aria-label="Volume" data-player-level />
+            </div>
+            {% if live %}
+            <span class="player-live"><span class="live-dot" aria-hidden="true"></span>Live</span>
+            {% else %}
+            <span class="player-time"><span data-player-current>0:00</span> / <span data-player-duration>{% if let Some(duration) = post.duration_label() %}{{ duration }}{% else %}0:00{% endif %}</span></span>
+            {% endif %}
+            <span class="player-spacer"></span>
+            {# A live stream's qualities, read from its playlist by system.js
+               (`playLive`). #}
+            {% if live %}
+            <div class="quality-control" data-live-quality hidden>
+                <button type="button" class="player-button quality-button" aria-haspopup="menu" aria-expanded="false" aria-controls="quality-menu-{{ post.id }}" data-quality-button>
+                    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">
+                        <path d="M19.4 13a7.5 7.5 0 0 0 0-2l2-1.6-2-3.4-2.4 1a7.6 7.6 0 0 0-1.7-1l-.4-2.6h-4l-.4 2.6a7.6 7.6 0 0 0-1.7 1l-2.4-1-2 3.4 2 1.6a7.5 7.5 0 0 0 0 2l-2 1.6 2 3.4 2.4-1a7.6 7.6 0 0 0 1.7 1l.4 2.6h4l.4-2.6a7.6 7.6 0 0 0 1.7-1l2.4 1 2-3.4Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
+                        <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8" />
+                    </svg>
+                    <span data-quality-current>Auto</span>
+                </button>
+                <div class="quality-menu" id="quality-menu-{{ post.id }}" role="menu" aria-label="Quality" data-quality-menu hidden>
+                    <button type="button" role="menuitemradio" aria-checked="true" data-quality-choice="auto">Auto<span class="quality-detail" data-quality-auto></span></button>
+                </div>
+            </div>
+            {% endif %}
+            {# The quality, like PeerTube's resolutions. #}
+            {% if post.video_files.len() > 1 %}
+            <div class="quality-control" data-quality>
+                <button type="button" class="player-button quality-button" aria-haspopup="menu" aria-expanded="false" aria-controls="quality-menu-{{ post.id }}" data-quality-button>
+                    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">
+                        <path d="M19.4 13a7.5 7.5 0 0 0 0-2l2-1.6-2-3.4-2.4 1a7.6 7.6 0 0 0-1.7-1l-.4-2.6h-4l-.4 2.6a7.6 7.6 0 0 0-1.7 1l-2.4-1-2 3.4 2 1.6a7.5 7.5 0 0 0 0 2l-2 1.6 2 3.4 2.4-1a7.6 7.6 0 0 0 1.7 1l.4 2.6h4l.4-2.6a7.6 7.6 0 0 0 1.7-1l2.4 1 2-3.4Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
+                        <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8" />
+                    </svg>
+                    <span data-quality-current>Auto</span>
+                </button>
+                <div class="quality-menu" id="quality-menu-{{ post.id }}" role="menu" aria-label="Quality" data-quality-menu hidden>
+                    <button type="button" role="menuitemradio" aria-checked="true" data-quality-choice="auto">Auto<span class="quality-detail" data-quality-auto></span></button>
+                    {% for file in post.video_files %}
+                    <button type="button" role="menuitemradio" aria-checked="false" data-quality-choice="{{ file.lines }}" data-url="{{ file.url }}" data-width="{{ file.width }}" data-height="{{ file.height }}">{{ file.label() }}{% if file.lines >= 720 %}<span class="quality-detail">HD</span>{% endif %}</button>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+            <button type="button" class="player-button" aria-label="Full screen" data-fullscreen>
+                <svg class="enter" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                <svg class="leave" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path d="M9 4v5H4M20 9h-5V4M15 20v-5h5M4 15h5v5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+            </button>
+        </div>
+    </div>
+{% endmacro %}
+
+{# The player of a video, episode or live stream, or why there is none:
+   still converting (only its author sees it then), failed, or too large
+   to come through the media proxy. Sensitive videos are blurred until
+   clicked, without JavaScript too. #}
+{% macro media_player(post) %}
+{% if post.is_processing() %}
+{# Live through a WebSocket, like the notifications (see system.js). #}
+<div class="media-state conversion" data-conversion="/posts/{{ post.id }}/progress">
+    <span class="conversion-ring" data-conversion-ring hidden>{% call upload_ui::ring() %}{% endcall %}</span>
+    <p data-conversion-text>Converting with ffmpeg… It appears in feeds when it's ready; only you see it until then. Reload the page to check.</p>
+</div>
+{% else if post.has_failed() %}
+<p class="media-state failed">This file couldn't be converted: it may not be a {% if post.is_episode() %}sound{% else %}video{% endif %} ffmpeg reads. Delete it and try another file.</p>
+{% else if post.is_live() %}
+{% if let Some(playlist) = post.live_playlist %}
+{# The same player as videos, without the position: always live. #}
+<div class="video-frame live" data-player data-player-live>
+    <video class="live-player" controls playsinline data-live-player="{{ playlist }}"{% if let Some(poster) = post.poster() %} poster="{{ poster }}"{% endif %} data-player-video></video>
+    <p class="live-waiting" data-live-waiting>Starting the stream…</p>
+    {% call player_chrome(post, true) %}{% endcall %}
+</div>
+{% else %}
+<p class="media-state">This live stream has ended.{% if post.is_own %} If you keep replays, it becomes a video here in a moment.{% endif %}</p>
+{% endif %}
+{% else if let Some(url) = post.media_url() %}
+{% if post.is_episode() %}
+<audio class="episode-player" controls preload="none" src="{{ url }}"></audio>
+{% else %}
+{# The player: the browser's own controls without JavaScript; with it,
+   ours (`setupPlayers` in system.js) at the bottom, like PeerTube's. #}
+<div class="video-frame{% if post.sensitive %} sensitive{% endif %}" data-player>
+    <video controls preload="metadata" playsinline src="{{ url }}"{% if let Some(poster) = post.poster() %} poster="{{ poster }}"{% endif %}{% if post.video_files.len() > 1 %} data-quality-video{% endif %} data-player-video></video>
+    {% if post.sensitive %}
+    <label class="media-cover">
+        <input type="checkbox" class="media-reveal visually-hidden" />
+        <span class="media-cover-text"><strong>Sensitive content</strong> <span>Click to show</span></span>
+        <span class="media-hide">Hide</span>
+    </label>
+    {% endif %}
+    {% call player_chrome(post, false) %}{% endcall %}
+</div>
+{# Every quality to download, without JavaScript too. #}
+{% if !post.video_files.is_empty() %}
+<div class="video-tools">
+    <details class="video-downloads">
+        <summary>Download</summary>
+        <ul>
+            {% for file in post.video_files %}
+            <li><a href="{{ file.url }}" download>{{ file.label() }}</a> <span class="post-meta">{{ file.width }}×{{ file.height }} · {{ file.size_label() }}</span></li>
+            {% endfor %}
+        </ul>
+    </details>
+</div>
+{% endif %}
+{% endif %}
+{% else if let Some(link) = post.ap_url %}
+<a href="{{ link }}" class="video-elsewhere" rel="nofollow noopener noreferrer" target="_blank">
+    {% if let Some(poster) = post.poster() %}<img src="{{ poster }}" alt="" loading="lazy" />{% endif %}
+    <span>{% if post.is_episode() %}Listen{% else %}Watch{% endif %} on {{ post.author.host() }}</span>
+</a>
+{% endif %}
+{% endmacro %}
+
+{# A video (PeerTube), live stream (Owncast) or podcast episode (Funkwhale,
+   Castopod), in feeds or on its page (`full`). #}
+{% macro media_post(post, signed_in, return_to, moderate, full) %}
+<article class="box content post media-post{% if post.is_episode() %} episode-post{% endif %}" id="post-{{ post.id }}">
+    {% if let Some(sharer) = post.shared_by %}
+    <p class="post-shared-by">Shared by <a href="{{ sharer.url }}">@{{ sharer.name }}</a></p>
+    {% endif %}
+    {% call post_header(post) %}{% endcall %}
+    {% if post.is_episode() %}
+    <div class="episode-head">
+        {% if let Some(cover) = post.poster() %}
+        <img src="{{ cover }}" alt="" class="episode-cover" loading="lazy" />
+        {% else %}
+        <span class="episode-cover placeholder" aria-hidden="true">🎙</span>
+        {% endif %}
+        <div class="episode-titles">
+            {% if let Some(podcast) = post.podcast %}<a href="/podcasts/{{ podcast.id }}" class="episode-podcast">{{ podcast.title }}</a>{% else %}<span class="episode-podcast">Episode</span>{% endif %}
+            {% if full %}<h1 class="media-title">{{ post.title_text() }}</h1>{% else %}<h2 class="media-title"><a href="/posts/{{ post.id }}">{{ post.title_text() }}</a></h2>{% endif %}
+            {% if let Some(duration) = post.duration_label() %}<span class="post-meta">{{ duration }}</span>{% endif %}
+        </div>
+    </div>
+    {% call media_player(post) %}{% endcall %}
+    {% else %}
+    {% call media_player(post) %}{% endcall %}
+    {% if full %}
+    <h1 class="media-title">{% if post.is_on_air() %}<span class="live-dot" aria-hidden="true"></span>{% endif %}{{ post.title_text() }}</h1>
+    {% else %}
+    <h2 class="media-title">{% if post.is_on_air() %}<span class="live-dot" aria-hidden="true"></span>{% endif %}<a href="/posts/{{ post.id }}{% if post.is_video() %}?play{% endif %}">{{ post.title_text() }}</a></h2>
+    {% endif %}
+    {% if let Some(duration) = post.duration_label() %}<p class="post-meta media-meta">{% if post.is_video() %}Video{% else %}Live replay{% endif %} · {{ duration }}</p>{% endif %}
+    {% endif %}
+    {% if !post.body.is_empty() %}
+    <p class="post-body" id="post-{{ post.id }}-body"{% if !full %} data-collapsible{% endif %}>{{ post.body_html()|safe }}</p>
+    {% endif %}
+    {% call post_actions(post, signed_in, return_to, moderate) %}{% endcall %}
+</article>
+{% endmacro %}
+
+{# Videos as thumbnails, like PeerTube's lists: the Videos page and the
+   profile's Videos tab. #}
+{% macro video_grid(posts, empty) %}
+<ul class="video-grid">
+    {% for post in posts %}
+    <li>
+        {# `?play`: the video starts on its page, see `setupPlayers`. #}
+        <a href="/posts/{{ post.id }}{% if post.is_video() %}?play{% endif %}" class="video-thumb">
+            <span class="video-thumb-picture">
+                {% if let Some(poster) = post.poster() %}
+                <img src="{{ poster }}" alt="" loading="lazy" />
+                {% else %}
+                <span class="video-thumb-placeholder" aria-hidden="true">▶</span>
+                {% endif %}
+                {% if post.is_on_air() %}<span class="live-badge">Live</span>
+                {% else if post.is_processing() %}<span class="video-duration">Converting…</span>
+                {% else if post.has_failed() %}<span class="video-duration">Failed</span>
+                {% else if let Some(duration) = post.duration_label() %}<span class="video-duration">{{ duration }}</span>{% endif %}
+            </span>
+            <strong class="video-thumb-title">{{ post.title_text() }}</strong>
+            <span class="post-meta">{{ post.author.display_name() }} · <time datetime="{{ post.created_at_iso() }}" data-relative>{{ post.created_at_label() }}</time></span>
+        </a>
+    </li>
+    {% else %}
+    <li class="empty">{{ empty }}</li>
+    {% endfor %}
+</ul>
+{% endmacro %}
+
+{# An article in a feed, as Mastodon shows WriteFreely's: a preview card
+   with its first picture, where it was published, its title and start.
+   The whole of it is on its page (`article_full`). #}
+{% macro article_card(post, signed_in, return_to, moderate) %}
+<article class="box content post article-card" id="post-{{ post.id }}">
+    {% if let Some(sharer) = post.shared_by %}
+    <p class="post-shared-by">Shared by <a href="{{ sharer.url }}">@{{ sharer.name }}</a></p>
+    {% endif %}
+    {% call post_header(post) %}{% endcall %}
+    {% if let Some(community) = post.community %}
+    <p class="post-community">in <a href="/community/{{ community.slug }}">{{ community.name }}</a>{% if !community.is_public %} · <span class="only-you">Members only</span>{% endif %}</p>
+    {% endif %}
+    {% let picture = post.article_picture() %}
+    <a href="/posts/{{ post.id }}" class="link-card article-preview{% if picture.is_none() %} no-picture{% endif %}{% if post.sensitive %} sensitive{% endif %}">
+        {% if let Some(picture) = picture %}
+        <img src="{{ picture }}" alt="" loading="lazy" class="link-card-image" />
+        {% else %}
+        <span class="link-card-image article-preview-icon" aria-hidden="true">¶</span>
+        {% endif %}
+        <span class="link-card-text">
+            <span class="link-card-site">{{ post.article_site() }} · Article · {{ post.reading_minutes() }} min read</span>
+            <strong class="link-card-title">{{ post.title_text() }}</strong>
+            <span class="link-card-description">{{ post.article_excerpt() }}</span>
+            <span class="article-preview-author">By {{ post.author.display_name() }}</span>
+        </span>
+    </a>
+    {% call post_actions(post, signed_in, return_to, moderate) %}{% endcall %}
+</article>
+{% endmacro %}
+
+{# The page of an article: its title, then all of it, from Markdown (see
+   `crate::markdown`). #}
+{% macro article_full(post, signed_in, return_to, moderate) %}
+<article class="box content post article" id="post-{{ post.id }}">
+    {% if let Some(sharer) = post.shared_by %}
+    <p class="post-shared-by">Shared by <a href="{{ sharer.url }}">@{{ sharer.name }}</a></p>
+    {% endif %}
+    {% call post_header(post) %}{% endcall %}
+    {% if let Some(community) = post.community %}
+    <p class="post-community">in <a href="/community/{{ community.slug }}">{{ community.name }}</a>{% if !community.is_public %} · <span class="only-you">Members only</span>{% endif %}</p>
+    {% endif %}
+    <h1 class="article-title">{{ post.title_text() }}</h1>
+    <p class="article-meta">{{ post.reading_minutes() }} min read</p>
+    <div class="article-body" id="post-{{ post.id }}-body">{{ post.article_html()|safe }}</div>
+    {% call attachments(post.attachments.as_slice(), post.sensitive) %}{% endcall %}
+    {% call post_actions(post, signed_in, return_to, moderate) %}{% endcall %}
+</article>
+{% endmacro %}
+
+{# One post with its author and actions. `signed_in` shows the buttons,
+   `return_to` is the page they come back to after a like or a share,
+   `collapse` cuts long posts with a "Show more" button (done by system.js),
+   `moderate` shows "Remove" to the moderators of the post's community.
+   Posts of only photos look like on Pixelfed: the photos, the actions, then
+   the caption under the author's name. #}
+{% macro post_card(post, signed_in, return_to, collapse, moderate) %}
+{% if post.is_event() %}
+{% call event_card(post, signed_in, return_to, moderate) %}{% endcall %}
+{% else if post.is_video() || post.is_live() || post.is_episode() %}
+{% call media_post(post, signed_in, return_to, moderate, false) %}{% endcall %}
+{% else if post.is_article() %}
+{% call article_card(post, signed_in, return_to, moderate) %}{% endcall %}
+{% else if post.is_photo_post() %}
+<article class="box content post photo-post" id="post-{{ post.id }}">
+    {% if let Some(sharer) = post.shared_by %}
+    <p class="post-shared-by">Shared by <a href="{{ sharer.url }}">@{{ sharer.name }}</a></p>
+    {% endif %}
+    {% call post_header(post) %}{% endcall %}
+    {% if let Some(community) = post.community %}
+    <p class="post-community">in <a href="/community/{{ community.slug }}">{{ community.name }}</a>{% if !community.is_public %} · <span class="only-you">Members only</span>{% endif %}</p>
+    {% endif %}
+    {% call photos(post) %}{% endcall %}
+    {% call post_actions(post, signed_in, return_to, moderate) %}{% endcall %}
+    {% if !post.body.is_empty() %}
+    <p class="post-body photo-caption" id="post-{{ post.id }}-body"{% if collapse %} data-collapsible{% endif %}><a href="{{ post.author.profile_url() }}" class="photo-caption-author">{{ post.author.display_name() }}</a> {{ post.body_html()|safe }}</p>
+    {% endif %}
+</article>
+{% else %}
+<article class="box content post" id="post-{{ post.id }}">
+    {% if let Some(sharer) = post.shared_by %}
+    <p class="post-shared-by">Shared by <a href="{{ sharer.url }}">@{{ sharer.name }}</a></p>
+    {% endif %}
+    {% call post_header(post) %}{% endcall %}
+    {% if let Some(community) = post.community %}
+    <p class="post-community">in <a href="/community/{{ community.slug }}">{{ community.name }}</a>{% if !community.is_public %} · <span class="only-you">Members only</span>{% endif %}</p>
+    {% endif %}
+    {% if !post.body.is_empty() %}
+    <p class="post-body" id="post-{{ post.id }}-body"{% if collapse %} data-collapsible{% endif %}>{{ post.body_html()|safe }}</p>
+    {% endif %}
+    {% call attachments(post.attachments.as_slice(), post.sensitive) %}{% endcall %}
+    {# The card of its first link, see src/preview.rs. #}
+    {% if let Some(preview) = post.preview %}
+    <a href="{{ preview.url }}" class="link-card{% if preview.image_url.is_none() %} no-image{% endif %}" rel="nofollow noopener noreferrer ugc" target="_blank">
+        {% if let Some(image) = preview.image_proxy_url() %}
+        <img src="{{ image }}" alt="" loading="lazy" class="link-card-image" />
+        {% endif %}
+        <span class="link-card-text">
+            <span class="link-card-site">{{ preview.site() }}</span>
+            <strong class="link-card-title">{{ preview.title }}</strong>
+            {% if !preview.description.is_empty() %}
+            <span class="link-card-description">{{ preview.description }}</span>
+            {% endif %}
+        </span>
+    </a>
+    {% endif %}
+    {% call post_actions(post, signed_in, return_to, moderate) %}{% endcall %}
+</article>
+{% endif %}
 {% endmacro %}
 
 {# Every post, long ones collapsed, or `empty` when there is none. Used by
@@ -168,4 +744,24 @@
 {% else %}
 <p class="empty">{{ empty }}</p>
 {% endfor %}
+{% endmacro %}
+
+{# A user's photo posts as a grid of squares, like a Pixelfed profile. #}
+{% macro photo_grid(posts, empty) %}
+{% if posts.is_empty() %}
+<p class="empty">{{ empty }}</p>
+{% else %}
+<div class="photo-grid">
+    {% for post in posts %}
+    {% if let Some(photo) = post.attachments.first() %}
+    <a href="/posts/{{ post.id }}" class="photo-grid-item{% if post.sensitive %} sensitive{% endif %}" title="{{ post.like_count }} like{% if post.like_count != 1 %}s{% endif %} · {{ post.comment_count }} comment{% if post.comment_count != 1 %}s{% endif %}">
+        <img src="{{ photo.proxy_url() }}" alt="{{ photo.first_alt(post.attachments.len()) }}" loading="lazy" />
+        {% if post.attachments.len() > 1 %}<span class="photo-grid-many" aria-label="{{ post.attachments.len() }} photos">❐</span>{% endif %}
+        {% if post.sensitive %}<span class="photo-grid-sensitive">Sensitive</span>{% endif %}
+        <span class="photo-grid-counts" aria-hidden="true">♥ {{ post.like_count }} · 💬 {{ post.comment_count }}</span>
+    </a>
+    {% endif %}
+    {% endfor %}
+</div>
+{% endif %}
 {% endmacro %}

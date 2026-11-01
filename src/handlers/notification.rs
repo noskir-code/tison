@@ -285,7 +285,7 @@ pub async fn live(
 /// Whether `Origin` is this site (the `Host` the browser connected to).
 /// Clients that aren't browsers send no `Origin`, they have no cookies of
 /// the user either.
-fn same_origin(headers: &HeaderMap) -> bool {
+pub(crate) fn same_origin(headers: &HeaderMap) -> bool {
     let Some(origin) = headers.get(header::ORIGIN) else {
         return true;
     };
@@ -381,9 +381,13 @@ async fn send(socket: &mut WebSocket, pool: &PgPool, user_id: i32, mut message: 
     let unread = notification::unread_count(pool, user_id).await.map_err(|err| {
         tracing::warn!("live notifications: failed to count: {}", err);
     })?;
-    let unread_messages = crate::entities::message::unread_count(pool, user_id).await.map_err(|err| {
-        tracing::warn!("live notifications: failed to count messages: {}", err);
-    })?;
+    let unread_messages = if crate::settings::services().dfrn {
+        crate::entities::message::unread_count(pool, user_id).await.map_err(|err| {
+            tracing::warn!("live notifications: failed to count messages: {}", err);
+        })?
+    } else {
+        0
+    };
     message["unread"] = json!(unread);
     message["unread_messages"] = json!(unread_messages);
     socket

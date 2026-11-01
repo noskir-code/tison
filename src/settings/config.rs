@@ -1,19 +1,21 @@
 use std::{collections::HashMap, env, fs, path::PathBuf};
 
 const DEFAULT_RUNTIME_FILE: &str = "configs/runtime.conf";
+const DEFAULT_SERVICES_FILE: &str = "configs/services.conf";
 
-/// Path of the runtime file, overridable with `TISON_CONFIG`.
-fn runtime_config_path() -> PathBuf {
-    env::var("TISON_CONFIG")
+/// Path of a configuration file, overridable with the variable `name`.
+fn config_path(name: &str, default: &str) -> PathBuf {
+    env::var(name)
         .ok()
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(DEFAULT_RUNTIME_FILE))
+        .unwrap_or_else(|| PathBuf::from(default))
 }
 
 /// Parses `KEY=VALUE` lines. Empty lines and `#` comments are ignored,
-/// surrounding quotes are stripped from values.
+/// surrounding quotes are stripped from values. Dashes in keys are read as
+/// underscores: `CONTENT-AGGREGATOR` is `CONTENT_AGGREGATOR`.
 fn parse_runtime_file(content: &str) -> Result<HashMap<String, String>, String> {
     let mut values = HashMap::new();
     for (index, raw_line) in content.lines().enumerate() {
@@ -33,7 +35,7 @@ fn parse_runtime_file(content: &str) -> Result<HashMap<String, String>, String> 
         if key.is_empty()
             || !key
                 .bytes()
-                .all(|byte| byte == b'_' || byte.is_ascii_alphanumeric())
+                .all(|byte| byte == b'_' || byte == b'-' || byte.is_ascii_alphanumeric())
         {
             return Err(format!(
                 "Invalid runtime config key '{}' on line {}",
@@ -51,7 +53,7 @@ fn parse_runtime_file(content: &str) -> Result<HashMap<String, String>, String> 
         }
 
         if !value.trim().is_empty() {
-            values.insert(key.to_string(), value.trim().to_string());
+            values.insert(key.replace('-', "_"), value.trim().to_string());
         }
     }
 
@@ -64,8 +66,10 @@ struct Settings {
 }
 
 impl Settings {
-    fn load() -> Result<Self, String> {
-        let path = runtime_config_path();
+    /// `file` is the path of the file, `variable` the environment variable
+    /// that can replace it.
+    fn load(variable: &str, file: &str) -> Result<Self, String> {
+        let path = config_path(variable, file);
         let file_values = match fs::read_to_string(&path) {
             Ok(content) => parse_runtime_file(&content)
                 .map_err(|err| format!("{} ({})", err, path.display()))?,
@@ -211,6 +215,92 @@ impl SmtpConfig {
     }
 }
 
+/// The services of `configs/services.conf` the site offers. Those not
+/// listed here aren't written yet.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Services {
+    /// `IMAGESHARING`: users can add photos to their posts.
+    pub image_sharing: bool,
+    /// `IMAGESYSTEM`: posts of photos shown like on Pixelfed (on) or in a
+    /// gallery under the text like on Mastodon (off).
+    pub image_system: bool,
+    /// `PUBLISHING`: articles with a title, in Markdown, like WriteFreely.
+    pub publishing: bool,
+    /// `VIDEO`: videos, like PeerTube. Needs ffmpeg.
+    pub video: bool,
+    /// `LIVE-STREAMING`: going live from OBS, like Owncast and PeerTube.
+    /// Needs ffmpeg.
+    pub live_streaming: bool,
+    /// `AUDIOSTREAMING`: podcasts, like Funkwhale and Castopod. Needs ffmpeg.
+    pub podcasts: bool,
+    /// `EVENT-PLANNING`: events and meetups, like Mobilizon.
+    pub events: bool,
+    /// `CONTENT-AGGREGATOR`: the communities, like Lemmy.
+    pub content_aggregator: bool,
+    /// `DFRN`: friends and the messenger, like Friendica.
+    pub dfrn: bool,
+}
+
+impl Default for Services {
+    fn default() -> Self {
+        Self {
+            image_sharing: true,
+            image_system: true,
+            publishing: true,
+            video: true,
+            live_streaming: true,
+            podcasts: true,
+            events: true,
+            content_aggregator: true,
+            dfrn: true,
+        }
+    }
+}
+
+static SERVICES: std::sync::OnceLock<Services> = std::sync::OnceLock::new();
+
+/// The services read at start, all on before (in tests).
+pub fn services() -> Services {
+    SERVICES.get().copied().unwrap_or_default()
+}
+
+impl Services {
+    /// Reads `configs/services.conf`, or the file in `TISON_SERVICES`. A missing
+    /// file or line keeps the service on; environment variables (with `_`,
+    /// like `CONTENT_AGGREGATOR=false`) win over the file.
+    pub fn from_file() -> Result<Self, String> {
+        let settings = Settings::load("TISON_SERVICES", DEFAULT_SERVICES_FILE)?;
+        Ok(Self {
+            image_sharing: settings.flag("IMAGESHARING", true),
+            image_system: settings.flag("IMAGESYSTEM", true),
+            publishing: settings.flag("PUBLISHING", true),
+            video: settings.flag("VIDEO", true),
+            live_streaming: settings.flag("LIVE_STREAMING", true),
+            podcasts: settings.flag("AUDIOSTREAMING", true),
+            events: settings.flag("EVENT_PLANNING", true),
+            content_aggregator: settings.flag("CONTENT_AGGREGATOR", true),
+            dfrn: settings.flag("DFRN", true),
+        })
+    }
+
+    /// Without ffmpeg, videos, live streams and podcasts are turned off.
+    pub fn without_media(self) -> Self {
+        Self { video: false, live_streaming: false, podcasts: false, ..self }
+    }
+
+    /// Makes them the ones `services()` returns, once.
+    pub fn install(self) {
+        let _ = SERVICES.set(self);
+    }
+
+    /// Given to every database connection so SQL can read them, see
+    /// `entities::service_on!`.
+    pub fn sql_settings(self) -> [(&'static str, &'static str); 2] {
+        let on = |enabled: bool| if enabled { "on" } else { "off" };
+        [("tison.content_aggregator", on(self.content_aggregator)), ("tison.dfrn", on(self.dfrn))]
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Config {
     pub host: String,
@@ -233,11 +323,32 @@ pub struct Config {
     /// two servers on one machine: on a real server it lets anyone make
     /// Tison send requests inside its network.
     pub federation_allow_insecure: bool,
+    /// From `configs/services.conf`.
+    pub services: Services,
+    /// The programs converting videos and sounds (`FFMPEG`, `FFPROBE`).
+    pub ffmpeg: String,
+    pub ffprobe: String,
+    /// Where OBS sends live streams (`RTMP_HOST`, `RTMP_PORT`).
+    pub rtmp_host: String,
+    pub rtmp_port: u16,
+    /// The largest video or episode uploaded (`MAX_VIDEO_MB`).
+    pub max_video_mb: usize,
+    /// x264's preset for uploaded videos (`VIDEO_PRESET`), `slow` by default.
+    pub video_preset: String,
+    /// The best quality made of videos, by its short side
+    /// (`VIDEO_MAX_LINES`): 2160 (4K) by default.
+    pub video_max_lines: u32,
+    /// Conversions running at once (`VIDEO_CONVERSIONS`), each user's one
+    /// at a time.
+    pub video_conversions: usize,
+    /// Where events' addresses are looked up for their map (`GEOCODER`):
+    /// OpenStreetMap's Nominatim by default, `None` with `off`.
+    pub geocoder: Option<String>,
 }
 
 impl Config {
     pub fn from_runtime() -> Result<Self, String> {
-        let settings = Settings::load()?;
+        let settings = Settings::load("TISON_CONFIG", DEFAULT_RUNTIME_FILE)?;
 
         let host = settings
             .get("APP_HOST")
@@ -265,10 +376,51 @@ impl Config {
             remember_me_days: settings.parse("REMEMBER_ME_DAYS", 30)?,
             federation: settings.flag("FEDERATION", true),
             federation_allow_insecure: settings.flag("FEDERATION_ALLOW_INSECURE", false),
+            services: Services::from_file()?,
+            ffmpeg: settings.get("FFMPEG").unwrap_or_else(|| "ffmpeg".to_string()),
+            ffprobe: settings.get("FFPROBE").unwrap_or_else(|| "ffprobe".to_string()),
+            rtmp_host: settings.get("RTMP_HOST").unwrap_or_else(|| "0.0.0.0".to_string()),
+            rtmp_port: settings.parse("RTMP_PORT", 1935)?,
+            max_video_mb: settings.parse("MAX_VIDEO_MB", 4096)?,
+            video_preset: {
+                const PRESETS: [&str; 9] = ["ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow"];
+                let preset = settings.get("VIDEO_PRESET").unwrap_or_else(|| "slow".to_string());
+                if !PRESETS.contains(&preset.as_str()) {
+                    return Err(format!("VIDEO_PRESET must be one of {}", PRESETS.join(", ")));
+                }
+                preset
+            },
+            geocoder: match settings.get("GEOCODER") {
+                Some(value) if value.eq_ignore_ascii_case("off") => None,
+                Some(url) if url.starts_with("https://") || url.starts_with("http://") => Some(url),
+                Some(other) => return Err(format!("GEOCODER must be an address or off, not '{other}'")),
+                None => Some(crate::geocode::DEFAULT_GEOCODER.to_string()),
+            },
+            video_conversions: match settings.parse("VIDEO_CONVERSIONS", 2)? {
+                count @ 1..=32 => count,
+                count => return Err(format!("VIDEO_CONVERSIONS must be between 1 and 32, not {count}")),
+            },
+            video_max_lines: match settings.parse("VIDEO_MAX_LINES", 2160)? {
+                lines @ 144..=2160 => lines,
+                lines => return Err(format!("VIDEO_MAX_LINES must be between 144 and 2160, not {lines}")),
+            },
         })
     }
 
     pub fn addr(&self) -> String {
         format!("{}:{}", self.host, self.port)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dashes_in_keys_are_underscores() {
+        let values = parse_runtime_file("# Lemmy\nCONTENT-AGGREGATOR=false\nDFRN = 'true'\n").unwrap();
+        assert_eq!(values.get("CONTENT_AGGREGATOR").map(String::as_str), Some("false"));
+        assert_eq!(values.get("DFRN").map(String::as_str), Some("true"));
+        assert!(parse_runtime_file("BAD KEY=1").is_err());
     }
 }

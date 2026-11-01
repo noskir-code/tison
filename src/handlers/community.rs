@@ -371,6 +371,8 @@ struct CommunityTemplate {
     /// Private community and the viewer isn't a member.
     posts_hidden: bool,
     posts: Vec<Post>,
+    /// The events it organizes, not over (`EVENT-PLANNING`).
+    events: Vec<Post>,
     rules: Vec<Rule>,
     moderators: Vec<Moderator>,
     sorts: Vec<SortLink>,
@@ -410,6 +412,14 @@ pub async fn community_page(
                 Vec::new()
             })
     };
+    let events = if posts_hidden || !crate::settings::services().events {
+        Vec::new()
+    } else {
+        post::events(&pool, viewer_id, post::EventList::Community(community.id)).await.unwrap_or_else(|err| {
+            tracing::error!("failed to load events of {}: {}", community.slug, err);
+            Vec::new()
+        })
+    };
     let rules = community::rules(&pool, community.id).await.unwrap_or_else(|err| {
         tracing::error!("failed to load rules of {}: {}", community.slug, err);
         Vec::new()
@@ -439,6 +449,7 @@ pub async fn community_page(
         is_staff,
         posts_hidden,
         posts,
+        events,
         rules,
         moderators,
         sorts,

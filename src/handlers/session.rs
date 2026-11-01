@@ -72,7 +72,7 @@ Stay signed in
 
 /// 128 random bits, URL-safe. Session ids come from a cryptographic generator
 /// seeded by the operating system, reused here instead of adding a crate.
-fn random_part() -> String {
+pub fn random_part() -> String {
     Id::default().to_string()
 }
 
