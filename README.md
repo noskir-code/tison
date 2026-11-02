@@ -73,6 +73,9 @@ https://instavox.social/
  - Algorithm option for admin server and for user when active on server
  - Wikipedia preview system to show information recognized in posts
 
+## Screenshots (changes can occur)
+![alt text](screenshots/Screenshot_2-11-2026_144646_localhost.jpeg) ![alt text](screenshots/Screenshot_2-11-2026_144814_localhost.png) ![alt text](screenshots/Screenshot_2-11-2026_145110_localhost.png) ![alt text](screenshots/Screenshot_2-11-2026_144831_localhost.jpeg) ![alt text](screenshots/Screenshot_2-11-2026_144913_localhost.jpeg) ![alt text](screenshots/Screenshot_2-11-2026_144924_localhost.jpeg) ![alt text](screenshots/Screenshot_2-11-2026_144946_localhost.jpeg) ![alt text](screenshots/Screenshot_2-11-2026_145055_localhost.jpeg)
+
  ## Legal pages
  Modify the files in legal to your local laws.
  The model given is not final and/or usable and is for an example only and mostly based on laws of the province of Québec, Canada.
