@@ -23,12 +23,41 @@
         <label for="edit-body" class="visually-hidden">{{ "Text"|t }}</label>
         <textarea id="edit-body" name="body" maxlength="{{ body_max_chars }}" rows="8" required>{{ body }}</textarea>
         {% endif %}
+        {% if !photos.is_empty() %}
+        {# Each one cropped again, alone (see handlers::post::crop_photo). #}
+        <div class="edit-photos" id="photos">
+            <span class="field-label">{{ "Photos"|t }}</span>
+            <ul>
+                {% for (url, original) in photos %}
+                <li>
+                    <img src="{{ url }}" alt="" loading="lazy" />
+                    <button type="button" class="action" data-crop-current="{{ original }}" data-crop="original square portrait wide free" data-crop-form="photo-crop-{{ loop.index0 }}" data-crop-name="photo" hidden>{{ "Crop"|t }}</button>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+        {% if let Some(current) = video_category %}
+        <label for="edit-category">{{ "Category"|t }}</label>
+        <select id="edit-category" name="category">
+            <option value="">{{ "No category"|t }}</option>
+            {% for (id, name) in crate::entities::video::CATEGORIES %}
+            <option value="{{ id }}"{% if Some(*id) == *current %} selected{% endif %}>{{ name|t }}</option>
+            {% endfor %}
+        </select>
+        {% endif %}
         <div class="flex center space-between">
             <a href="{{ back }}" class="action">{{ "Cancel"|t }}</a>
             <button type="submit" class="button">{{ "Save"|t }}</button>
         </div>
     </form>
 </section>
+{# Outside the edit form: one form a photo, filled by the cropping window. #}
+{% for (_, _) in photos %}
+<form action="/posts/{{ back.trim_start_matches("/posts/") }}/photos/{{ loop.index0 }}" method="post" enctype="multipart/form-data" id="photo-crop-{{ loop.index0 }}" hidden>
+    <input type="file" name="image" accept="image/*" />
+</form>
+{% endfor %}
 {% if let Some(thumbnail) = video_thumbnail %}
 <section class="box content profile-edit media-form" id="thumbnail">
     <h2>{{ "Thumbnail"|t }}</h2>

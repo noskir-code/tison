@@ -319,6 +319,12 @@ pub mod filters {
     pub fn tf<A: Display>(value: impl Display, _: &dyn askama::Values, argument: A) -> askama::Result<String> {
         Ok(super::tf(&value.to_string(), argument))
     }
+
+    /// Two values: `"Welcome to {}, @{}!"|tf2(site, name)`.
+    #[askama::filter_fn]
+    pub fn tf2<A: Display, B: Display>(value: impl Display, _: &dyn askama::Values, first: A, second: B) -> askama::Result<String> {
+        Ok(super::tf2(&value.to_string(), first, second))
+    }
 }
 
 #[cfg(test)]

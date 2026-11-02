@@ -14,6 +14,8 @@ mod API;
 mod av;
 mod entities;
 mod geocode;
+mod document;
+mod hashtag;
 mod i18n;
 mod handlers;
 mod linkify;
@@ -106,6 +108,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     config.services.install();
+    settings::install_site_domain(&config.public_base_url);
+    settings::install_instance_name(&config.instance_name);
     av::set_video_settings(av::VideoSettings { preset: config.video_preset.clone(), max_lines: config.video_max_lines });
     av::jobs::set_parallel(config.video_conversions);
     tracing::info!(
@@ -143,6 +147,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         && let Err(err) = entities::schema::sync(pool, entities::TABLES).await
     {
         tracing::error!("failed to update the database schema: {}", err);
+    }
+
+    // Servers without a real domain (`mastodon` alone) can't be reached.
+    if let Some(pool) = &pool {
+        match entities::federation::remove_invalid_domains(pool).await {
+            Ok(removed) if !removed.is_empty() => tracing::info!("removed the servers without a valid domain: {}", removed.join(", ")),
+            Ok(_) => {}
+            Err(err) => tracing::warn!("failed to remove the servers without a valid domain: {}", err),
+        }
+    }
+
+    // MULTI-MODERATOR in settings.conf.
+    if let Some(pool) = &pool
+        && let Err(err) = entities::user::sync_team_account(pool, &config.instance_name, config.multi_moderator).await
+    {
+        tracing::warn!("failed to update the team account: {}", err);
     }
 
     if let Some(pool) = &pool {
@@ -296,6 +316,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     av::jobs::resume(&state).await;
     tokio::spawn(handlers::event::run_scheduler(state.clone()));
+    if let Some(pool) = state.pool.clone() {
+        tokio::spawn(handlers::moderation::run_suspension_ends(state.clone(), pool));
+    }
     if config.services.live_streaming && state.pool.is_some() {
         tokio::spawn(av::rtmp::serve(format!("{}:{}", config.rtmp_host, config.rtmp_port), state.clone()));
     }

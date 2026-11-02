@@ -41,9 +41,16 @@ pub const ACTORS_TABLE: Table = Table {
         Column::new("key_id", "TEXT"),
         Column::new("public_key_pem", "TEXT"),
         Column::new("fetched_at", "TIMESTAMPTZ").default("NOW()"),
+        // Its ActivityPub type: `Person`, `Group` (a community of Lemmy,
+        // Friendica...), `Service` (a bot), `Organization` or `Application`.
+        Column::new("kind", "TEXT").default("'Person'"),
     ],
     indexes: &[
         Index::unique("federation_actors_actor_id_idx", "actor_id"),
+        Index::new("federation_actors_kind_idx", "kind"),
+        // `search`: their names, fast with ILIKE.
+        Index::trigram("federation_actors_username_trgm_idx", "username"),
+        Index::trigram("federation_actors_display_name_trgm_idx", "display_name"),
         Index::new("federation_actors_host_idx", "host"),
         Index::new("federation_actors_key_id_idx", "key_id"),
     ],
@@ -185,6 +192,8 @@ pub struct NewRemoteActor {
     pub shared_inbox: Option<String>,
     pub key_id: String,
     pub public_key_pem: String,
+    /// Its ActivityPub `type`, like `Person` or `Group`.
+    pub kind: String,
 }
 
 impl RemoteActor {
@@ -268,14 +277,14 @@ pub async fn save_actor(pool: &PgPool, actor: &NewRemoteActor) -> Result<RemoteA
     let row = sqlx::query(concat!(
         "INSERT INTO federation_actors
             (actor_id, username, inbox, shared_inbox, key_id, public_key_pem, display_name, icon_url, profile_url,
-             summary, followers_url, host)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+             summary, followers_url, host, kind)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
          ON CONFLICT (actor_id) DO UPDATE SET
             username = EXCLUDED.username, inbox = EXCLUDED.inbox,
             shared_inbox = EXCLUDED.shared_inbox, key_id = EXCLUDED.key_id,
             public_key_pem = EXCLUDED.public_key_pem, display_name = EXCLUDED.display_name,
             icon_url = EXCLUDED.icon_url, profile_url = EXCLUDED.profile_url,
-            summary = EXCLUDED.summary, followers_url = EXCLUDED.followers_url, fetched_at = NOW()
+            summary = EXCLUDED.summary, followers_url = EXCLUDED.followers_url, kind = EXCLUDED.kind, fetched_at = NOW()
          RETURNING ",
         actor_columns!()
     ))
@@ -291,9 +300,55 @@ pub async fn save_actor(pool: &PgPool, actor: &NewRemoteActor) -> Result<RemoteA
     .bind(&actor.summary)
     .bind(&actor.followers_url)
     .bind(host_of(&actor.actor_id))
+    .bind(&actor.kind)
     .fetch_one(pool)
     .await?;
     RemoteActor::from_row(&row)
+}
+
+/// An account of another server already known here, found by the search.
+pub struct KnownAccount {
+    pub author: crate::entities::author::RemoteAuthor,
+    pub summary: String,
+}
+
+/// Accounts of other servers known here whose name, username or server
+/// contains `words`: the communities (`Group`) or the others. Not those
+/// blocked, nor of banned servers.
+pub async fn search_accounts(pool: &PgPool, words: &str, groups: bool, limit: i64) -> Result<Vec<KnownAccount>, sqlx::Error> {
+    let words = crate::entities::user::escape_like(words.trim().trim_start_matches(['@', '!']));
+    // `name@server`: the name, on that server.
+    let (name, server) = match words.split_once('@') {
+        Some((name, server)) => (name.to_string(), server.to_string()),
+        None => (words.clone(), String::new()),
+    };
+    sqlx::query(concat!(
+        "SELECT ",
+        crate::entities::author::remote_author_columns!(),
+        ", ra.summary
+         FROM federation_actors ra
+         WHERE (ra.kind = 'Group') = $3 AND ra.blocked_at IS NULL
+           AND NOT EXISTS (SELECT 1 FROM instance_policies ip WHERE ip.domain = ra.host AND ip.policy = 'banned')
+           AND ($4 = '' OR ra.host ILIKE $4 || '%')
+           AND (ra.username ILIKE '%' || $1 || '%' OR ra.display_name ILIKE '%' || $1 || '%'
+                OR ($4 = '' AND ra.host ILIKE '%' || $1 || '%'))
+         ORDER BY LOWER(ra.username) = LOWER($1) DESC, ra.username ILIKE $1 || '%' DESC, ra.fetched_at DESC
+         LIMIT $2"
+    ))
+    .bind(name)
+    .bind(limit)
+    .bind(groups)
+    .bind(server)
+    .fetch_all(pool)
+    .await?
+    .iter()
+    .map(|row| {
+        Ok(KnownAccount {
+            author: crate::entities::author::RemoteAuthor::from_row(row)?,
+            summary: row.try_get("summary")?,
+        })
+    })
+    .collect()
 }
 
 // --- Servers of the Fediverse ---
@@ -320,6 +375,47 @@ pub const INSTANCES_TABLE: Table = Table {
 /// when there's one), the key of `INSTANCES_TABLE`.
 pub fn host_of(url: &str) -> String {
     crate::entities::author::host_of(url).to_ascii_lowercase()
+}
+
+/// A server's domain like `mastodon.social` (with a port when there's one):
+/// at least two labels, the last not only digits (unless it's an IPv4
+/// address, for tests on one machine). `mastodon` or `instavox` alone can't
+/// be reached from other servers.
+pub fn is_valid_domain(host: &str) -> bool {
+    let name = match host.rsplit_once(':') {
+        Some((name, port)) if !port.is_empty() && port.len() <= 5 && port.bytes().all(|byte| byte.is_ascii_digit()) => name,
+        Some(_) => return false,
+        None => host,
+    };
+    if name.parse::<std::net::Ipv4Addr>().is_ok() {
+        return true;
+    }
+    let labels: Vec<&str> = name.split('.').collect();
+    name.len() <= 253
+        && labels.len() >= 2
+        && labels.iter().all(|label| {
+            !label.is_empty()
+                && label.len() <= 63
+                && !label.starts_with('-')
+                && !label.ends_with('-')
+                && label.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        })
+        && !labels.last().is_some_and(|tld| tld.bytes().all(|byte| byte.is_ascii_digit()))
+}
+
+/// Removes the accounts of servers without a valid domain (`mastodon`,
+/// `instavox`...), with what they posted, and the rules set for such
+/// domains. Run at startup. Returns the domains removed.
+pub async fn remove_invalid_domains(pool: &PgPool) -> Result<Vec<String>, sqlx::Error> {
+    let hosts: Vec<String> = sqlx::query_scalar("SELECT DISTINCT host FROM federation_actors UNION SELECT domain FROM instance_policies")
+        .fetch_all(pool)
+        .await?;
+    let invalid: Vec<String> = hosts.into_iter().filter(|host| !is_valid_domain(host)).collect();
+    if !invalid.is_empty() {
+        sqlx::query("DELETE FROM federation_actors WHERE host = ANY($1)").bind(&invalid).execute(pool).await?;
+        sqlx::query("DELETE FROM instance_policies WHERE domain = ANY($1)").bind(&invalid).execute(pool).await?;
+    }
+    Ok(invalid)
 }
 
 /// What the staff decided about a server.
@@ -1033,4 +1129,19 @@ pub async fn retry_delivery(pool: &PgPool, id: i64, delay_seconds: f64, error: &
     .execute(pool)
     .await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_real_domains_are_valid() {
+        for valid in ["mastodon.social", "tison.social", "a-b.example.org", "pixelfed.de:8443", "127.0.0.1:18999"] {
+            assert!(is_valid_domain(valid), "{valid}");
+        }
+        for invalid in ["mastodon", "instavox", "instavox:3000", "", ".social", "a..b", "-a.com", "a.123", "a.com:", "a.com:x", "a_b.com"] {
+            assert!(!is_valid_domain(invalid), "{invalid}");
+        }
+    }
 }

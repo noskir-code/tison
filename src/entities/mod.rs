@@ -2,6 +2,7 @@ pub mod article_picture;
 pub mod author;
 pub mod comment;
 pub mod creator_stats;
+pub mod email_domain;
 pub mod community;
 pub mod event;
 pub mod federation;
@@ -61,7 +62,6 @@ pub const TABLES: &[&schema::Table] = &[
     &community::IGNORES_TABLE,
     &community::REQUESTS_TABLE,
     &media::MEDIA_TABLE,
-    &media::ATTACHMENTS_TABLE,
     &follow::TABLE,
     &friend::TABLE,
     &session::TABLE,
@@ -79,9 +79,12 @@ pub const TABLES: &[&schema::Table] = &[
     &views::MARKS_TABLE,
     &article_picture::TABLE,
     &push::TABLE,
+    &email_domain::TABLE,
     &push::KEYS_TABLE,
     &message::CONVERSATIONS_TABLE,
     &message::MESSAGES_TABLE,
+    // After the tables its rows belong to.
+    &media::ATTACHMENTS_TABLE,
     &preview::TABLE,
     &report::TABLE,
 ];

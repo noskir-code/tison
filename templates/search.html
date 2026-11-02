@@ -1,4 +1,12 @@
-{% extends "base.html" %} {% import "macros/account.html" as accounts %} {% block content %}
+{% extends "base.html" %} {% import "macros/account.html" as accounts %} {% import "macros/post.html" as posts_ui %}
+{# A section's title on the "All" tab: with a link to its own tab. #}
+{% macro section_title(title, slug) %}
+<h2 class="search-section-title">
+    <span>{{ title|t }}</span>
+    {% if tab == SearchTab::All %}<a href="/search?q={{ query|urlencode }}&amp;type={{ slug }}" class="action">{{ "See all"|t }}</a>{% endif %}
+</h2>
+{% endmacro %}
+{% block content %}
 <section class="box content search-results">
     {% if query.is_empty() %}
     <h1>{{ "Search"|t }}</h1>
@@ -8,6 +16,12 @@
     {% if let Some(message) = error %}
     <p class="error">{{ message|t }}</p>
     {% endif %}
+    {% if fediverse && (query.is_empty() || address) %}
+    <p class="post-username search-hint">
+        {{ "To follow someone on Mastodon, Misskey, Pixelfed and other servers, search their address, like"|t }} <strong>{{ "@name@mastodon.social"|t }}</strong>{{ ", or paste the link of their profile."|t }}
+        {% if let Some(handle) = own_handle %}{{ "There, you are"|t }} <strong>{{ handle }}</strong>.{% endif %}
+    </p>
+    {% endif %}
 
     {% if let Some(account) = found %}
     <div class="account-card">
@@ -16,17 +30,33 @@
         {% call accounts::follow_button(account, return_to) %}{% endcall %}
     </div>
     {% else if !query.is_empty() && error.is_none() %}
-    <h2>{{ "People"|t }}</h2>
+    {% if !address %}
+    {# The kinds of results, see handlers::search::SearchTab. #}
+    <nav class="profile-tabs search-tabs" aria-label="{{ "Kinds of results"|t }}">
+        {% for link in tabs %}
+        <a href="{{ link.url }}"{% if link.active %} class="active" aria-current="page"{% endif %}>{{ link.label|t }}</a>
+        {% endfor %}
+    </nav>
+    {% endif %}
+
+    {% if tab == SearchTab::All || tab == SearchTab::People %}
+    {% call section_title("People", "people") %}{% endcall %}
     <ul class="account-list">
         {% for user in users %}
         <li>{% call accounts::user_identity(user) %}{% endcall %}</li>
-        {% else %}
-        <li class="empty">{{ "Nobody found."|t }}</li>
         {% endfor %}
+        {# Of other servers, already known here: see federation::search_accounts. #}
+        {% for known in remote_people %}
+        <li>{% call accounts::identity(known.author) %}{% endcall %}</li>
+        {% endfor %}
+        {% if users.is_empty() && remote_people.is_empty() %}
+        <li class="empty">{{ "Nobody found."|t }}</li>
+        {% endif %}
     </ul>
+    {% endif %}
 
-    {% if crate::settings::services().content_aggregator %}
-    <h2>{{ "Communities"|t }}</h2>
+    {% if crate::settings::services().content_aggregator && (tab == SearchTab::All || tab == SearchTab::Communities) %}
+    {% call section_title("Communities", "communities") %}{% endcall %}
     <ul class="account-list">
         {% for community in communities %}
         <li>
@@ -42,18 +72,47 @@
                 </span>
             </a>
         </li>
-        {% else %}
+        {% endfor %}
+        {% for known in remote_communities %}
+        <li>{% call accounts::identity(known.author) %}{% endcall %}</li>
+        {% endfor %}
+        {% if communities.is_empty() && remote_communities.is_empty() %}
         <li class="empty">{{ "No community found."|t }}</li>
+        {% endif %}
+    </ul>
+    {% endif %}
+
+    {% if !address && (tab == SearchTab::All || tab == SearchTab::Hashtags) %}
+    {% call section_title("Hashtags", "hashtags") %}{% endcall %}
+    {% if tags.is_empty() %}
+    <p class="empty">{{ "No hashtag found."|t }}</p>
+    {% else %}
+    {# Containing the words, the most used first: see post::search_tags. #}
+    <ul class="search-tags">
+        {% for found in tags %}
+        <li><a href="{{ found.path() }}" class="search-tag"><strong>#{{ found.tag }}</strong> <span class="post-meta">{% if found.uses == 1 %}{{ "1 post"|t }}{% else %}{{ "{} posts"|tf(found.uses) }}{% endif %}</span></a></li>
         {% endfor %}
     </ul>
     {% endif %}
     {% endif %}
 
-    {% if fediverse %}
-    <p class="post-username search-hint">
-        {{ "To follow someone on Mastodon, Misskey, Pixelfed and other servers, search their address, like"|t }} <strong>{{ "@name@mastodon.social"|t }}</strong>{{ ", or paste the link of their profile."|t }}
-        {% if let Some(handle) = own_handle %}{{ "There, you are"|t }} <strong>{{ handle }}</strong>.{% endif %}
-    </p>
+    {% if !address && (tab == SearchTab::All || tab == SearchTab::Posts || tab == SearchTab::Videos || tab == SearchTab::Articles) %}
+    {% if tab == SearchTab::All %}
+    {% call section_title("Posts", "posts") %}{% endcall %}
+    {% else %}
+    <h2>{{ tab.label()|t }}</h2>
+    {% endif %}
+    {% if query.trim_start_matches(['@', '!', '#']).chars().count() < 3 %}
+    <p class="empty">{{ "Write at least 3 letters to search posts."|t }}</p>
+    {% else if posts.is_empty() %}
+    <p class="empty">{% if tab == SearchTab::Videos %}{{ "No video found."|t }}{% else if tab == SearchTab::Articles %}{{ "No article found."|t }}{% else %}{{ "No post found."|t }}{% endif %}</p>
+    {% else if tab == SearchTab::Videos %}
+    {% call posts_ui::video_grid(posts, "") %}{% endcall %}
+    {% endif %}
+    {% endif %}
     {% endif %}
 </section>
+{% if !posts.is_empty() && tab != SearchTab::Videos %}
+{% call posts_ui::post_list(posts, "", signed_in, return_to, false) %}{% endcall %}
+{% endif %}
 {% endblock %}

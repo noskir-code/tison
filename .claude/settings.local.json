@@ -82,7 +82,8 @@
       "Bash(ps -eo pid,lstart,args)",
       "Bash(sed -i 's/^cookies = .*/cookies = []/; s/sys.argv\\\\[3\\\\], \"verify\"\\), \\(sys.argv\\\\[4\\\\], \"reset\"\\)/sys.argv[1], \"verify\"\\), \\(sys.argv[2], \"reset\"\\)/' /tmp/claude-1000/-home-noskir-Documents-Rust-tison/d4a5eb79-de15-4bc7-aab7-53d8e12aba03/scratchpad/mails.py)",
       "Bash(sed -i 's/^port, url, out = 9334, sys.argv\\\\[1\\\\], sys.argv\\\\[2\\\\]/port = 9334/' /tmp/claude-1000/-home-noskir-Documents-Rust-tison/d4a5eb79-de15-4bc7-aab7-53d8e12aba03/scratchpad/mails.py)",
-      "Bash(timeout 60 python3 -I /tmp/claude-1000/-home-noskir-Documents-Rust-tison/d4a5eb79-de15-4bc7-aab7-53d8e12aba03/scratchpad/mails.py 1Zhx3ZPUCNBOAdR2LTGFkr 4DqHAe3Z3be7cX4UyGWKIK)"
+      "Bash(timeout 60 python3 -I /tmp/claude-1000/-home-noskir-Documents-Rust-tison/d4a5eb79-de15-4bc7-aab7-53d8e12aba03/scratchpad/mails.py 1Zhx3ZPUCNBOAdR2LTGFkr 4DqHAe3Z3be7cX4UyGWKIK)",
+      "Bash(python3 -I -)"
     ],
     "additionalDirectories": [
       "/home/noskir/Documents/Rust/tison/tower-sessions-0.15.0",

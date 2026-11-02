@@ -278,7 +278,7 @@ async fn save_banner(user_id: i32, upload: &Upload) -> Result<Option<String>, Ev
         return Ok(None);
     };
     let data = tokio::fs::read(file).await.map_err(|_| EventError::Server)?;
-    let photo = crate::photo::clean(&data).map_err(|_| EventError::BannerFormat)?;
+    let photo = crate::photo::prepare(&data).await.map_err(|_| EventError::BannerFormat)?;
     image::save_file(ImageOwner::User(user_id), "event", photo.extension, &photo.data)
         .await
         .map(Some)

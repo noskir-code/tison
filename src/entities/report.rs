@@ -273,10 +273,30 @@ pub enum Reporter {
 /// The account a report is about, with what the staff did to it.
 pub struct Account {
     pub author: Author,
-    /// Suspended (local) or blocked (remote).
+    /// Banned or suspended (local), or blocked (remote).
     pub restricted: bool,
     /// Its open reports, this one included.
     pub open_reports: i64,
+}
+
+impl Account {
+    /// The creator, a moderator or the team account: not banned, suspended
+    /// nor deleted from a report.
+    pub fn is_staff(&self) -> bool {
+        matches!(&self.author, Author::Local(user) if user.is_staff())
+    }
+
+    /// What the staff did, shown next to it: "banned", "suspended until
+    /// Nov 9, 2026" or "blocked".
+    pub fn restriction(&self) -> String {
+        match &self.author {
+            Author::Local(user) => match user.suspended_until {
+                Some(until) if !user.is_banned() => crate::i18n::tf("suspended until {}", crate::i18n::date(until.date_naive())),
+                _ => crate::i18n::t("banned"),
+            },
+            Author::Remote(_) => crate::i18n::t("blocked"),
+        }
+    }
 }
 
 /// A report as shown on the dashboard.
@@ -452,6 +472,12 @@ pub async fn targets(pool: &PgPool, id: i64) -> Result<Option<(Option<i64>, Opti
             ))
         })
         .transpose()
+}
+
+/// Deletes a report, whatever its status.
+pub async fn delete(pool: &PgPool, id: i64) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM reports WHERE id = $1").bind(id).execute(pool).await?;
+    Ok(())
 }
 
 /// Changes the status of a report, by `moderator_id`.

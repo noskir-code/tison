@@ -1,4 +1,4 @@
-{% extends "base.html" %} {% import "macros/account.html" as accounts %} {% import "macros/moderation.html" as moderation_ui %} {% block content %}
+{% extends "base.html" %} {% import "macros/account.html" as accounts %} {% import "macros/moderation.html" as moderation_ui %} {% import "macros/post.html" as posts_ui %} {% block content %}
 <section class="box content moderation staff">
     {% call moderation_ui::tabs(sections) %}{% endcall %}
     <p class="post-username">
@@ -16,7 +16,7 @@
         <li>
             {% call accounts::user_identity(member) %}{% endcall %}
             {% if let Some(badge) = member.role.badge() %}<span class="role-badge {{ member.role.as_str() }}">{{ badge|t }}</span>{% endif %}
-            {% if can_manage && member.role == Role::Moderator %}
+            {% if can_manage && member.role == Role::Moderator && !member.team %}
             <form action="/moderation/staff/{{ member.id }}/remove" method="post" class="inline" data-confirm="{{ "Remove @{} from the moderators?"|tf(member.username) }}" data-confirm-label="{{ "Remove"|t }}">
                 <button type="submit" class="action danger">{{ "Remove"|t }}</button>
             </form>
@@ -34,4 +34,18 @@
     </form>
     {% endif %}
 </section>
+
+{# MULTI-MODERATOR in settings.conf: what the staff publishes together. #}
+{% if let Some(composer) = composer %}
+<div id="team-composer" class="team-composer">
+    {% if published %}
+    <p class="box content saved" role="status">{{ "Published as the team."|t }}</p>
+    {% endif %}
+    {% call posts_ui::composer(composer) %}{% endcall %}
+</div>
+{% if !team_posts.is_empty() %}
+<h2 class="team-posts-title">{{ "Latest posts of the team"|t }}</h2>
+{% call posts_ui::post_list(team_posts, "", true, "/moderation/staff", true) %}{% endcall %}
+{% endif %}
+{% endif %}
 {% endblock %}

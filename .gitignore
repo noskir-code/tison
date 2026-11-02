@@ -3,4 +3,5 @@
 /public/uploads
 /cache
 /.claude
+/.claude/settings.local.json
 notes.txt

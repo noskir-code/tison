@@ -1,0 +1,10 @@
+{% extends "base.html" %} {% import "macros/post.html" as posts_ui %} {% block content %}
+{# See handlers::post::tag_page. #}
+<section class="box content">
+    <h1>#{{ tag }}</h1>
+    <p class="post-username">{{ "Posts with this hashtag, from here and from the other servers known here."|t }}</p>
+</section>
+<div class="flex center vertical full-width posts">
+    {% call posts_ui::post_list(posts, "No post with this hashtag yet."|t, layout.viewer.is_some(), "/tags/{}"|format(tag), false) %}{% endcall %}
+</div>
+{% endblock %}

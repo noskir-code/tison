@@ -99,7 +99,7 @@ pub async fn send_link(state: &AppState, pool: &PgPool, user_id: i32) -> Sent {
     }
     let link = format!("{}/verify-email?token={token}", state.public_base_url);
     let email = Email::render(
-        &crate::i18n::t("Verify your Tison email"),
+        &crate::i18n::tf("Verify your {} email", crate::settings::instance_name()),
         &VerifyEmailText {
             username: &found.username,
             link: &link,

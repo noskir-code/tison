@@ -2,6 +2,7 @@ use std::{collections::HashMap, env, fs, path::PathBuf};
 
 pub(super) const DEFAULT_RUNTIME_FILE: &str = "configs/runtime.conf";
 pub(super) const DEFAULT_SERVICES_FILE: &str = "configs/services.conf";
+pub(super) const DEFAULT_SETTINGS_FILE: &str = "configs/settings.conf";
 
 /// Path of a configuration file, overridable with the variable `name`.
 pub(super) fn config_path(name: &str, default: &str) -> PathBuf {
@@ -259,6 +260,41 @@ impl Default for Services {
 
 static SERVICES: std::sync::OnceLock<Services> = std::sync::OnceLock::new();
 
+static SITE_DOMAIN: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+/// The site's domain, like `tison.social` (from `PUBLIC_BASE_URL`), shown in
+/// the addresses of its users: `@noskir@tison.social`.
+pub fn site_domain() -> &'static str {
+    SITE_DOMAIN.get().map(String::as_str).unwrap_or("localhost")
+}
+
+static SITE_BASE_URL: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+static INSTANCE_NAME: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+/// The site's name (`INSTANCE_NAME` in runtime.conf), shown wherever the
+/// site names itself. "Tison" stays the name of the software.
+pub fn instance_name() -> &'static str {
+    INSTANCE_NAME.get().map(String::as_str).unwrap_or("Tison")
+}
+
+/// Set once at start, from `Config::instance_name`.
+pub fn install_instance_name(name: &str) {
+    let _ = INSTANCE_NAME.set(name.trim().to_string());
+}
+
+/// `https://tison.social`: the site's address (`PUBLIC_BASE_URL`), for what
+/// is read elsewhere, like the previews of its pages.
+pub fn site_base_url() -> &'static str {
+    SITE_BASE_URL.get().map(String::as_str).unwrap_or("")
+}
+
+/// Set once at start, from `Config::public_base_url`.
+pub fn install_site_domain(public_base_url: &str) {
+    let _ = SITE_DOMAIN.set(crate::entities::author::host_of(public_base_url).to_ascii_lowercase());
+    let _ = SITE_BASE_URL.set(public_base_url.trim_end_matches('/').to_string());
+}
+
 /// The services read at start, all on before (in tests).
 pub fn services() -> Services {
     SERVICES.get().copied().unwrap_or_default()
@@ -319,8 +355,12 @@ pub struct Config {
     /// The site's name (`INSTANCE_NAME`), in the pages of `legal/`.
     pub instance_name: String,
     pub smtp: Option<SmtpConfig>,
-    /// Fediverse (ActivityPub): other servers can find and follow local users.
+    /// Fediverse (ActivityPub): other servers can find and follow local
+    /// users. `FEDERATED` in settings.conf, or `FEDERATION` when set here.
     pub federation: bool,
+    /// An account for the moderation team (`MULTI-MODERATOR` in
+    /// settings.conf), see `user::sync_team_account`.
+    pub multi_moderator: bool,
     /// Lets federation reach `http://` and private addresses. Only to test
     /// two servers on one machine: on a real server it lets anyone make
     /// Tison send requests inside its network.
@@ -351,6 +391,7 @@ pub struct Config {
 impl Config {
     pub fn from_runtime() -> Result<Self, String> {
         let settings = Settings::load("TISON_CONFIG", DEFAULT_RUNTIME_FILE)?;
+        let site = Settings::load("TISON_SETTINGS", DEFAULT_SETTINGS_FILE)?;
 
         let host = settings
             .get("APP_HOST")
@@ -377,7 +418,8 @@ impl Config {
             secure_cookies: settings.flag("COOKIE_SECURE", !cfg!(debug_assertions)),
             session_inactivity_days: settings.parse("SESSION_INACTIVITY_DAYS", 7)?,
             remember_me_days: settings.parse("REMEMBER_ME_DAYS", 30)?,
-            federation: settings.flag("FEDERATION", true),
+            federation: settings.flag("FEDERATION", site.flag("FEDERATED", true)),
+            multi_moderator: site.flag("MULTI_MODERATOR", false),
             federation_allow_insecure: settings.flag("FEDERATION_ALLOW_INSECURE", false),
             services: Services::from_file()?,
             ffmpeg: settings.get("FFMPEG").unwrap_or_else(|| "ffmpeg".to_string()),

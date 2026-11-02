@@ -40,7 +40,7 @@
             {% if let Some(account) = report.account %}
             <p class="report-account">
                 {{ "Account:"|t }} <a href="{{ account.author.profile_url() }}">{{ account.author.handle() }}</a>
-                {% if account.restricted %}<span class="only-you">{% if account.author.is_remote() %}{{ "blocked"|t }}{% else %}{{ "suspended"|t }}{% endif %}</span>{% endif %}
+                {% if account.restricted %}<span class="only-you">{{ account.restriction() }}</span>{% endif %}
                 {% if account.open_reports > 1 %}· <strong>{{ "{} open reports"|tf(account.open_reports) }}</strong>{% endif %}
             </p>
             {% endif %}
@@ -59,10 +59,32 @@
                     <input type="hidden" name="status" value="{{ status.as_str() }}" />
                     <button type="submit" class="button{% if !account.restricted %} danger{% endif %}">{% if account.restricted %}{{ "Unblock"|t }}{% else %}{{ "Block account"|t }}{% endif %}</button>
                 </form>
-                {% else %}
-                <form action="/moderation/reports/{{ report.id }}/{% if account.restricted %}unsuspend{% else %}suspend{% endif %}" method="post"{% if !account.restricted %} data-confirm="{{ "Suspend {}? They are signed out, can't sign in, and their posts and profile are hidden."|tf(account.author.handle()) }}" data-confirm-label="{{ "Suspend"|t }}"{% endif %}>
+                {% else if !account.is_staff() %}
+                {% if account.restricted %}
+                <form action="/moderation/reports/{{ report.id }}/unsuspend" method="post">
                     <input type="hidden" name="status" value="{{ status.as_str() }}" />
-                    <button type="submit" class="button{% if !account.restricted %} danger{% endif %}">{% if account.restricted %}{{ "Reinstate"|t }}{% else %}{{ "Suspend account"|t }}{% endif %}</button>
+                    <button type="submit" class="button">{{ "Reinstate"|t }}</button>
+                </form>
+                {% else %}
+                {# A suspension ends by itself, see handlers::moderation::run_suspension_ends. #}
+                <form action="/moderation/reports/{{ report.id }}/suspend" method="post" class="suspend-form" data-confirm="{{ "Suspend {}? They are signed out and can't sign in, and their posts and profile are hidden, until the end of the suspension."|tf(account.author.handle()) }}" data-confirm-label="{{ "Suspend"|t }}">
+                    <input type="hidden" name="status" value="{{ status.as_str() }}" />
+                    <label for="suspend-days-{{ report.id }}" class="visually-hidden">{{ "Length of the suspension"|t }}</label>
+                    <select id="suspend-days-{{ report.id }}" name="days">
+                        {% for days in suspension_days %}
+                        <option value="{{ days }}"{% if *days == 7 %} selected{% endif %}>{% if *days == 1 %}{{ "1 day"|t }}{% else %}{{ "{} days"|tf(days) }}{% endif %}</option>
+                        {% endfor %}
+                    </select>
+                    <button type="submit" class="button danger">{{ "Suspend"|t }}</button>
+                </form>
+                <form action="/moderation/reports/{{ report.id }}/ban" method="post" data-confirm="{{ "Ban {}? They are signed out, can't sign in anymore, and their posts and profile are hidden, until a moderator reinstates them."|tf(account.author.handle()) }}" data-confirm-label="{{ "Ban"|t }}">
+                    <input type="hidden" name="status" value="{{ status.as_str() }}" />
+                    <button type="submit" class="button danger">{{ "Ban account"|t }}</button>
+                </form>
+                {% endif %}
+                <form action="/moderation/reports/{{ report.id }}/delete-account" method="post" data-confirm="{{ "Delete {} for good? The account and everything it posted (posts, comments, photos, videos, messages) are deleted, here and on other servers. This can't be undone: for fake accounts and spam."|tf(account.author.handle()) }}" data-confirm-label="{{ "Delete account"|t }}">
+                    <input type="hidden" name="status" value="{{ status.as_str() }}" />
+                    <button type="submit" class="button danger">{{ "Delete account"|t }}</button>
                 </form>
                 {% endif %}
                 {% endif %}
@@ -90,6 +112,11 @@
                     <button type="submit" class="button">{{ "Reopen"|t }}</button>
                 </form>
                 {% endif %}
+                {# The report only: what it's about stays. #}
+                <form action="/moderation/reports/{{ report.id }}/remove" method="post" data-confirm="{{ "Delete this report? Only the report goes, not what it's about."|t }}" data-confirm-label="{{ "Delete report"|t }}">
+                    <input type="hidden" name="status" value="{{ status.as_str() }}" />
+                    <button type="submit" class="button">{{ "Delete report"|t }}</button>
+                </form>
             </div>
         </li>
         {% else %}

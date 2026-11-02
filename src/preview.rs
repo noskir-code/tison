@@ -1,5 +1,6 @@
 //! Link previews: a background task looks at new and edited posts (see
-//! `entities::preview`), fetches the page of their first link, and reads
+//! `entities::preview`), fetches the page of their first link (of each link
+//! for articles, shown under their paragraph), and reads
 //! its card from the tags sites write for Mastodon, Facebook and Twitter
 //! (OpenGraph `og:title`, `og:image`..., else `<title>` and `description`).
 //!
@@ -46,10 +47,14 @@ pub async fn run(web: Arc<Web>, pool: PgPool, wake: Arc<Notify>) {
             }
             continue;
         }
-        for (_, body) in &posts {
-            let Some(url) = linkify::first_link(body) else {
-                continue;
-            };
+        let urls: Vec<String> = posts
+            .iter()
+            .flat_map(|(_, body, article)| match article {
+                true => crate::markdown::links(body),
+                false => linkify::first_link(body).into_iter().collect(),
+            })
+            .collect();
+        for url in urls {
             match preview::is_fresh(&pool, &url).await {
                 Ok(true) => continue,
                 Ok(false) => {}
@@ -69,7 +74,7 @@ pub async fn run(web: Arc<Web>, pool: PgPool, wake: Arc<Notify>) {
                 tracing::warn!("failed to save the preview of {}: {}", url, err);
             }
         }
-        let ids: Vec<i64> = posts.iter().map(|(id, _)| *id).collect();
+        let ids: Vec<i64> = posts.iter().map(|(id, ..)| *id).collect();
         if let Err(err) = preview::mark_checked(&pool, &ids).await {
             tracing::warn!("failed to mark posts checked for previews: {}", err);
             tokio::time::sleep(Duration::from_secs(60)).await;

@@ -1,7 +1,7 @@
 {% extends "base.html" %} {% block content %}
 <section class="box content profile-edit two-factor">
     <h1>{{ "Two-factor authentication"|t }}</h1>
-    <p><a href="/settings">{{ "← Settings"|t }}</a></p>
+    <p><a href="/settings?tab=account">{{ "← Settings"|t }}</a></p>
     {% if let Some(message) = error %}<p class="error">{{ message|t }}</p>{% endif %}
     {% if let Some(message) = saved %}<p class="saved">{{ message|t }}</p>{% endif %}
 

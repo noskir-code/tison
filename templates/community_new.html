@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="box content profile-edit" id="create">
+    <p><a href="/communities">{{ "← Communities"|t }}</a></p>
+    <h1>{{ "Create a community"|t }}</h1>
+    {% if layout.viewer.is_some() %}
+    {% if let Some(message) = error %}
+    <p class="error">{{ message|t }}</p>
+    {% endif %}
+    <form action="/communities" method="post">
+        <label for="community-name">{{ "Name"|t }}</label>
+        <input id="community-name" type="text" name="name" maxlength="{{ name_max_chars }}" required />
+
+        <label for="community-slug">{{ "Address"|t }}</label>
+        <input
+            id="community-slug"
+            type="text"
+            name="slug"
+            minlength="{{ slug_min_len }}"
+            maxlength="{{ slug_max_len }}"
+            pattern="[a-z0-9_]+"
+            aria-describedby="community-slug-help"
+            required
+        />
+        <p class="field-help" id="community-slug-help">
+            {{ "Lowercase letters, digits and _, can't be changed later: /community/"|t }}<em>{{ "address"|t }}</em>{% if let Some(domain) = domain %}{{ ", and @"|t }}<em>{{ "address"|t }}</em>@{{ "{} on Misskey, Mastodon and the rest of the Fediverse"|tf(domain) }}{% endif %}.
+        </p>
+
+        <label for="community-description">{{ "Description"|t }}</label>
+        <textarea id="community-description" name="description" rows="3" maxlength="{{ description_max_chars }}"></textarea>
+
+        <fieldset class="choices">
+            <legend>{{ "Who can read the posts"|t }}</legend>
+            {% for visibility in visibilities %}
+            <label><input type="radio" name="visibility" value="{{ visibility.as_str() }}"{% if loop.first %} checked{% endif %} /> {{ visibility.label()|t }}</label>
+            {% endfor %}
+        </fieldset>
+
+        <button type="submit" class="button">{{ "Create community"|t }}</button>
+    </form>
+    {% else %}
+    <p><a href="/login">{{ "Login"|t }}</a> {{ "to create a community."|t }}</p>
+    {% endif %}
+</section>
+{% endblock %}

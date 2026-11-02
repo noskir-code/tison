@@ -186,6 +186,15 @@ struct CommunitiesTemplate {
     communities: Vec<Community>,
     joined: Vec<Community>,
     search: String,
+    /// Communities of other servers already known here.
+    discovered: Vec<crate::entities::federation::KnownAccount>,
+}
+
+#[derive(Template)]
+#[template(path = "community_new.html")]
+struct NewCommunityTemplate {
+    title: String,
+    layout: Layout,
     error: Option<String>,
     visibilities: [Visibility; 2],
     slug_min_len: usize,
@@ -196,7 +205,8 @@ struct CommunitiesTemplate {
     domain: Option<String>,
 }
 
-/// The directory, with the search (`?q=`) and the creation form.
+/// The directory, with the search (`?q=`), and the communities of other
+/// servers already known here.
 pub async fn communities_page(
     State(state): State<AppState>,
     session: Session,
@@ -220,12 +230,34 @@ pub async fn communities_page(
         }),
         None => Vec::new(),
     };
+    let discovered = crate::entities::federation::search_accounts(pool, &search, true, DISCOVERED_SHOWN)
+        .await
+        .unwrap_or_else(|err| {
+            tracing::error!("failed to list known communities: {}", err);
+            Vec::new()
+        });
     render_template(&CommunitiesTemplate {
         title: "Communities".to_string(),
         layout,
         communities,
         joined,
         search,
+        discovered,
+    })
+}
+
+/// Communities of other servers shown in the directory.
+const DISCOVERED_SHOWN: i64 = 50;
+
+/// The form creating a community, opened from the directory.
+pub async fn new_community_page(State(state): State<AppState>, session: Session, Query(query): Query<HashMap<String, String>>) -> Response {
+    let layout = Layout::load(&state, &session).await;
+    if layout.viewer.is_none() {
+        return Redirect::to("/login").into_response();
+    }
+    render_template(&NewCommunityTemplate {
+        title: "Create a community".to_string(),
+        layout,
         error: error_message(&query),
         visibilities: Visibility::ALL,
         slug_min_len: SLUG_MIN_LEN,
@@ -264,7 +296,7 @@ pub async fn create_community(
             tracing::info!("@{} created community {}", me.username, created.slug);
             Redirect::to(&format!("/community/{}", created.slug)).into_response()
         }
-        Err(error) => Redirect::to(&format!("/communities?error={}#create", error.code())).into_response(),
+        Err(error) => Redirect::to(&format!("/communities/new?error={}", error.code())).into_response(),
     }
 }
 

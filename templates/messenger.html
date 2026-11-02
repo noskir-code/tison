@@ -46,7 +46,7 @@
                 <span class="conversation-text">
                     <span class="conversation-top">
                         <strong>{{ friend.display_name() }}</strong>
-                        <span class="post-username">@{{ friend.username }}</span>
+                        <span class="post-username">{{ friend.handle() }}</span>
                         <span class="post-meta">{{ "Friend"|t }}</span>
                     </span>
                     <span class="conversation-excerpt">{{ "No messages yet, say hello"|t }}</span>

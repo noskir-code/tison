@@ -74,7 +74,7 @@ pub async fn upload(State(state): State<AppState>, session: Session, mut multipa
     if data.len() > MAX_IMAGE_BYTES {
         return refused(StatusCode::PAYLOAD_TOO_LARGE, "This picture is too big: 10 MB at most.");
     }
-    let photo = match crate::photo::clean(&data) {
+    let photo = match crate::photo::prepare(&data).await {
         Ok(photo) => photo,
         Err(_) => return refused(StatusCode::UNSUPPORTED_MEDIA_TYPE, "Only JPEG, PNG, GIF and WebP pictures can be added."),
     };

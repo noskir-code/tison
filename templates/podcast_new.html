@@ -12,7 +12,7 @@
         <textarea id="podcast-description" name="description" rows="4" maxlength="{{ description_max_chars }}"></textarea>
 
         <label for="podcast-cover">{{ "Cover"|t }}</label>
-        <input id="podcast-cover" type="file" name="cover" accept="image/jpeg,image/png" />
+        <input id="podcast-cover" type="file" name="cover" accept="image/jpeg,image/png" data-crop="square" data-crop-max="3000" />
         <p class="field-help">{{ "Square, JPEG or PNG, at least 1400×1400 pixels for Apple Podcasts."|t }}</p>
 
         <label for="podcast-category">{{ "Category"|t }}</label>

@@ -184,6 +184,11 @@ pub async fn read_all(State(state): State<AppState>, session: Session) -> Respon
     act(state, session, |pool, user_id| async move { notification::mark_all_read(&pool, user_id).await }).await
 }
 
+/// One notification marked read without opening it.
+pub async fn read(State(state): State<AppState>, session: Session, Path(id): Path<i64>) -> Response {
+    act(state, session, |pool, user_id| async move { notification::mark_read(&pool, user_id, id).await }).await
+}
+
 pub async fn delete(State(state): State<AppState>, session: Session, Path(id): Path<i64>) -> Response {
     act(state, session, |pool, user_id| async move { notification::delete(&pool, user_id, id).await }).await
 }

@@ -311,7 +311,7 @@ async fn convert_levels(
             Err(err) => return Err(err.to_string()),
         }
     }
-    if let Err(err) = av::convert_video(tools, source, &outputs, height > width, probe.seconds, progress).await {
+    if let Err(err) = av::convert_video(tools, source, &outputs, height > width, probe.frames_per_second, probe.seconds, progress).await {
         for (_, path) in &outputs {
             let _ = tokio::fs::remove_file(path).await;
         }

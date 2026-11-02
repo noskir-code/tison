@@ -61,6 +61,7 @@ pub const TABLE: Table = Table {
         Index::unique("communities_public_id_idx", "public_id"),
         Index::new("communities_status_idx", "status, id DESC"),
         Index::new("communities_name_lower_idx", "LOWER(name)"),
+        Index::trigram("communities_name_trgm_idx", "name"),
     ],
 };
 
@@ -420,7 +421,7 @@ pub async fn search_limited(pool: &PgPool, search: Option<&str>, limit: i64) -> 
         "SELECT ",
         community_columns!(),
         " WHERE c.status <> 'banned'
-           AND ($1::text IS NULL OR LOWER(c.name) LIKE '%' || $1 || '%' OR LOWER(c.slug) LIKE '%' || $1 || '%')
+           AND ($1::text IS NULL OR c.name ILIKE '%' || $1 || '%' OR c.slug ILIKE '%' || $1 || '%')
          ORDER BY CASE
                     WHEN $1::text IS NULL THEN 0
                     WHEN LOWER(c.slug) = $3 OR LOWER(c.name) = $3 THEN 0

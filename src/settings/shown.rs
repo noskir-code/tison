@@ -11,9 +11,8 @@ use std::{collections::HashMap, env, fs};
 
 use rsa::sha2::{Digest, Sha256};
 
-use super::config::{DEFAULT_RUNTIME_FILE, DEFAULT_SERVICES_FILE, config_path, parse_runtime_file, services};
+use super::config::{DEFAULT_RUNTIME_FILE, DEFAULT_SERVICES_FILE, DEFAULT_SETTINGS_FILE, config_path, parse_runtime_file, services};
 
-const DEFAULT_SETTINGS_FILE: &str = "configs/settings.conf";
 
 /// Shown instead of a password in an address, and given back by the form.
 const HIDDEN: &str = "••••••";
@@ -65,16 +64,19 @@ pub struct ShownLine {
 }
 
 impl ShownLine {
-    /// The drop-down's choice: `true`, `false`, or empty for the default.
+    /// The drop-down's choice, `true` or `false`: the commented value when
+    /// it isn't set, which the files write as the default.
     pub fn choice(&self) -> &str {
-        if self.set { &self.field_value } else { "" }
+        if self.set { &self.field_value } else { &self.example }
     }
+}
 
-    /// The drop-down's first choice: not set, Tison's default applies. The
-    /// commented value is only an example, it may not be the default.
-    pub fn default_label(&self) -> &'static str {
-        "Not set (default)"
-    }
+/// Never shown nor changed here: the address and database the server
+/// starts with, which a mistake would make unreachable.
+const HIDDEN_KEYS: [&str; 3] = ["APP_HOST", "APP_PORT", "DATABASE_URL"];
+
+fn is_hidden(key: &str) -> bool {
+    HIDDEN_KEYS.contains(&key)
 }
 
 /// Never shown: passwords, secrets, tokens and keys.
@@ -179,8 +181,8 @@ fn known() -> [(&'static str, &'static str, String, &'static str, bool, bool); 3
             "settings",
             "settings.conf",
             config_path("TISON_SETTINGS", DEFAULT_SETTINGS_FILE).display().to_string(),
-            "Not read by this version of Tison yet.",
-            false,
+            "The accounts and the Fediverse of the site.",
+            true,
             false,
         ),
     ]
@@ -219,6 +221,7 @@ fn read(id: &'static str, name: &'static str, path: String, about: &'static str,
             continue;
         }
         match setting(line) {
+            Some((key, ..)) if is_hidden(key) => help.clear(),
             Some((key, value, commented)) => {
                 let secret = is_secret(key);
                 // Variables use `_` where the file may write `-`.
@@ -281,7 +284,7 @@ fn edited(content: &str, fields: &HashMap<String, String>) -> Result<(String, Ve
     let mut changed = Vec::new();
     let mut lines: Vec<String> = Vec::new();
     for (number, raw) in content.lines().enumerate() {
-        let Some((key, old, commented)) = setting(raw.trim()) else {
+        let Some((key, old, commented)) = setting(raw.trim()).filter(|(key, ..)| !is_hidden(key)) else {
             lines.push(raw.to_string());
             continue;
         };
@@ -317,6 +320,8 @@ fn edited(content: &str, fields: &HashMap<String, String>) -> Result<(String, Ve
             (true, true) => raw.to_string(),
             (true, false) => format!("# {key}={old}"),
             (false, _) if !commented && new == old => raw.to_string(),
+            // A drop-down left on the commented value: still the default.
+            (false, true) if is_boolean(old) && new == old => raw.to_string(),
             (false, _) => format!("{key}={new}"),
         };
         if line != raw {
@@ -377,7 +382,7 @@ mod tests {
         assert_eq!(heading("###  ------------- ###"), None);
     }
 
-    const FILE: &str = "# The port\nAPP_PORT=8080\nDATABASE_URL=postgres://u:secret@db/x\n# SMTP_PASSWORD=\nSMTP_PASSWORD=hunter2\n# FEDERATION=true\nVIDEO=true\n";
+    const FILE: &str = "# The port\nMAX_VIDEO_MB=4096\nSMTP_URL=smtp://u:secret@db/x\n# SMTP_PASSWORD=\nSMTP_PASSWORD=hunter2\n# FEDERATION=true\nVIDEO=true\n";
 
     fn fields(pairs: &[(usize, &str)]) -> HashMap<String, String> {
         pairs.iter().map(|(line, value)| (format!("line-{line}"), value.to_string())).collect()
@@ -385,27 +390,37 @@ mod tests {
 
     #[test]
     fn only_changed_lines_are_rewritten() {
-        let shown_url = "postgres://u:••••••@db/x";
+        let shown_url = "smtp://u:••••••@db/x";
         let (content, changed) =
             edited(FILE, &fields(&[(1, "8081"), (2, shown_url), (4, ""), (5, "false"), (6, "false")])).unwrap();
-        assert_eq!(changed, ["APP_PORT", "FEDERATION", "VIDEO"]);
+        assert_eq!(changed, ["MAX_VIDEO_MB", "FEDERATION", "VIDEO"]);
         assert_eq!(
             content,
-            "# The port\nAPP_PORT=8081\nDATABASE_URL=postgres://u:secret@db/x\n# SMTP_PASSWORD=\nSMTP_PASSWORD=hunter2\nFEDERATION=false\nVIDEO=false\n"
+            "# The port\nMAX_VIDEO_MB=8081\nSMTP_URL=smtp://u:secret@db/x\n# SMTP_PASSWORD=\nSMTP_PASSWORD=hunter2\nFEDERATION=false\nVIDEO=false\n"
         );
+        // A drop-down left on the commented value keeps the line as it is.
+        assert!(edited(FILE, &fields(&[(5, "true")])).unwrap().1.is_empty());
+    }
+
+    #[test]
+    fn the_address_and_database_are_never_shown_nor_changed() {
+        let file = "APP_HOST=127.0.0.1\nAPP_PORT=8080\nDATABASE_URL=postgres://u:p@db/x\nVIDEO=true\n";
+        let (content, changed) = edited(file, &fields(&[(0, "0.0.0.0"), (1, "1"), (2, "postgres://evil"), (3, "false")])).unwrap();
+        assert_eq!(changed, ["VIDEO"]);
+        assert_eq!(content, "APP_HOST=127.0.0.1\nAPP_PORT=8080\nDATABASE_URL=postgres://u:p@db/x\nVIDEO=false\n");
     }
 
     #[test]
     fn empty_goes_back_to_the_default() {
         let (content, changed) = edited(FILE, &fields(&[(1, ""), (6, "")])).unwrap();
-        assert_eq!(changed, ["APP_PORT", "VIDEO"]);
-        assert!(content.contains("\n# APP_PORT=8080\n") && content.contains("\n# VIDEO=true\n"));
+        assert_eq!(changed, ["MAX_VIDEO_MB", "VIDEO"]);
+        assert!(content.contains("\n# MAX_VIDEO_MB=4096\n") && content.contains("\n# VIDEO=true\n"));
     }
 
     #[test]
     fn secrets_and_passwords_are_kept_or_replaced() {
-        let (content, _) = edited(FILE, &fields(&[(2, "postgres://v:new@db/y"), (4, "s3cret")])).unwrap();
-        assert!(content.contains("DATABASE_URL=postgres://v:new@db/y\n") && content.contains("SMTP_PASSWORD=s3cret\n"));
+        let (content, _) = edited(FILE, &fields(&[(2, "smtp://v:new@db/y"), (4, "s3cret")])).unwrap();
+        assert!(content.contains("SMTP_URL=smtp://v:new@db/y\n") && content.contains("SMTP_PASSWORD=s3cret\n"));
     }
 
     #[test]

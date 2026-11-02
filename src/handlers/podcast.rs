@@ -100,9 +100,14 @@ pub async fn create(State(state): State<AppState>, session: Session, mut multipa
         Err(response) => return response,
     };
     let back = |error: MediaError| Redirect::to(&format!("/podcasts/new?error={}", error.code())).into_response();
-    let upload = match read_upload(&mut multipart, &[("cover", MAX_IMAGE_BYTES)]).await {
+    let upload = match read_upload(&mut multipart, &[("cover", MAX_IMAGE_BYTES), ("original", MAX_IMAGE_BYTES)]).await {
         Ok(upload) => upload,
         Err(error) => return back(error),
+    };
+    // Cropped in the browser: its original, to crop it again.
+    let cover_original = match upload.file("original") {
+        Some(file) => image::save_original(ImageOwner::User(me.id), &tokio::fs::read(file).await.unwrap_or_default()).await.ok(),
+        None => None,
     };
     let checked = (|| {
         let title = validate_title(upload.field("title"), podcast::TITLE_MAX_CHARS)?;
@@ -117,7 +122,7 @@ pub async fn create(State(state): State<AppState>, session: Session, mut multipa
     let cover = match &cover_file {
         Some(file) => {
             let data = tokio::fs::read(file).await.unwrap_or_default();
-            match crate::photo::clean(&data) {
+            match crate::photo::prepare(&data).await {
                 Ok(photo) => image::save_file(ImageOwner::User(me.id), "cover", photo.extension, &photo.data).await.ok(),
                 Err(_) => {
                     upload.discard().await;
@@ -128,10 +133,11 @@ pub async fn create(State(state): State<AppState>, session: Session, mut multipa
         None => None,
     };
     upload.discard().await;
+    let saved_files = || cover.iter().chain(&cover_original).cloned().collect::<Vec<_>>();
     let (title, description) = match checked {
         Ok(fields) => fields,
         Err(error) => {
-            media::remove_local_files(&cover.into_iter().collect::<Vec<_>>()).await;
+            media::remove_local_files(&saved_files()).await;
             return back(error);
         }
     };
@@ -139,6 +145,7 @@ pub async fn create(State(state): State<AppState>, session: Session, mut multipa
         title: &title,
         description: &description,
         cover_url: cover.as_deref(),
+        cover_original_url: cover.as_ref().and(cover_original.as_deref()),
         category,
         language: &language,
         explicit,
@@ -150,7 +157,7 @@ pub async fn create(State(state): State<AppState>, session: Session, mut multipa
         }
         Err(err) => {
             tracing::error!("failed to create podcast: {}", err);
-            media::remove_local_files(&cover.into_iter().collect::<Vec<_>>()).await;
+            media::remove_local_files(&saved_files()).await;
             back(MediaError::Server)
         }
     }
@@ -266,6 +273,7 @@ pub async fn upload_episode(
         podcast_id: Some(podcast_id),
         source: &source,
         poster_url: None,
+        category: None,
     };
     match post::create_media(&pool, me.id, &media).await {
         Ok(post_id) => {
@@ -301,7 +309,7 @@ pub async fn delete(State(state): State<AppState>, session: Session, Path(podcas
         tracing::error!("failed to delete podcast {}: {}", podcast_id, err);
         return error_page(Layout::load(&state, &session).await, StatusCode::INTERNAL_SERVER_ERROR, "Something went wrong, try again later.");
     }
-    media::remove_local_files(&podcast.cover_url.into_iter().collect::<Vec<_>>()).await;
+    media::remove_local_files(&podcast.cover_url.into_iter().chain(podcast.cover_original_url).collect::<Vec<_>>()).await;
     tracing::info!("@{} deleted podcast {}", me.username, podcast_id);
     Redirect::to("/podcasts").into_response()
 }
@@ -374,4 +382,64 @@ pub async fn feed(State(state): State<AppState>, Path(podcast_id): Path<i64>) ->
     }
     xml.push_str("</channel>\n</rss>\n");
     ([(header::CONTENT_TYPE, "application/rss+xml; charset=utf-8")], xml).into_response()
+}
+
+/// A new cover, or the cover cropped again from its original (`recrop`),
+/// cropped in the browser (see `setupCropInputs`): the episodes on the
+/// Fediverse are sent again, they show it.
+pub async fn change_cover(State(state): State<AppState>, session: Session, Path(podcast_id): Path<i64>, mut multipart: Multipart) -> Response {
+    let (pool, me) = match signed_in_user(&state, &session).await {
+        Ok(signed_in) => signed_in,
+        Err(response) => return response,
+    };
+    let podcast = match podcast::find(&pool, podcast_id).await {
+        Ok(Some(podcast)) if podcast.user_id == me.id || me.is_staff() => podcast,
+        _ => return error_page(Layout::load(&state, &session).await, StatusCode::NOT_FOUND, "This podcast does not exist or isn't yours."),
+    };
+    let back = |error: Option<MediaError>| match error {
+        Some(error) => Redirect::to(&format!("/podcasts/{podcast_id}?error={}#cover", error.code())).into_response(),
+        None => Redirect::to(&format!("/podcasts/{podcast_id}#cover")).into_response(),
+    };
+    let upload = match read_upload(&mut multipart, &[("cover", MAX_IMAGE_BYTES), ("original", MAX_IMAGE_BYTES)]).await {
+        Ok(upload) => upload,
+        Err(error) => return back(Some(error)),
+    };
+    let Some(file) = upload.file("cover").cloned() else {
+        upload.discard().await;
+        return back(Some(MediaError::NoFile));
+    };
+    let data = tokio::fs::read(&file).await.unwrap_or_default();
+    let recrop = !upload.field("recrop").is_empty();
+    let owner = ImageOwner::User(podcast.user_id);
+    let new_original = match upload.file("original") {
+        Some(original) if !recrop => image::save_original(owner, &tokio::fs::read(original).await.unwrap_or_default()).await.ok(),
+        _ => None,
+    };
+    upload.discard().await;
+    let photo = match crate::photo::prepare(&data).await {
+        Ok(photo) => photo,
+        Err(_) => return back(Some(MediaError::ThumbnailFormat)),
+    };
+    let Ok(url) = image::save_file(owner, "cover", photo.extension, &photo.data).await else {
+        return back(Some(MediaError::Server));
+    };
+    // Cropped again: the original stays (a cover never cropped is its own).
+    let original = match recrop {
+        true => podcast.cover_original_url.clone().or_else(|| podcast.cover_url.clone()),
+        false => new_original,
+    };
+    if let Err(err) = podcast::set_cover(&pool, podcast_id, &url, original.as_deref()).await {
+        tracing::error!("failed to change the cover of podcast {}: {}", podcast_id, err);
+        let unused: Vec<String> = std::iter::once(url).chain(original.filter(|_| !recrop)).collect();
+        media::remove_local_files(&unused).await;
+        return back(Some(MediaError::Server));
+    }
+    let unused: Vec<String> =
+        [podcast.cover_url.clone(), podcast.cover_original_url.clone()].into_iter().flatten().filter(|file| Some(file) != original.as_ref()).collect();
+    media::remove_local_files(&unused).await;
+    for episode_id in podcast::episode_ids(&pool, podcast_id).await.unwrap_or_default() {
+        notifier::post_updated(&state, &pool, episode_id).await;
+    }
+    tracing::info!("@{} changed the cover of podcast {}", me.username, podcast_id);
+    back(None)
 }

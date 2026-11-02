@@ -71,6 +71,8 @@ pub struct Probe {
     pub height: Option<u32>,
     pub has_video: bool,
     pub has_audio: bool,
+    /// Pictures per second of the video, when ffprobe says.
+    pub frames_per_second: Option<f64>,
 }
 
 /// Reads `key=value` lines of `ffprobe -of default=noprint_wrappers=1`.
@@ -90,6 +92,13 @@ fn parse_probe(output: &str) -> Probe {
                 probe.has_audio |= value == "audio";
             }
             "width" if in_video && probe.width.is_none() => probe.width = value.parse().ok(),
+            // `60000/1001`: a fraction.
+            "avg_frame_rate" if in_video && probe.frames_per_second.is_none() => {
+                probe.frames_per_second = value
+                    .split_once('/')
+                    .and_then(|(top, bottom)| Some(top.parse::<f64>().ok()? / bottom.parse::<f64>().ok().filter(|bottom| *bottom > 0.0)?))
+                    .filter(|rate| rate.is_finite() && *rate > 0.0);
+            }
             "height" if in_video && probe.height.is_none() => probe.height = value.parse().ok(),
             // Phones film sideways and say how to turn: the shown size.
             "rotation" if in_video => {
@@ -120,7 +129,7 @@ fn parse_probe(output: &str) -> Probe {
 
 pub async fn probe(tools: &Tools, path: &Path) -> Result<Probe, String> {
     let output = Command::new(&tools.ffprobe)
-        .args(["-v", "error", "-show_entries", "format=duration:stream=codec_type,width,height:stream_disposition=attached_pic:stream_side_data=rotation"])
+        .args(["-v", "error", "-show_entries", "format=duration:stream=codec_type,width,height,avg_frame_rate:stream_disposition=attached_pic:stream_side_data=rotation"])
         .args(["-of", "default=noprint_wrappers=1"])
         .arg(path)
         .stdin(Stdio::null())
@@ -193,6 +202,11 @@ async fn ffmpeg_with_progress(tools: &Tools, args: &[&str], seconds: f64, progre
 
 /// A quality of videos, like PeerTube's resolutions: named by the short
 /// side (720p is 1280×720, or 720×1280 for a portrait video).
+///
+/// Encoded like YouTube and Netflix: a quality to reach (CRF) with a
+/// ceiling of bitrate. Simple pictures (a talk, slides) get much smaller
+/// files than the ceiling, busy ones (sports, games) use it, never more.
+/// The ceilings are close to YouTube's H.264 bitrates.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Level {
     pub lines: u32,
@@ -206,40 +220,47 @@ pub struct Level {
     pub audio_kbps: u32,
 }
 
-/// From 4K to 144p.
+/// From 4K to 144p, for 24 to 30 pictures a second (see `HIGH_FRAME_RATE`).
 pub const LEVELS: [Level; 8] = [
-    Level { lines: 2160, crf: 22, max_kbps: 20_000, audio_kbps: 192 },
-    Level { lines: 1440, crf: 22, max_kbps: 12_000, audio_kbps: 192 },
-    Level { lines: 1080, crf: 23, max_kbps: 8_000, audio_kbps: 160 },
-    Level { lines: 720, crf: 24, max_kbps: 5_000, audio_kbps: 128 },
-    Level { lines: 480, crf: 26, max_kbps: 2_500, audio_kbps: 128 },
-    Level { lines: 360, crf: 28, max_kbps: 1_200, audio_kbps: 96 },
-    Level { lines: 240, crf: 31, max_kbps: 700, audio_kbps: 64 },
-    Level { lines: 144, crf: 34, max_kbps: 400, audio_kbps: 48 },
+    Level { lines: 2160, crf: 23, max_kbps: 16_000, audio_kbps: 160 },
+    Level { lines: 1440, crf: 23, max_kbps: 9_000, audio_kbps: 160 },
+    Level { lines: 1080, crf: 23, max_kbps: 5_000, audio_kbps: 128 },
+    Level { lines: 720, crf: 24, max_kbps: 2_800, audio_kbps: 128 },
+    Level { lines: 480, crf: 25, max_kbps: 1_400, audio_kbps: 128 },
+    Level { lines: 360, crf: 26, max_kbps: 800, audio_kbps: 96 },
+    Level { lines: 240, crf: 28, max_kbps: 450, audio_kbps: 64 },
+    Level { lines: 144, crf: 30, max_kbps: 200, audio_kbps: 48 },
 ];
 
-/// The source's own level is compressed lightly: it's the best copy kept.
-pub const SOURCE_CRF: u8 = 20;
+/// From this many pictures a second (50 or 60), the ceilings are 1.5 times
+/// higher, like YouTube's 1080p60.
+pub const HIGH_FRAME_RATE: f64 = 40.0;
 
 /// The levels made for a video of `width`×`height`: its own size (at most
-/// `max_lines`), lightly compressed, then every smaller level, never larger
-/// than the source. A source under 144p gets one level, its own size.
+/// `max_lines`), then every smaller level, never larger than the source. A
+/// source under 144p gets one level, its own size.
 pub fn levels_for(width: u32, height: u32, max_lines: u32) -> Vec<Level> {
     let short_side = width.min(height).max(2);
     let mut levels: Vec<Level> = LEVELS.iter().copied().filter(|level| level.lines <= short_side.min(max_lines)).collect();
-    match levels.first_mut() {
+    match levels.first() {
         // Between two levels (900 lines): its own size is kept as the top
-        // level, the next one down comes after.
+        // level, encoded like the level under it, the next one down after.
         Some(top) if top.lines < short_side.min(max_lines) => {
-            let mut own = *top;
-            own.lines = short_side.min(max_lines) / 2 * 2;
-            own.crf = SOURCE_CRF;
+            let own = Level { lines: short_side.min(max_lines) / 2 * 2, ..*top };
             levels.insert(0, own);
         }
-        Some(top) => top.crf = SOURCE_CRF,
-        None => levels.push(Level { lines: short_side / 2 * 2, crf: SOURCE_CRF, ..LEVELS[LEVELS.len() - 1] }),
+        Some(_) => {}
+        None => levels.push(Level { lines: short_side / 2 * 2, ..LEVELS[LEVELS.len() - 1] }),
     }
     levels
+}
+
+/// The ceiling of a level, higher for 50 and 60 pictures a second.
+pub fn max_kbps(level: &Level, frames_per_second: Option<f64>) -> u32 {
+    match frames_per_second {
+        Some(rate) if rate >= HIGH_FRAME_RATE => level.max_kbps * 3 / 2,
+        _ => level.max_kbps,
+    }
 }
 
 /// The qualities of a live stream sent at `width`×`height`: its own size
@@ -281,6 +302,7 @@ pub async fn convert_video(
     input: &Path,
     outputs: &[(Level, std::path::PathBuf)],
     portrait: bool,
+    frames_per_second: Option<f64>,
     seconds: f64,
     progress: &(dyn Fn(u8) + Sync),
 ) -> Result<(), String> {
@@ -295,6 +317,7 @@ pub async fn convert_video(
     }
     let mut args: Vec<String> = ["-i", input, "-filter_complex", &filter, "-map_metadata", "-1"].map(str::to_string).to_vec();
     for (index, (level, output)) in outputs.iter().enumerate() {
+        let max_kbps = max_kbps(level, frames_per_second);
         args.extend([format!("[o{index}]"), "0:a:0?".to_string()].into_iter().flat_map(|stream| ["-map".to_string(), stream]));
         args.extend(["-c:v", tools.video_encoder, "-pix_fmt", "yuv420p"].map(str::to_string));
         if tools.video_encoder == "libx264" {
@@ -308,13 +331,13 @@ pub async fn convert_video(
             ]);
         } else {
             // Without x264 there is no CRF: the cap is the bitrate.
-            args.extend(["-b:v".to_string(), format!("{}k", level.max_kbps * 3 / 4)]);
+            args.extend(["-b:v".to_string(), format!("{}k", max_kbps * 3 / 4)]);
         }
         args.extend([
             "-maxrate".to_string(),
-            format!("{}k", level.max_kbps),
+            format!("{}k", max_kbps),
             "-bufsize".to_string(),
-            format!("{}k", level.max_kbps * 2),
+            format!("{}k", max_kbps * 2),
             "-force_key_frames".to_string(),
             "expr:gte(t,n_forced*2)".to_string(),
             "-c:a".to_string(),
@@ -422,8 +445,12 @@ mod tests {
 
     #[test]
     fn probe_is_read() {
-        let output = "codec_type=video\nwidth=1920\nheight=1080\ncodec_type=audio\nduration=12.5\n";
-        assert_eq!(parse_probe(output), Probe { seconds: 12.5, width: Some(1920), height: Some(1080), has_video: true, has_audio: true });
+        let output = "codec_type=video\nwidth=1920\nheight=1080\navg_frame_rate=60000/1001\ncodec_type=audio\navg_frame_rate=0/0\nduration=12.5\n";
+        let probe = parse_probe(output);
+        assert_eq!((probe.seconds, probe.width, probe.height, probe.has_video, probe.has_audio), (12.5, Some(1920), Some(1080), true, true));
+        assert!((probe.frames_per_second.unwrap() - 59.94).abs() < 0.01);
+        assert_eq!(max_kbps(&LEVELS[2], probe.frames_per_second), 7_500);
+        assert_eq!(max_kbps(&LEVELS[2], Some(30.0)), 5_000);
         // An MP3 with a cover picture is a sound.
         let output = "codec_type=audio\ncodec_type=video\nwidth=500\nheight=500\nDISPOSITION:attached_pic=1\nduration=60\n";
         let probe = parse_probe(output);
@@ -441,15 +468,15 @@ mod tests {
     fn levels_up_to_the_source() {
         let lines = |levels: Vec<Level>| levels.iter().map(|level| (level.lines, level.crf)).collect::<Vec<_>>();
         // 1080p: its own size lightly compressed, then harder and harder.
-        assert_eq!(lines(levels_for(1920, 1080, 2160)), [(1080, 20), (720, 24), (480, 26), (360, 28), (240, 31), (144, 34)]);
+        assert_eq!(lines(levels_for(1920, 1080, 2160)), [(1080, 23), (720, 24), (480, 25), (360, 26), (240, 28), (144, 30)]);
         // Portrait 4K, by its short side.
         assert_eq!(levels_for(2160, 3840, 2160).len(), 8);
         // Limited to 1080p by the settings.
-        assert_eq!(lines(levels_for(3840, 2160, 1080))[0], (1080, 20));
+        assert_eq!(lines(levels_for(3840, 2160, 1080))[0], (1080, 23));
         // Between two levels: its own size first.
-        assert_eq!(lines(levels_for(1600, 900, 2160))[..2], [(900, 20), (720, 24)]);
+        assert_eq!(lines(levels_for(1600, 900, 2160))[..2], [(900, 24), (720, 24)]);
         // Tiny.
-        assert_eq!(lines(levels_for(160, 100, 2160)), [(100, 20)]);
+        assert_eq!(lines(levels_for(160, 100, 2160)), [(100, 30)]);
     }
 
     #[test]

@@ -112,6 +112,10 @@ fn podcast_routes(max_episode_bytes: usize) -> Router<AppState> {
             post(podcast::upload_episode).layer(axum::extract::DefaultBodyLimit::max(max_episode_bytes)),
         )
         .route("/podcasts/{podcast_id}/delete", post(podcast::delete))
+        .route(
+            "/podcasts/{podcast_id}/cover",
+            post(podcast::change_cover).layer(axum::extract::DefaultBodyLimit::max(crate::handlers::image::MAX_IMAGE_BYTES + 64 * 1024)),
+        )
         .route("/podcasts/{podcast_id}/feed.xml", get(podcast::feed))
 }
 
@@ -119,6 +123,7 @@ fn podcast_routes(max_episode_bytes: usize) -> Router<AppState> {
 fn community_routes() -> Router<AppState> {
     Router::new()
         .route("/communities", get(community::communities_page).post(community::create_community))
+        .route("/communities/new", get(community::new_community_page))
         .route("/community/{slug}", get(community::community_page))
         .route("/community/{slug}/join", post(community::join))
         .route("/community/{slug}/quit", post(community::quit))
@@ -149,7 +154,10 @@ fn dfrn_routes() -> Router<AppState> {
         .route("/messenger/new", post(messenger::start))
         .route("/messenger/with/{username}", get(messenger::with_user).post(messenger::with_user))
         .route("/messenger/remote/{actor_id}", post(messenger::with_remote))
-        .route("/messenger/{id}", get(messenger::conversation_page).post(messenger::send))
+        .route(
+            "/messenger/{id}",
+            get(messenger::conversation_page).post(messenger::send).layer(axum::extract::DefaultBodyLimit::max(messenger::MAX_SEND_BYTES)),
+        )
         .route("/messenger/{id}/after/{message_id}", get(messenger::after))
         .route("/messenger/{id}/messages/{message_id}/delete", post(messenger::delete))
         .route("/user/{username}/friend", post(user::add_friend))
@@ -159,6 +167,7 @@ fn dfrn_routes() -> Router<AppState> {
 fn base_routes() -> Router<AppState> {
     Router::new()
         .route("/", get(post::home_page))
+        .route("/tags/{tag}", get(post::tag_page))
         .route("/your-feed", get(post::feed_page))
         // Up to `post::MAX_PHOTOS` photos.
         .route(
@@ -179,6 +188,10 @@ fn base_routes() -> Router<AppState> {
         .route("/posts/{post_id}/like", post(reaction::like))
         .route("/posts/{post_id}/share", post(reaction::share))
         .route("/posts/{post_id}/edit", get(post::edit_page).post(post::update_post))
+        .route(
+            "/posts/{post_id}/photos/{position}",
+            post(post::crop_photo).layer(axum::extract::DefaultBodyLimit::max(crate::handlers::image::MAX_IMAGE_BYTES + 64 * 1024)),
+        )
         .route("/posts/{post_id}/delete", post(post::delete_post))
         .route("/comments/{comment_id}/like", post(comment::like_comment))
         .route("/comments/{comment_id}/edit", get(comment::edit_page).post(comment::update_comment))
@@ -188,6 +201,8 @@ fn base_routes() -> Router<AppState> {
         .route("/moderation/reports/{id}/{action}", post(moderation::act))
         .route("/moderation/staff", get(moderation::staff_page).post(moderation::add_moderator))
         .route("/moderation/statistics", get(moderation::statistics_page))
+        .route("/moderation/users", get(moderation::users_page))
+        .route("/moderation/users/email-domains", post(moderation::email_domains))
         .route("/moderation/configuration", get(moderation::configuration_page).post(moderation::save_configuration))
         .route("/moderation/configuration/pages/preview", post(moderation::site_page_preview))
         .route("/moderation/configuration/pages/{slug}", get(moderation::site_page_edit).post(moderation::save_site_page))
@@ -217,6 +232,7 @@ fn base_routes() -> Router<AppState> {
         .route("/notifications/delete-all", post(notification::delete_all))
         .route("/notifications/{notification_id}/open", get(notification::open))
         .route("/notifications/{notification_id}/delete", post(notification::delete))
+        .route("/notifications/{notification_id}/read", post(notification::read))
         .route("/push/key", get(push::key))
         .route("/push/subscribe", post(push::subscribe))
         .route("/push/unsubscribe", post(push::unsubscribe))

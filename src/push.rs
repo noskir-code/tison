@@ -113,9 +113,9 @@ impl Push {
     pub async fn send_test(&self, pool: &PgPool, user_id: i32) -> Result<(usize, usize), sqlx::Error> {
         let browsers = subscriptions::of_user(pool, user_id).await?;
         let payload = json!({
-            "title": "Tison",
+            "title": crate::settings::instance_name(),
             "body": "Browser notifications work in this browser.",
-            "url": "/settings",
+            "url": "/settings?tab=account",
             "tag": "test",
         })
         .to_string();

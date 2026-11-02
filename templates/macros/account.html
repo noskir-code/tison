@@ -58,7 +58,7 @@
     {% endif %}
     <span>
         <strong>{{ user.display_name() }}</strong>
-        <span class="post-username">@{{ user.username }}</span>
+        <span class="post-username">{{ user.handle() }}</span>
     </span>
 </a>
 {% endmacro %}

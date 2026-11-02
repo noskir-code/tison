@@ -335,6 +335,63 @@ pub fn to_text(source: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+/// Links of an article given a preview card under their paragraph, at most.
+pub const MAX_LINK_PREVIEWS: usize = 10;
+
+/// The addresses its HTML links to, in order, each once: written as links
+/// or as they are, not pictures nor hashtags.
+fn html_links(html: &str) -> Vec<String> {
+    let mut links: Vec<String> = Vec::new();
+    let mut rest = html;
+    while let Some(start) = rest.find("<a href=\"") {
+        rest = &rest[start + 9..];
+        let Some(end) = rest.find('"') else {
+            break;
+        };
+        let address = rest[..end].replace("&quot;", "\"").replace("&#39;", "'").replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&");
+        if (address.starts_with("https://") || address.starts_with("http://")) && !links.contains(&address) {
+            links.push(address);
+        }
+    }
+    links
+}
+
+/// The web addresses an article links to, for their previews (see
+/// `crate::preview`), at most `MAX_LINK_PREVIEWS`.
+pub fn links(source: &str) -> Vec<String> {
+    let mut links = html_links(&to_html(source, &|address| address.to_string()));
+    links.truncate(MAX_LINK_PREVIEWS);
+    links
+}
+
+/// Puts under each paragraph, list, table or quote of `html` (made by
+/// `to_html`) the card of each link it holds that `card` gives, once each.
+pub fn with_link_cards(html: &str, card: &dyn Fn(&str) -> Option<String>) -> String {
+    const ENDS: [&str; 5] = ["</p>\n", "</ul>\n", "</ol>\n", "</table>\n", "</blockquote>\n"];
+    let mut result = String::with_capacity(html.len());
+    let mut shown: Vec<String> = Vec::new();
+    let mut rest = html;
+    loop {
+        let Some((at, end)) = ENDS.iter().filter_map(|end| rest.find(end).map(|at| (at, *end))).min_by_key(|(at, _)| *at) else {
+            result.push_str(rest);
+            break;
+        };
+        let block = &rest[..at + end.len()];
+        result.push_str(block);
+        for link in html_links(block) {
+            if shown.contains(&link) {
+                continue;
+            }
+            if let Some(html) = card(&link) {
+                result.push_str(&html);
+                shown.push(link);
+            }
+        }
+        rest = &rest[at + end.len()..];
+    }
+    result
+}
+
 /// The address of the article's first picture, for its preview card.
 pub fn first_picture(source: &str) -> Option<String> {
     pictures(source).into_iter().next()
@@ -549,6 +606,17 @@ mod tests {
     use super::*;
 
     #[test]
+    fn links_get_cards_under_their_block() {
+        let source = "See [the docs](https://a.org/x?a=1&b=2) and https://b.org.\n\n- one https://a.org/x?a=1&b=2\n\n![pic](https://c.org/p.png) #tag";
+        assert_eq!(links(source), ["https://a.org/x?a=1&b=2", "https://b.org"]);
+        let html = with_link_cards(&to_html(source, &|address| address.to_string()), &|link| Some(format!("[card {link}]")));
+        let first = html.find("</p>").unwrap();
+        assert!(html[first..].starts_with("</p>\n[card https://a.org/x?a=1&b=2][card https://b.org]"));
+        // Once each: not again under the list.
+        assert_eq!(html.matches("[card https://a.org").count(), 1);
+    }
+
+    #[test]
     fn tables() {
         let source = "| Name | Purpose |\n|---|:---:|\n| `lang` | The **language** |\n| a \\| b |\n\nAfter";
         assert_eq!(
@@ -582,7 +650,8 @@ mod tests {
             "<h1>Title</h1>\n<p>First line<br>\nsecond line</p>\n<blockquote>\n<p>quoted<br>\n<strong>still</strong></p>\n</blockquote>\n\
              <ul>\n<li>one</li>\n<li>two<br>\nmore</li>\n</ul>\n<ol>\n<li>a</li>\n<li>b</li>\n</ol>\n<hr>\n<pre><code>&lt;b&gt;x&lt;/b&gt;</code></pre>\n"
         );
-        assert_eq!(html("#hashtag"), "<p>#hashtag</p>\n");
+        // Not a heading: a hashtag, see `hashtag`.
+        assert_eq!(html("#hashtag"), "<p><a href=\"/tags/hashtag\" class=\"mention hashtag\" rel=\"tag\">#<span>hashtag</span></a></p>\n");
     }
 
     #[test]

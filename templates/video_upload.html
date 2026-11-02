@@ -27,6 +27,15 @@
             {% endfor %}
         </select>
 
+        {# PeerTube's categories, see entities/video.rs. #}
+        <label for="video-category">{{ "Category"|t }}</label>
+        <select id="video-category" name="category">
+            <option value="">{{ "No category"|t }}</option>
+            {% for (id, name) in categories %}
+            <option value="{{ id }}">{{ name|t }}</option>
+            {% endfor %}
+        </select>
+
         <label class="checkbox-line"><input type="checkbox" name="sensitive" value="on" /> {{ "Sensitive: blur it until clicked"|t }}</label>
 
         {% call upload_ui::upload_button("Upload the video"|t) %}{% endcall %}

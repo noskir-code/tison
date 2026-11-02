@@ -5,9 +5,9 @@
 <h1 class="title">{% if enabled %}{{ "Two-factor authentication is on"|t }}{% else %}{{ "Two-factor authentication was turned off"|t }}{% endif %}</h1>
 <p class="text">
     {% if enabled %}
-    {{ "Logging in to your Tison account now asks for a code from your authenticator app after your password."|t }}
+    {{ "Logging in to your {} account now asks for a code from your authenticator app after your password."|tf(crate::settings::instance_name()) }}
     {% else %}
-    {{ "Your password alone is now enough to log in to your Tison account."|t }}
+    {{ "Your password alone is now enough to log in to your {} account."|tf(crate::settings::instance_name()) }}
     {{ "If it wasn't you, change your password now and turn it back on."|t }}
     {% endif %}
 </p>

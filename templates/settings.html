@@ -1,6 +1,10 @@
 {% extends "base.html" %} {% block content %}
 <section class="box content profile-edit settings">
-    <h1>{{ "Edit profile"|t }}</h1>
+    <h1>{{ "Settings"|t }}</h1>
+    <nav class="profile-tabs settings-tabs" aria-label="{{ "Settings sections"|t }}">
+        <a href="/settings?tab=profile"{% if tab == SettingsTab::Profile %} class="active" aria-current="page"{% endif %}>{{ "Profile"|t }}</a>
+        <a href="/settings?tab=account"{% if tab == SettingsTab::Account %} class="active" aria-current="page"{% endif %}>{{ "Account"|t }}</a>
+    </nav>
     {% if let Some(message) = error %}
     <p class="error">{{ message|t }}</p>
     {% else if saved %}
@@ -8,32 +12,8 @@
     {% endif %}
     <p><a href="/user/{{ user.username }}">{{ "See your profile"|t }}</a></p>
 
-    <form action="/settings/bio" method="post">
-        <label for="bio">{{ "Bio"|t }}</label>
-        <textarea
-            id="bio"
-            name="bio"
-            rows="4"
-            maxlength="{{ bio_max_chars }}"
-            placeholder="{{ "A few words about you, shown in “About me”."|t }}"
-        >{{ user.bio }}</textarea>
-        <button type="submit" class="button">{{ "Save bio"|t }}</button>
-    </form>
-
-    <form action="/settings/username" method="post">
-        <label for="username">{{ "Username"|t }}</label>
-        <input
-            id="username"
-            type="text"
-            name="username"
-            value="{{ user.username }}"
-            maxlength="{{ username_max_len }}"
-            pattern="[A-Za-z0-9_]+"
-            required
-        />
-        <button type="submit" class="button">{{ "Save username"|t }}</button>
-    </form>
-
+    {% if tab == SettingsTab::Profile %}
+    {# What others see. #}
     <form action="/settings/names" method="post">
         <label for="displayname">{{ "Display name"|t }}</label>
         <input
@@ -70,6 +50,79 @@
             {{ "Both are optional: your username is enough. Unless they're public, posts, comments, search and other servers (Mastodon, Hubzilla...) show your display name, or your username."|t }}
         </p>
         <button type="submit" class="button">{{ "Save names"|t }}</button>
+    </form>
+
+    <form action="/settings/bio" method="post">
+        <label for="bio">{{ "Bio"|t }}</label>
+        <textarea
+            id="bio"
+            name="bio"
+            rows="4"
+            maxlength="{{ bio_max_chars }}"
+            placeholder="{{ "A few words about you, shown in “About me”."|t }}"
+        >{{ user.bio }}</textarea>
+        <button type="submit" class="button">{{ "Save bio"|t }}</button>
+    </form>
+
+    {# A chosen picture opens the cropping window (data-crop, see system.js);
+       the current one can be cropped again. Other servers get the new one. #}
+    <form action="/settings/photo" method="post" enctype="multipart/form-data" id="photo-form">
+        <label for="photo">{{ "Photo"|t }}</label>
+        <input
+            id="photo"
+            type="file"
+            name="{{ image_field }}"
+            accept="image/jpeg,image/png,image/gif,image/webp,image/avif"
+            data-crop="square"
+            data-crop-max="1024"
+            required
+        />
+        <button type="submit" class="button">{{ "Upload photo"|t }}</button>
+    </form>
+    {% if let Some(url) = photo_crop_source %}
+    <button type="button" class="button" data-crop-current="{{ url }}" data-crop="square" data-crop-max="1024" data-crop-form="photo-form" data-crop-name="photo" hidden>{{ "Crop the current photo"|t }}</button>
+    {% endif %}
+    {% if user.photo_url.is_some() %}
+    <form action="/settings/photo/remove" method="post">
+        <button type="submit" class="button">{{ "Remove photo"|t }}</button>
+    </form>
+    {% endif %}
+
+    <form action="/settings/background" method="post" enctype="multipart/form-data" id="background-form">
+        <label for="background">{{ "Background"|t }}</label>
+        <input
+            id="background"
+            type="file"
+            name="{{ image_field }}"
+            accept="image/jpeg,image/png,image/gif,image/webp,image/avif"
+            data-crop="banner"
+            data-crop-max="3000"
+            required
+        />
+        <button type="submit" class="button">{{ "Upload background"|t }}</button>
+    </form>
+    {% if let Some(url) = background_crop_source %}
+    <button type="button" class="button" data-crop-current="{{ url }}" data-crop="banner" data-crop-max="3000" data-crop-form="background-form" data-crop-name="background" hidden>{{ "Crop the current background"|t }}</button>
+    {% endif %}
+    {% if user.background_url.is_some() %}
+    <form action="/settings/background/remove" method="post">
+        <button type="submit" class="button">{{ "Remove background"|t }}</button>
+    </form>
+    {% endif %}
+    {% else %}
+    {# How the account signs in, and what reaches it. #}
+    <form action="/settings/username" method="post">
+        <label for="username">{{ "Username"|t }}</label>
+        <input
+            id="username"
+            type="text"
+            name="username"
+            value="{{ user.username }}"
+            maxlength="{{ username_max_len }}"
+            pattern="[A-Za-z0-9_]+"
+            required
+        />
+        <button type="submit" class="button">{{ "Save username"|t }}</button>
     </form>
 
     <form action="/settings/password" method="post">
@@ -120,7 +173,7 @@
         </span>
         {% if !user.email_verified && can_send_email %}
         <form action="/settings/verify-email" method="post">
-            <input type="hidden" name="return" value="/settings#email" />
+            <input type="hidden" name="return" value="/settings?tab=account#email" />
             <button type="submit" class="button">{{ "Send the link again"|t }}</button>
         </form>
         {% endif %}
@@ -142,39 +195,6 @@
             <button type="button" class="button" data-push-toggle data-on="{{ "Turn off"|t }}" data-off="{{ "Turn on"|t }}">{{ "Turn on"|t }}</button>
         </span>
     </div>
-
-    <form action="/settings/photo" method="post" enctype="multipart/form-data">
-        <label for="photo">{{ "Photo"|t }}</label>
-        <input
-            id="photo"
-            type="file"
-            name="{{ image_field }}"
-            accept="image/jpeg,image/png,image/gif,image/webp,image/avif"
-            required
-        />
-        <button type="submit" class="button">{{ "Upload photo"|t }}</button>
-    </form>
-    {% if user.photo_url.is_some() %}
-    <form action="/settings/photo/remove" method="post">
-        <button type="submit" class="button">{{ "Remove photo"|t }}</button>
-    </form>
-    {% endif %}
-
-    <form action="/settings/background" method="post" enctype="multipart/form-data">
-        <label for="background">{{ "Background"|t }}</label>
-        <input
-            id="background"
-            type="file"
-            name="{{ image_field }}"
-            accept="image/jpeg,image/png,image/gif,image/webp,image/avif"
-            required
-        />
-        <button type="submit" class="button">{{ "Upload background"|t }}</button>
-    </form>
-    {% if user.background_url.is_some() %}
-    <form action="/settings/background/remove" method="post">
-        <button type="submit" class="button">{{ "Remove background"|t }}</button>
-    </form>
     {% endif %}
 </section>
 {% endblock %}

@@ -92,7 +92,7 @@ pub async fn forgot_page(State(state): State<AppState>, session: Session) -> Res
     let layout = Layout::load(&state, &session).await;
     // Signed-in users change their password in the settings.
     if layout.viewer.is_some() {
-        return Redirect::to("/settings").into_response();
+        return Redirect::to("/settings?tab=account").into_response();
     }
     render_template(&ForgotTemplate::new(layout, String::new()))
 }
@@ -166,7 +166,7 @@ async fn send_reset_link(state: AppState, email: String) {
         return;
     };
     let email = Email::render(
-        &crate::i18n::t("Reset your Tison password"),
+        &crate::i18n::tf("Reset your {} password", crate::settings::instance_name()),
         &ResetEmailText {
             link: &link,
             valid_minutes: VALID_MINUTES,

@@ -316,6 +316,11 @@ struct UserTemplate {
 struct SettingsTemplate {
     title: String,
     layout: Layout,
+    tab: SettingsTab,
+    /// What "Crop the current photo / background" starts from: the original
+    /// kept, else the picture itself.
+    photo_crop_source: Option<String>,
+    background_crop_source: Option<String>,
     user: User,
     error: Option<String>,
     saved: bool,
@@ -539,6 +544,10 @@ async fn change_friend(state: AppState, session: Session, username: String, form
             return error_page(Layout::load(&state, &session).await, StatusCode::INTERNAL_SERVER_ERROR, "Failed to load this user.");
         }
     };
+    // The team account is followed, never a friend.
+    if add && other.team {
+        return error_page(Layout::load(&state, &session).await, StatusCode::FORBIDDEN, "The moderation team's account can't be added as a friend.");
+    }
     let result = async {
         if add {
             match friend::request(&pool, me.id, other.id).await? {
@@ -618,12 +627,19 @@ pub async fn settings_page(
     }
     .map(|(email, _)| email)
     .unwrap_or_default();
+    let (photo_original, background_original) = match &state.pool {
+        Some(pool) => user::image_originals(pool, user.id).await.unwrap_or_default(),
+        None => (None, None),
+    };
     let template = SettingsTemplate {
+        photo_crop_source: photo_original.or_else(|| user.photo_url.clone()),
+        background_crop_source: background_original.or_else(|| user.background_url.clone()),
         email,
         verification_message: crate::handlers::verify_email::resend_message(query.get("verification")),
         can_send_email: state.mailer.is_some(),
         title: "Settings".to_string(),
         layout,
+        tab: SettingsTab::parse(query.get("tab")),
         user,
         error: query
             .get("error")
@@ -667,10 +683,35 @@ pub(crate) async fn signed_in_user(state: &AppState, session: &Session) -> Resul
     }
 }
 
-fn back_to_settings(result: Result<(), EditError>) -> Response {
+/// The two tabs of the settings: what others see, and how one signs in.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum SettingsTab {
+    /// Names, bio, photo and background.
+    Profile,
+    /// Username, password, email, two-factor and browser notifications.
+    Account,
+}
+
+impl SettingsTab {
+    fn slug(self) -> &'static str {
+        match self {
+            Self::Profile => "profile",
+            Self::Account => "account",
+        }
+    }
+
+    fn parse(value: Option<&String>) -> Self {
+        match value.map(String::as_str) {
+            Some("account") => Self::Account,
+            _ => Self::Profile,
+        }
+    }
+}
+
+fn back_to_settings(tab: SettingsTab, result: Result<(), EditError>) -> Response {
     let location = match result {
-        Ok(()) => "/settings?saved".to_string(),
-        Err(error) => format!("/settings?error={}", error.code()),
+        Ok(()) => format!("/settings?tab={}&saved", tab.slug()),
+        Err(error) => format!("/settings?tab={}&error={}", tab.slug(), error.code()),
     };
     Redirect::to(&location).into_response()
 }
@@ -696,25 +737,25 @@ pub async fn change_password(
 
     let stored_hash = match user::password_hash(&pool, me.id).await {
         Ok(hash) => hash,
-        Err(err) => return back_to_settings(Err(server_error(err))),
+        Err(err) => return back_to_settings(SettingsTab::Account, Err(server_error(err))),
     };
     // Accounts without a password can't confirm one: they use "forgot password".
     if !verify_password_blocking(current, stored_hash).await {
-        return back_to_settings(Err(EditError::WrongPassword));
+        return back_to_settings(SettingsTab::Account, Err(EditError::WrongPassword));
     }
     if !user::validate_password(&new) {
-        return back_to_settings(Err(EditError::WeakPassword));
+        return back_to_settings(SettingsTab::Account, Err(EditError::WeakPassword));
     }
     if new != confirm {
-        return back_to_settings(Err(EditError::PasswordMismatch));
+        return back_to_settings(SettingsTab::Account, Err(EditError::PasswordMismatch));
     }
 
     let Some(new_hash) = hash_password_blocking(new).await else {
-        return back_to_settings(Err(EditError::Server));
+        return back_to_settings(SettingsTab::Account, Err(EditError::Server));
     };
     let updated = match user::update_password(&pool, me.id, &new_hash).await {
         Ok(updated) => updated,
-        Err(err) => return back_to_settings(Err(server_error(err))),
+        Err(err) => return back_to_settings(SettingsTab::Account, Err(server_error(err))),
     };
     if let Err(err) = remember_tokens::delete_for_user(&pool, me.id).await {
         tracing::error!("failed to sign out other browsers of user {}: {}", me.id, err);
@@ -724,7 +765,7 @@ pub async fn change_password(
         tracing::error!("failed to keep user {} signed in: {}", me.id, err);
     }
 
-    let mut response = back_to_settings(Ok(()));
+    let mut response = back_to_settings(SettingsTab::Account, Ok(()));
     if has_remember_cookie(&headers)
         && let Some(cookie) = remember(&state, me.id).await
     {
@@ -747,7 +788,10 @@ pub async fn update_bio(
         Some(bio) => user::update_bio(&pool, me.id, &bio).await.map_err(server_error),
         None => Err(EditError::InvalidBio),
     };
-    back_to_settings(result)
+    if result.is_ok() {
+        profile_changed(&state, &pool, me.id).await;
+    }
+    back_to_settings(SettingsTab::Profile, result)
 }
 
 pub async fn update_names(
@@ -771,14 +815,10 @@ pub async fn update_names(
         }
         _ => Err(EditError::InvalidName),
     };
-    // The name other servers show may have changed: they're told.
-    if result.is_ok()
-        && let Ok(Some(updated)) = user::find_by_id(&pool, me.id).await
-        && updated.display_name() != me.display_name()
-    {
-        notifier::profile_updated(&state, &pool, &updated).await;
+    if result.is_ok() {
+        profile_changed(&state, &pool, me.id).await;
     }
-    back_to_settings(result)
+    back_to_settings(SettingsTab::Profile, result)
 }
 
 pub async fn update_username(
@@ -793,16 +833,19 @@ pub async fn update_username(
 
     let raw_username = form.get("username").map(String::as_str).unwrap_or("");
     let Some(username) = user::validate_username(raw_username) else {
-        return back_to_settings(Err(EditError::InvalidUsername));
+        return back_to_settings(SettingsTab::Account, Err(EditError::InvalidUsername));
     };
     if username == me.username {
-        return back_to_settings(Ok(()));
+        return back_to_settings(SettingsTab::Account, Ok(()));
     }
 
     match user::update_username(&pool, me.id, &username).await {
-        Ok(true) => back_to_settings(Ok(())),
-        Ok(false) => back_to_settings(Err(EditError::UsernameTaken)),
-        Err(err) => back_to_settings(Err(server_error(err))),
+        Ok(true) => {
+            profile_changed(&state, &pool, me.id).await;
+            back_to_settings(SettingsTab::Account, Ok(()))
+        }
+        Ok(false) => back_to_settings(SettingsTab::Account, Err(EditError::UsernameTaken)),
+        Err(err) => back_to_settings(SettingsTab::Account, Err(server_error(err))),
     }
 }
 
@@ -817,19 +860,57 @@ async fn upload_image(
         Err(response) => return response,
     };
 
-    let url = match image::save_image(ImageOwner::User(me.id), image.as_str(), &mut multipart).await {
-        Ok(url) => url,
-        Err(err) => return back_to_settings(Err(err.into())),
+    let owner = ImageOwner::User(me.id);
+    let upload = match image::read_crop_upload(&mut multipart, IMAGE_FIELD).await {
+        Ok(upload) => upload,
+        Err(err) => return back_to_settings(SettingsTab::Profile, Err(err.into())),
     };
+    // Cleaned and compressed like photos; AVIF as it is (not read here).
+    let saved = match crate::photo::prepare(&upload.image).await {
+        Ok(photo) => image::save_file(owner, image.as_str(), photo.extension, &photo.data).await,
+        Err(_) => match image::detect_extension(&upload.image) {
+            Some(extension) => image::save_file(owner, image.as_str(), extension, &upload.image).await,
+            None => Err(image::ImageError::UnsupportedFormat),
+        },
+    };
+    let url = match saved {
+        Ok(url) => url,
+        Err(err) => return back_to_settings(SettingsTab::Profile, Err(err.into())),
+    };
+    let (photo_original, background_original) = user::image_originals(&pool, me.id).await.unwrap_or_default();
+    let current_original = match image {
+        ProfileImage::Photo => photo_original,
+        ProfileImage::Background => background_original,
+    };
+    let old_url = me.image_url(image).map(str::to_string);
+    // Cropped again: the original stays (the picture never cropped is its
+    // own). A new picture: its original when it was cropped.
+    let original = match (upload.recrop, &upload.original) {
+        (true, _) => current_original.clone().or_else(|| old_url.clone()),
+        (false, Some(original)) => image::save_original(owner, original).await.ok(),
+        (false, None) => None,
+    };
+    if let Err(err) = user::update_image(&pool, me.id, image, Some(&url), original.as_deref()).await {
+        let mut unused = vec![url];
+        if !upload.recrop {
+            unused.extend(original);
+        }
+        crate::entities::media::remove_local_files(&unused).await;
+        return back_to_settings(SettingsTab::Profile, Err(server_error(err)));
+    }
+    // What isn't the picture nor its original anymore.
+    let unused: Vec<String> = [old_url, current_original].into_iter().flatten().filter(|file| Some(file) != original.as_ref()).collect();
+    crate::entities::media::remove_local_files(&unused).await;
+    profile_changed(&state, &pool, me.id).await;
+    back_to_settings(SettingsTab::Profile, Ok(()))
+}
 
-    if let Err(err) = user::update_image(&pool, me.id, image, Some(&url)).await {
-        image::remove_image(ImageOwner::User(me.id), &url).await;
-        return back_to_settings(Err(server_error(err)));
+/// The profile changed (names, bio, username, photo, background): other
+/// servers following the user are sent it again.
+async fn profile_changed(state: &AppState, pool: &PgPool, user_id: i32) {
+    if let Ok(Some(updated)) = user::find_by_id(pool, user_id).await {
+        notifier::profile_updated(state, pool, &updated).await;
     }
-    if let Some(old_url) = me.image_url(image) {
-        image::remove_image(ImageOwner::User(me.id), old_url).await;
-    }
-    back_to_settings(Ok(()))
 }
 
 async fn remove_image(state: AppState, session: Session, image: ProfileImage) -> Response {
@@ -838,13 +919,18 @@ async fn remove_image(state: AppState, session: Session, image: ProfileImage) ->
         Err(response) => return response,
     };
 
-    if let Err(err) = user::update_image(&pool, me.id, image, None).await {
-        return back_to_settings(Err(server_error(err)));
+    let (photo_original, background_original) = user::image_originals(&pool, me.id).await.unwrap_or_default();
+    if let Err(err) = user::update_image(&pool, me.id, image, None, None).await {
+        return back_to_settings(SettingsTab::Profile, Err(server_error(err)));
     }
-    if let Some(old_url) = me.image_url(image) {
-        image::remove_image(ImageOwner::User(me.id), old_url).await;
-    }
-    back_to_settings(Ok(()))
+    let original = match image {
+        ProfileImage::Photo => photo_original,
+        ProfileImage::Background => background_original,
+    };
+    let removed: Vec<String> = me.image_url(image).map(str::to_string).into_iter().chain(original).collect();
+    crate::entities::media::remove_local_files(&removed).await;
+    profile_changed(&state, &pool, me.id).await;
+    back_to_settings(SettingsTab::Profile, Ok(()))
 }
 
 pub async fn upload_photo(

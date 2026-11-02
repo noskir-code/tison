@@ -1,0 +1,78 @@
+{% extends "base.html" %} {% import "macros/moderation.html" as moderation_ui %} {% block content %}
+<section class="box content moderation users-list">
+    {% call moderation_ui::tabs(sections) %}{% endcall %}
+    <p class="post-username">{{ "The accounts of this site. Their emails are private: only the staff sees them here."|t }}</p>
+    {% if let Some(text) = message %}
+    <p class="saved" role="status">{{ text|t }}</p>
+    {% endif %}
+
+    <form action="/moderation/users" method="get" class="search-field instance-search" role="search">
+        <label for="user-search" class="visually-hidden">{{ "Find a user"|t }}</label>
+        <input id="user-search" type="search" name="q" value="{{ search }}" placeholder="{{ "Username, name or email"|t }}" />
+        <button type="submit" class="button" aria-label="{{ "Find"|t }}">
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
+                <circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2.2" />
+                <line x1="15.5" y1="15.5" x2="21" y2="21" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+            </svg>
+        </button>
+    </form>
+
+    {% if users.is_empty() %}
+    <p class="empty">{% if search.is_empty() %}{{ "No account yet."|t }}{% else %}{{ "No account matches."|t }}{% endif %}</p>
+    {% else %}
+    <div class="instance-table-wrap">
+        <table class="instance-table">
+            <thead>
+                <tr>
+                    <th scope="col">{{ "Username"|t }}</th>
+                    <th scope="col">{{ "Preferred name"|t }}</th>
+                    <th scope="col">{{ "Email"|t }}</th>
+                    <th scope="col">{{ "Role"|t }}</th>
+                    <th scope="col">{{ "Status"|t }}</th>
+                    <th scope="col">{{ "Joined"|t }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for listed in users %}
+                <tr>
+                    <th scope="row"><a href="/user/{{ listed.user.username }}">@{{ listed.user.username }}</a></th>
+                    <td>{{ listed.user.display_name() }}</td>
+                    <td>{% if let Some(email) = listed.email %}{{ email }}{% if !listed.user.email_verified %} <span class="only-you">{{ "not verified"|t }}</span>{% endif %}{% else %}—{% endif %}</td>
+                    <td>{% if listed.user.team %}{{ "Team"|t }}{% else if let Some(badge) = listed.user.role.badge() %}{{ badge|t }}{% else %}{{ "User"|t }}{% endif %}</td>
+                    <td>{{ listed.status() }}</td>
+                    <td>{{ listed.joined_label() }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% if let Some(before) = next_before %}
+    <p><a href="/moderation/users?q={{ search|urlencode }}&amp;before={{ before }}" class="button">{{ "Older accounts"|t }}</a></p>
+    {% endif %}
+    {% endif %}
+
+    <h2 id="email-domains">{{ "Blocked email domains"|t }}</h2>
+    <p class="post-username">{{ "Nobody can sign up with an address of these domains, nor of their subdomains: those of throwaway emails used for fake accounts. Accounts already using one stay."|t }}</p>
+    {% if !domains.is_empty() %}
+    <ul class="site-pages">
+        {% for blocked in domains %}
+        <li class="config-row">
+            <div class="config-setting">
+                <span class="config-key">{{ blocked.domain }}</span>
+                <span class="post-meta">{{ blocked.created_label() }}{% if let Some(by) = blocked.created_by %} · @{{ by }}{% endif %}{% if blocked.accounts > 0 %} · {% if blocked.accounts == 1 %}{{ "1 account uses it"|t }}{% else %}{{ "{} accounts use it"|tf(blocked.accounts) }}{% endif %}{% endif %}</span>
+                <form action="/moderation/users/email-domains" method="post" class="site-pages-edit">
+                    <input type="hidden" name="unblock" value="{{ blocked.domain }}" />
+                    <button type="submit" class="button">{{ "Unblock"|t }}</button>
+                </form>
+            </div>
+        </li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+    <form action="/moderation/users/email-domains" method="post" class="instance-form">
+        <label for="email-domain" class="visually-hidden">{{ "Domain"|t }}</label>
+        <input id="email-domain" type="text" name="domain" placeholder="{{ "Domain, like spam.example"|t }}" required autocomplete="off" />
+        <button type="submit" class="button primary">{{ "Block"|t }}</button>
+    </form>
+</section>
+{% endblock %}

@@ -286,6 +286,8 @@ pub struct Message {
     pub author: Author,
     /// Written by the viewer: on the right, with "Delete".
     pub is_mine: bool,
+    /// Its photos and files, see `handlers::messenger::send`.
+    pub attachments: Vec<crate::entities::media::Attachment>,
 }
 
 impl Message {
@@ -297,6 +299,7 @@ impl Message {
             edited_at: row.try_get("edited_at")?,
             author: Author::from_row(row)?,
             is_mine: row.try_get("is_mine")?,
+            attachments: Vec::new(),
         })
     }
 
@@ -338,6 +341,11 @@ pub async fn messages(pool: &PgPool, id: i64, viewer_id: i32, after: Option<i64>
     .map(Message::from_row)
     .collect::<Result<Vec<_>, _>>()?;
     messages.reverse();
+    let ids: Vec<i64> = messages.iter().map(|message| message.id).collect();
+    let mut attachments = crate::entities::media::for_messages(pool, &ids).await?;
+    for message in &mut messages {
+        message.attachments = attachments.remove(&message.id).unwrap_or_default();
+    }
     Ok(messages)
 }
 

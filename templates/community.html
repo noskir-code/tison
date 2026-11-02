@@ -149,7 +149,7 @@
                 {% for moderator in moderators %}
                 <li>
                     <a href="/user/{{ moderator.user.username }}">{{ moderator.user.display_name() }}</a>
-                    <span class="post-username">@{{ moderator.user.username }}{% if moderator.is_owner %} {{ "· owner"|t }}{% endif %}</span>
+                    <span class="post-username">{{ moderator.user.handle() }}{% if moderator.is_owner %} {{ "· owner"|t }}{% endif %}</span>
                 </li>
                 {% else %}
                 <li class="empty">{{ "No moderators."|t }}</li>

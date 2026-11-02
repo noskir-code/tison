@@ -1,0 +1,9 @@
+{# A button opening emojis to put in the textarea `target` where the cursor
+   is, see `setupEmojiPickers` in system.js. Hidden without JavaScript:
+   emojis can be typed from the system's keyboard. #}
+{% macro emoji_button(target) %}
+<span class="emoji-picker" data-emoji-picker="{{ target }}" hidden>
+    <button type="button" class="emoji-toggle" aria-expanded="false" aria-haspopup="true" title="{{ "Add an emoji"|t }}" aria-label="{{ "Add an emoji"|t }}">😊</button>
+    <span class="emoji-panel" role="group" aria-label="{{ "Emojis"|t }}" hidden></span>
+</span>
+{% endmacro %}

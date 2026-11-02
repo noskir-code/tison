@@ -702,6 +702,10 @@ fn link(value: &Value) -> Option<String> {
 pub fn parse_actor(document: &Value) -> Result<NewRemoteActor, String> {
     let text = |value: &Value, name: &str| value.get(name).and_then(Value::as_str).map(str::to_string);
     let actor_id = text(document, "id").ok_or("actor without id")?;
+    // Never saved from a server without a real domain, see `is_valid_domain`.
+    if !store::is_valid_domain(&store::host_of(&actor_id)) {
+        return Err(format!("{actor_id} isn't on a valid domain"));
+    }
     let key = document.get("publicKey").ok_or("actor without publicKey")?;
     // Some servers list several keys.
     let key = key.as_array().and_then(|keys| keys.first()).unwrap_or(key);
@@ -741,6 +745,7 @@ pub fn parse_actor(document: &Value) -> Result<NewRemoteActor, String> {
         shared_inbox,
         key_id: text(key, "id").ok_or("key without id")?,
         public_key_pem: text(key, "publicKeyPem").ok_or("key without publicKeyPem")?,
+        kind: text(document, "type").filter(|kind| kind.len() <= 32).unwrap_or_else(|| "Person".to_string()),
         actor_id,
     })
 }

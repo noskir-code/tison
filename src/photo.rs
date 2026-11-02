@@ -5,6 +5,11 @@
 //! would show sideways.
 //!
 //! JPEG, PNG, GIF and WebP only: other formats can't be cleaned here.
+//!
+//! Then `prepare` makes them smaller with ffmpeg (see `compress`), in the
+//! same format, shown by every browser since 2015: JPEG re-encoded at a
+//! quality where nothing changes to the eye, PNG compressed again without
+//! losing anything. The original is kept when that isn't smaller.
 
 /// A cleaned photo, ready to be saved.
 #[derive(Debug, PartialEq, Eq)]
@@ -23,6 +28,11 @@ pub enum PhotoError {
     Unsupported,
     /// Cut or broken.
     Invalid,
+}
+
+/// A photo cleaned (see `clean`), then made smaller (see `compress`).
+pub async fn prepare(data: &[u8]) -> Result<Photo, PhotoError> {
+    Ok(compress(clean(data)?).await)
 }
 
 pub fn clean(data: &[u8]) -> Result<Photo, PhotoError> {
@@ -263,6 +273,202 @@ fn clean_webp(data: &[u8]) -> Result<(Vec<u8>, (u32, u32)), PhotoError> {
     cleaned.extend_from_slice(b"WEBP");
     cleaned.extend_from_slice(&chunks);
     Ok((cleaned, size.ok_or(PhotoError::Invalid)?))
+}
+
+// --- Compression ---
+
+/// The qualities of ffmpeg a JPEG is re-encoded at, the best first (1 is
+/// best, 31 worst), until one is small enough (`KEPT_UNDER_PERCENT`). Both
+/// keep a SSIM of 0.99 or more on photos of phones and cameras: no visible
+/// change. Lower ones (3: 0.975) can be seen.
+const JPEG_QUALITIES: [&str; 2] = ["1", "2"];
+
+/// Kept only when at least 10 % smaller (percent of the original): below, a
+/// JPEG would lose quality for little.
+const KEPT_UNDER_PERCENT: usize = 90;
+
+/// Compressions running at once: they use a core each.
+static COMPRESSIONS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(4);
+
+/// Longer, the photo stays as it is.
+const COMPRESSION_SECONDS: u64 = 30;
+
+/// Color information of a PNG, copied as it was: the pixels mean the same.
+fn is_png_color_chunk(kind: &[u8]) -> bool {
+    matches!(kind, b"iCCP" | b"sRGB" | b"gAMA" | b"cHRM" | b"cICP")
+}
+
+/// The photo made smaller by ffmpeg, same format and size, or as it was
+/// (GIF and WebP, an animated PNG, a CMYK JPEG, no ffmpeg, or not 10 %
+/// smaller).
+pub async fn compress(photo: Photo) -> Photo {
+    let Some(tools) = crate::av::tools() else {
+        return photo;
+    };
+    let small_enough = |data: &Vec<u8>| data.len() * 100 <= photo.data.len() * KEPT_UNDER_PERCENT;
+    let mut compressed = None;
+    match photo.extension {
+        "jpg" => {
+            for quality in JPEG_QUALITIES {
+                if let Some(data) = compress_jpeg(&tools.ffmpeg, &photo.data, quality).await.filter(small_enough) {
+                    compressed = Some(data);
+                    break;
+                }
+            }
+        }
+        "png" => compressed = compress_png(&tools.ffmpeg, &photo.data).await.filter(small_enough),
+        _ => {}
+    }
+    match compressed {
+        Some(data) => {
+            tracing::debug!("photo compressed from {} to {} bytes", photo.data.len(), data.len());
+            Photo { data, ..photo }
+        }
+        None => photo,
+    }
+}
+
+/// Runs ffmpeg on `input` from its standard input, what it writes back.
+async fn ffmpeg_pipe(ffmpeg: &str, args: &[&str], input: &[u8]) -> Option<Vec<u8>> {
+    use tokio::io::AsyncWriteExt;
+    let _turn = COMPRESSIONS.acquire().await.ok()?;
+    let mut child = tokio::process::Command::new(ffmpeg)
+        .args(["-hide_banner", "-loglevel", "error"])
+        .args(args)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .kill_on_drop(true)
+        .spawn()
+        .ok()?;
+    let mut stdin = child.stdin.take()?;
+    let input = input.to_vec();
+    // Written while the output is read: neither waits for the other.
+    let writer = tokio::spawn(async move {
+        let _ = stdin.write_all(&input).await;
+    });
+    let output = tokio::time::timeout(std::time::Duration::from_secs(COMPRESSION_SECONDS), child.wait_with_output()).await.ok()?.ok()?;
+    let _ = writer.await;
+    (output.status.success() && !output.stdout.is_empty()).then_some(output.stdout)
+}
+
+/// The segments before the picture of a cleaned JPEG: (marker, whole segment).
+fn jpeg_segments(data: &[u8]) -> Vec<(u8, &[u8])> {
+    let mut segments = Vec::new();
+    let mut at = 2;
+    while let (Some(&0xFF), Some(&marker)) = (data.get(at), data.get(at + 1)) {
+        if marker == 0xDA {
+            break;
+        }
+        let Some(length) = u16_be(data, at + 2).map(|length| length as usize).filter(|length| *length >= 2) else {
+            break;
+        };
+        let Some(segment) = data.get(at..at + 2 + length) else {
+            break;
+        };
+        segments.push((marker, segment));
+        at += 2 + length;
+    }
+    segments
+}
+
+/// JPEG: re-encoded by ffmpeg at `quality` (see `JPEG_QUALITIES`). The
+/// rotation and the color profile are put back as they were, untouched.
+async fn compress_jpeg(ffmpeg: &str, data: &[u8], quality: &str) -> Option<Vec<u8>> {
+    let segments = jpeg_segments(data);
+    // Adobe's (CMYK, or colors not in YCbCr): ffmpeg would change them.
+    if segments.iter().any(|(marker, _)| *marker == 0xEE) {
+        return None;
+    }
+    let is_profile = |segment: &[u8]| segment.get(4..16) == Some(b"ICC_PROFILE\0".as_slice());
+    let kept: Vec<u8> = segments
+        .iter()
+        .filter(|(marker, segment)| *marker == 0xE1 || (*marker == 0xE2 && is_profile(segment)))
+        .flat_map(|(_, segment)| segment.iter().copied())
+        .collect();
+    // Without its rotation, so ffmpeg leaves the pixels as they are.
+    let mut input = data.to_vec();
+    if let Some((_, rotation)) = segments.iter().find(|(marker, _)| *marker == 0xE1) {
+        let start = rotation.as_ptr() as usize - data.as_ptr() as usize;
+        input.drain(start..start + rotation.len());
+    }
+    // Its color sampling kept (ffmpeg would make 4:2:0 of a 4:2:2 photo).
+    let sampling = segments
+        .iter()
+        .find(|(marker, _)| is_frame_header(*marker))
+        .filter(|(_, frame)| frame.get(9) == Some(&3))
+        .and_then(|(_, frame)| match frame.get(11) {
+            Some(0x22) => Some("yuvj420p"),
+            Some(0x21) => Some("yuvj422p"),
+            Some(0x11) => Some("yuvj444p"),
+            _ => None,
+        });
+    let mut args = vec!["-f", "jpeg_pipe", "-i", "pipe:0", "-map_metadata", "-1", "-c:v", "mjpeg", "-qmin", "1", "-q:v", quality, "-huffman", "optimal"];
+    if let Some(sampling) = sampling {
+        args.extend(["-pix_fmt", sampling]);
+    }
+    args.extend(["-f", "image2pipe", "pipe:1"]);
+    let encoded = ffmpeg_pipe(ffmpeg, &args, &input).await?;
+    if !encoded.starts_with(&[0xFF, 0xD8]) {
+        return None;
+    }
+    // ffmpeg's segments, without the profile it may copy (the original goes
+    // back instead) nor its comment naming itself; the JFIF header first.
+    let segments = jpeg_segments(&encoded);
+    let header_end = 2 + segments.iter().map(|(_, segment)| segment.len()).sum::<usize>();
+    let mut result = Vec::with_capacity(encoded.len() + kept.len());
+    result.extend_from_slice(&encoded[..2]);
+    for (_, segment) in segments.iter().filter(|(marker, _)| *marker == 0xE0) {
+        result.extend_from_slice(segment);
+    }
+    result.extend_from_slice(&kept);
+    for (_, segment) in segments.iter().filter(|(marker, segment)| *marker != 0xE0 && *marker != 0xFE && !(*marker == 0xE2 && is_profile(segment))) {
+        result.extend_from_slice(segment);
+    }
+    result.extend_from_slice(encoded.get(header_end..)?);
+    Some(result)
+}
+
+/// The chunks of a PNG: (kind, whole chunk), `None` when it's broken.
+fn png_chunks(data: &[u8]) -> Option<Vec<(&[u8], &[u8])>> {
+    let mut chunks = Vec::new();
+    let mut at = PNG_SIGNATURE.len();
+    while at < data.len() {
+        let length = u32_be(data, at)? as usize;
+        let chunk = data.get(at..at.checked_add(12 + length)?)?;
+        chunks.push((&chunk[4..8], chunk));
+        at += 12 + length;
+    }
+    Some(chunks)
+}
+
+/// PNG: compressed again by ffmpeg, each line with the best filter, without
+/// losing a pixel. The color information is put back as it was.
+async fn compress_png(ffmpeg: &str, data: &[u8]) -> Option<Vec<u8>> {
+    let chunks = png_chunks(data)?;
+    // An animated PNG: ffmpeg would keep one picture.
+    if chunks.iter().any(|(kind, _)| *kind == b"acTL") {
+        return None;
+    }
+    let args = ["-f", "png_pipe", "-i", "pipe:0", "-map_metadata", "-1", "-c:v", "png", "-pred", "mixed", "-compression_level", "9", "-f", "image2pipe", "pipe:1"];
+    let encoded = ffmpeg_pipe(ffmpeg, &args, data).await?;
+    if !encoded.starts_with(PNG_SIGNATURE) {
+        return None;
+    }
+    let mut result = PNG_SIGNATURE.to_vec();
+    for (kind, chunk) in png_chunks(&encoded)? {
+        if is_png_color_chunk(kind) {
+            continue;
+        }
+        result.extend_from_slice(chunk);
+        // Right after the header, where they go.
+        if kind == b"IHDR" {
+            for (_, color) in chunks.iter().filter(|(kind, _)| is_png_color_chunk(kind)) {
+                result.extend_from_slice(color);
+            }
+        }
+    }
+    Some(result)
 }
 
 #[cfg(test)]

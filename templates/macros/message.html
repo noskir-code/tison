@@ -1,3 +1,4 @@
+{% import "macros/post.html" as posts_ui %}
 {# One message of a conversation, on the page and sent live (see
    handlers/messenger.rs). The viewer's own are on the right, with "Delete". #}
 {% macro message_item(message, conversation_id) %}
@@ -12,7 +13,8 @@
     </a>
     {% endif %}
     <div class="message-bubble">
-        <p class="post-body" data-message-body>{{ message.body_html()|safe }}</p>
+        {% if !message.body.is_empty() %}<p class="post-body" data-message-body>{{ message.body_html()|safe }}</p>{% endif %}
+        {% call posts_ui::attachments(message.attachments.as_slice(), false) %}{% endcall %}
         <div class="message-meta">
             <time datetime="{{ message.created_at_iso() }}" data-relative>{{ message.created_at_label() }}</time>
             {% if message.edited_at.is_some() %} {{ "· edited"|t }}{% endif %}

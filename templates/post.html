@@ -1,6 +1,14 @@
-{% extends "base.html" %} {% import "macros/post.html" as posts_ui %} {% import "macros/comment.html" as comments_ui %}
+{% extends "base.html" %} {% import "macros/emoji.html" as emoji_ui %} {% import "macros/post.html" as posts_ui %} {% import "macros/comment.html" as comments_ui %}
 {% block head %}{% if let Some(url) = activitypub_url %}
 <link rel="alternate" type="application/activity+json" href="{{ url }}" />
+{% endif %}
+{# The card other sites (Mastodon, messengers...) show for a link to an article. #}
+{% if post.is_article() && post.visibility.as_str() == "public" %}
+<meta property="og:type" content="article" />
+<meta property="og:title" content="{{ post.title_text() }}" />
+<meta property="og:description" content="{{ post.article_excerpt() }}" />
+<meta property="og:site_name" content="{{ crate::settings::instance_name() }}" />
+{% if let Some(picture) = post.article_picture_url() %}<meta property="og:image" content="{{ picture }}" />{% endif %}
 {% endif %}{% endblock %}
 {% block content %}
 <div class="flex center vertical full-width posts">
@@ -49,7 +57,10 @@
                 rows="3"
                 required
             ></textarea>
-            <button type="submit" class="button">{{ "Comment"|t }}</button>
+            <div class="flex center space-between">
+                {% call emoji_ui::emoji_button("comment-body") %}{% endcall %}
+                <button type="submit" class="button">{{ "Comment"|t }}</button>
+            </div>
         </form>
         {% else %}
         <p><a href="/login">{{ "Login"|t }}</a> {{ "to comment."|t }}</p>

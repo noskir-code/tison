@@ -3,7 +3,7 @@
     <head>
         <meta charset="UTF-8"/>
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>{% block title %}{{ title|t }} - Tison{% endblock %}</title>
+        <title>{% block title %}{{ title|t }} - {{ crate::settings::instance_name() }}{% endblock %}</title>
         <link rel="shortcut icon" href="/public/favicon.ico" type="image/x-icon">
         {# The theme chosen with the menu's button (see system.js), applied
            before the page is drawn so it never flashes in the other one. #}
@@ -38,10 +38,10 @@
                     <path d="M4 6.5h16M4 12h16M4 17.5h16" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
                 </svg>
             </button>
-            <a href="/" class="mobile-brand"><img src="/public/logo.png" alt="" class="logo"><span>Tison</span></a>
+            <a href="/" class="mobile-brand"><img src="/public/logo.png" alt="" class="logo"><span>{{ crate::settings::instance_name() }}</span></a>
             <div class="menu-backdrop" data-menu-close></div>
             <div class="flex full height center side infos vertical" id="site-menu">
-                <header><img src="/public/logo.png" alt="{{ "Logo"|t }}" class="logo"><div>Tison</div></header>
+                <header><img src="/public/logo.png" alt="{{ "Logo"|t }}" class="logo"><div>{{ crate::settings::instance_name() }}</div></header>
                 <nav>
                     {% if let Some(viewer) = layout.viewer %}
                     <a href="/user/{{ viewer.username }}" class="flex center">
@@ -114,7 +114,7 @@
                 </form>
                 <div class="flex bottom center vertical">
                     <!-- Versions -->
-                    <div>Tison Protocol <br> v.0.18.78-beta</div>
+                    <div>Tison Protocol <br> v.0.18.102-beta</div>
                     <div class="flex wrap space-around infos">
                         <a href="/terms-of-use">&bull;{{ "Terms of Use"|t }}</a>
                         <a href="/privacy-policy">&bull;{{ "Privacy Policy"|t }}</a>
@@ -161,7 +161,7 @@
             <div class="box verify-ask">
                 <p><strong>{{ "Verify your email."|t }}</strong> {{ "We sent you a link when you signed up: open it to confirm your address."|t }}</p>
                 <form action="/settings/verify-email" method="post">
-                    <input type="hidden" name="return" value="/settings#email" />
+                    <input type="hidden" name="return" value="/settings?tab=account#email" />
                     <button type="submit" class="button">{{ "Send it again"|t }}</button>
                 </form>
             </div>
@@ -170,7 +170,7 @@
             {# Shown by assets/system.js while this browser hasn't been asked:
                browsers only show their own question after a click. #}
             <div class="box push-ask" data-push-ask hidden>
-                <p data-push-ask-text><strong>{{ "Turn on notifications?"|t }}</strong> {{ "Get likes, comments"|t }}{% if crate::settings::services().dfrn %}{{ ", messages"|t }}{% endif %} {{ "and reminders even when Tison is closed."|t }}</p>
+                <p data-push-ask-text><strong>{{ "Turn on notifications?"|t }}</strong> {{ "Get likes, comments"|t }}{% if crate::settings::services().dfrn %}{{ ", messages"|t }}{% endif %} {{ "and reminders even when {} is closed."|tf(crate::settings::instance_name()) }}</p>
                 <div class="push-ask-actions">
                     <button type="button" class="button primary" data-push-ask-yes>{{ "Turn on"|t }}</button>
                     <button type="button" class="button" data-push-ask-later>{{ "Not now"|t }}</button>

@@ -22,6 +22,15 @@
         <button type="button" class="button" data-copy="{{ feed_url }}" hidden>{{ "Copy"|t }}</button>
     </div>
     {% if is_owner %}
+    {# Square, like podcast apps want it; the episodes are sent again. #}
+    <form action="/podcasts/{{ podcast.id }}/cover" method="post" enctype="multipart/form-data" class="podcast-cover-form" id="cover">
+        <label for="podcast-cover">{{ "Change the cover"|t }}</label>
+        <input id="podcast-cover" type="file" name="cover" accept="image/jpeg,image/png,image/webp" data-crop="square" data-crop-max="3000" required />
+        <button type="submit" class="button">{{ "Save the cover"|t }}</button>
+    </form>
+    {% if let Some(cover) = podcast.cover_original_url.as_ref().or(podcast.cover_url.as_ref()) %}
+    <button type="button" class="button" data-crop-current="{{ cover }}" data-crop="square" data-crop-max="3000" data-crop-form="cover" data-crop-name="cover" hidden>{{ "Crop the current cover"|t }}</button>
+    {% endif %}
     <form action="/podcasts/{{ podcast.id }}/delete" method="post" data-confirm="{{ "The podcast and all its episodes will be deleted."|t }}" data-confirm-label="{{ "Delete the podcast"|t }}">
         <button type="submit" class="action danger">{{ "Delete the podcast"|t }}</button>
     </form>

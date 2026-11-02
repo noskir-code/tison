@@ -1,5 +1,6 @@
 //! Links in the text of posts and comments: `https://…`, `http://…` and
-//! `www.…` become clickable. The text is plain, so everything else is
+//! `www.…` become clickable, and hashtags link to their page (`/tags/…`,
+//! see `hashtag`). The text is plain, so everything else is
 //! escaped: the result is safe to put in a page as HTML.
 //!
 //! Used for the pages (see `Post::body_html`) and for the Notes sent to
@@ -130,13 +131,36 @@ fn shown(address: &str) -> String {
     }
 }
 
+/// Text without addresses as HTML: escaped, its hashtags linked to their
+/// page. Their `href` starts with `/tags/`, made absolute for other servers
+/// by `API::activities::absolute_tags`.
+fn text_with_tags(text: &str) -> String {
+    let mut html = String::with_capacity(text.len() + 16);
+    let mut written = 0;
+    for (start, end) in crate::hashtag::spans(text) {
+        let Some(tag) = crate::hashtag::normalize(&text[start..end]) else {
+            continue;
+        };
+        html.push_str(&escape(&text[written..start]));
+        html.push_str(&format!(
+            "<a href=\"{}\" class=\"mention hashtag\" rel=\"tag\">#<span>{}</span></a>",
+            escape(&crate::hashtag::path(&tag)),
+            escape(&text[start + 1..end]),
+        ));
+        written = end;
+    }
+    html.push_str(&escape(&text[written..]));
+    html
+}
+
 /// The text as HTML: escaped, with its addresses as links opening in a new
-/// tab. Line breaks are kept as they are (the pages show them with CSS).
+/// tab and its hashtags as links to their page. Line breaks are kept as they
+/// are (the pages show them with CSS).
 pub fn to_html(text: &str) -> String {
     let mut html = String::with_capacity(text.len() + 32);
     let mut written = 0;
     for address in find_addresses(text) {
-        html.push_str(&escape(&text[written..address.start]));
+        html.push_str(&text_with_tags(&text[written..address.start]));
         html.push_str(&format!(
             "<a href=\"{}\" rel=\"nofollow noopener noreferrer ugc\" target=\"_blank\">{}</a>",
             escape(&address.href),
@@ -144,7 +168,7 @@ pub fn to_html(text: &str) -> String {
         ));
         written = address.end;
     }
-    html.push_str(&escape(&text[written..]));
+    html.push_str(&text_with_tags(&text[written..]));
     html
 }
 
@@ -185,6 +209,18 @@ mod tests {
         assert_eq!(to_html("https:// and www."), "https:// and www.");
         assert_eq!(to_html("www.nothing"), "www.nothing");
         assert_eq!(to_html("mail@www.example.org"), "mail@www.example.org");
+    }
+
+    #[test]
+    fn hashtags_become_links() {
+        assert_eq!(
+            to_html("Hi #Rust & https://x.org/a#b"),
+            format!(
+                "Hi <a href=\"/tags/rust\" class=\"mention hashtag\" rel=\"tag\">#<span>Rust</span></a> &amp; {}",
+                link("https://x.org/a#b", "x.org/a#b")
+            )
+        );
+        assert_eq!(to_html("#1 a#b"), "#1 a#b");
     }
 
     #[test]

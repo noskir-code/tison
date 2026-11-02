@@ -230,6 +230,7 @@ const Tison = (() => {
     function markItemRead(item) {
         item.classList.remove("unread");
         item.querySelector("[data-unread-label]")?.setAttribute("hidden", "");
+        item.querySelector(".notification-read")?.remove();
     }
 
     /** Applies a change sent by the server (see handlers/notification.rs). */
@@ -942,9 +943,15 @@ const Tison = (() => {
             const status = toolbar.querySelector("[data-picture-status]");
             if (file) {
                 toolbar.querySelector('[data-format="upload"]').addEventListener("click", () => file.click());
-                file.addEventListener("change", () => {
-                    uploadPictures(area, file.files, status);
+                file.addEventListener("change", async () => {
+                    // Each one can be cropped first (pasted and dropped ones go as they are).
+                    const chosen = [];
+                    for (const picture of Array.from(file.files)) {
+                        const usable = picture.type.startsWith("image/") && picture.type !== "image/gif";
+                        chosen.push((usable && (await cropPicture(picture, ["original", "wide", "square", "free"]))) || picture);
+                    }
                     file.value = "";
+                    uploadPictures(area, chosen, status);
                 });
                 area.addEventListener("paste", (event) => {
                     const pasted = [...(event.clipboardData?.files || [])];
@@ -1021,6 +1028,8 @@ const Tison = (() => {
                     applyNotificationChange({ read: "all", unread: 0 });
                 } else if (action === "/notifications/delete-all") {
                     applyNotificationChange({ removed: "all", unread: 0 });
+                } else if (action.endsWith("/read")) {
+                    markItemRead(form.closest("[data-notification-id]"));
                 } else {
                     form.closest("[data-notification-id]")?.remove();
                     refreshEmptyState();
@@ -1245,7 +1254,8 @@ const Tison = (() => {
         const input = page.querySelector("[data-message-input]");
         input?.addEventListener("keydown", (event) => {
             // Shift+Enter (or a phone's keyboard) makes a new line.
-            if (event.key === "Enter" && !event.shiftKey && !event.isComposing && input.value.trim()) {
+            const attached = Array.from(input.form.querySelectorAll('input[type="file"]')).some((field) => field.files.length);
+            if (event.key === "Enter" && !event.shiftKey && !event.isComposing && (input.value.trim() || attached)) {
                 event.preventDefault();
                 input.form.requestSubmit();
             }
@@ -1611,6 +1621,7 @@ const Tison = (() => {
             }
             const max = Number(input.dataset.max) || 4;
             const defaultHint = hint.textContent;
+            sendCropOriginals(form);
             const urls = [];
             const show = () => {
                 urls.splice(0).forEach((url) => URL.revokeObjectURL(url));
@@ -1651,7 +1662,28 @@ const Tison = (() => {
                         show();
                         previews.querySelectorAll("textarea").forEach((field, at) => (field.value = kept[at] || ""));
                     });
-                    item.append(image, alt, remove);
+                    // Cropped in the browser, like Pixelfed's shapes.
+                    const crop = document.createElement("button");
+                    crop.type = "button";
+                    crop.className = "action";
+                    crop.textContent = t("Crop");
+                    crop.hidden = file.type === "image/gif";
+                    crop.addEventListener("click", async () => {
+                        // Cropped again: from the whole picture.
+                        const original = cropOriginals.get(fileKey(file)) || file;
+                        const cropped = await cropPicture(original, ["original", "square", "portrait", "wide", "free"]);
+                        if (!cropped) {
+                            return;
+                        }
+                        cropOriginals.set(fileKey(cropped), original);
+                        const kept = Array.from(previews.querySelectorAll("textarea")).map((field) => field.value);
+                        const replaced = new DataTransfer();
+                        Array.from(input.files).forEach((other, at) => replaced.items.add(at === index ? cropped : other));
+                        input.files = replaced.files;
+                        show();
+                        previews.querySelectorAll("textarea").forEach((field, at) => (field.value = kept[at] || ""));
+                    });
+                    item.append(image, alt, crop, remove);
                     previews.append(item);
                 });
                 previews.hidden = files.length === 0;
@@ -1660,6 +1692,355 @@ const Tison = (() => {
             input.addEventListener("change", show);
             form.addEventListener("reset", () => setTimeout(show));
         }
+    }
+
+    // The emojis of `[data-emoji-picker]` (macros/emoji.html): every one of
+    // Unicode's list (assets/emojis.json, made from its emoji-test.txt, without
+    // the skin tones), loaded the first time a picker opens.
+    let emojiList = null;
+    function loadEmojis() {
+        emojiList ??= fetch("/assets/emojis.json")
+            .then((response) => (response.ok ? response.json() : Promise.reject(new Error(String(response.status)))))
+            .catch((error) => {
+                emojiList = null;
+                throw error;
+            });
+        return emojiList;
+    }
+
+    // The button of each category, Unicode's groups.
+    const EMOJI_GROUP_ICONS = {
+        "Smileys & Emotion": "😀",
+        "People & Body": "👋",
+        "Animals & Nature": "🐻",
+        "Food & Drink": "🍔",
+        "Travel & Places": "🚗",
+        Activities: "⚽",
+        Objects: "💡",
+        Symbols: "❤️",
+        Flags: "🏁",
+    };
+    const RECENT_EMOJIS_KEY = "tison-recent-emojis";
+    const RECENT_EMOJIS_KEPT = 24;
+
+    // The emojis used last on this device, newest first.
+    function recentEmojis() {
+        try {
+            const saved = JSON.parse(localStorage.getItem(RECENT_EMOJIS_KEY) || "[]");
+            return Array.isArray(saved) ? saved.filter((item) => Array.isArray(item) && item.length === 2) : [];
+        } catch {
+            return [];
+        }
+    }
+
+    function rememberEmoji(emoji, name) {
+        const recent = [[emoji, name], ...recentEmojis().filter(([known]) => known !== emoji)].slice(0, RECENT_EMOJIS_KEPT);
+        try {
+            localStorage.setItem(RECENT_EMOJIS_KEY, JSON.stringify(recent));
+        } catch {
+            // Not remembered (private browsing...).
+        }
+    }
+
+    // A grid of emojis, each a button with its name.
+    function emojiGrid(emojis) {
+        const grid = document.createElement("div");
+        grid.className = "emoji-grid";
+        for (const [emoji, name] of emojis) {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.textContent = emoji;
+            button.title = name;
+            button.setAttribute("aria-label", name);
+            button.dataset.emoji = emoji;
+            grid.append(button);
+        }
+        return grid;
+    }
+
+    // A titled part of the list: a category, the recent ones or the results.
+    function emojiSection(title, emojis, id) {
+        const section = document.createElement("section");
+        section.className = "emoji-section";
+        if (id) {
+            section.dataset.emojiGroup = id;
+        }
+        const heading = document.createElement("h3");
+        heading.textContent = title;
+        section.append(heading, emojiGrid(emojis));
+        return section;
+    }
+
+    /** Fills a picker's panel: the categories, the search and the list. */
+    function buildEmojiPanel(panel, data) {
+        const categories = document.createElement("div");
+        categories.className = "emoji-categories";
+        categories.setAttribute("role", "toolbar");
+        categories.setAttribute("aria-label", t("Categories"));
+        const search = document.createElement("input");
+        search.type = "search";
+        search.className = "emoji-search";
+        search.placeholder = t("Search emojis");
+        search.setAttribute("aria-label", t("Search emojis"));
+        const list = document.createElement("div");
+        list.className = "emoji-list";
+
+        const showAll = () => {
+            list.replaceChildren();
+            const recent = recentEmojis();
+            if (recent.length) {
+                list.append(emojiSection(t("Recently used"), recent, "recent"));
+            }
+            data.groups.forEach((group, index) => list.append(emojiSection(t(group.name), group.emojis, String(index))));
+            list.scrollTop = 0;
+        };
+        const category = (label, icon, id) => {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.textContent = icon;
+            button.title = label;
+            button.setAttribute("aria-label", label);
+            button.dataset.emojiCategory = id;
+            categories.append(button);
+        };
+        category(t("Recently used"), "🕘", "recent");
+        data.groups.forEach((group, index) => category(t(group.name), EMOJI_GROUP_ICONS[group.name] || group.emojis[0][0], String(index)));
+
+        categories.addEventListener("click", (event) => {
+            const button = event.target.closest("[data-emoji-category]");
+            if (!button) {
+                return;
+            }
+            if (search.value) {
+                search.value = "";
+                showAll();
+            }
+            const section = list.querySelector(`[data-emoji-group="${button.dataset.emojiCategory}"]`);
+            if (section) {
+                list.scrollTop = section.offsetTop - list.offsetTop;
+            }
+        });
+        // In a form: Enter would send it.
+        search.addEventListener("keydown", (event) => {
+            if (event.key === "Enter") {
+                event.preventDefault();
+            }
+        });
+        search.addEventListener("input", () => {
+            const words = search.value.trim().toLowerCase();
+            if (!words) {
+                showAll();
+                return;
+            }
+            const found = data.groups.flatMap((group) => group.emojis).filter(([, name]) => name.includes(words));
+            list.replaceChildren(found.length ? emojiSection(tf("Results for “{}”", search.value.trim()), found) : emptyEmojiResult());
+        });
+        panel.replaceChildren(categories, search, list);
+        showAll();
+        panel.showAll = showAll;
+    }
+
+    function emptyEmojiResult() {
+        const empty = document.createElement("p");
+        empty.className = "emoji-empty";
+        empty.textContent = t("No emoji found.");
+        return empty;
+    }
+
+    /** Each `[data-emoji-picker]`: its emojis go where the cursor is in its textarea. */
+    function setupEmojiPickers(root = document) {
+        root.querySelectorAll("[data-emoji-picker]").forEach((picker) => {
+            const area = document.getElementById(picker.dataset.emojiPicker);
+            const toggle = picker.querySelector(".emoji-toggle");
+            const panel = picker.querySelector(".emoji-panel");
+            if (!area || !toggle || !panel || picker.dataset.ready) {
+                return;
+            }
+            picker.dataset.ready = "1";
+            picker.hidden = false;
+            const open = (shown) => {
+                panel.hidden = !shown;
+                toggle.setAttribute("aria-expanded", String(shown));
+                // Kept inside the screen, next to a button at its right edge.
+                panel.style.left = "";
+                if (shown) {
+                    const overflow = panel.getBoundingClientRect().right - (document.documentElement.clientWidth - 8);
+                    if (overflow > 0) {
+                        panel.style.left = `${-overflow}px`;
+                    }
+                }
+            };
+            toggle.addEventListener("click", async () => {
+                if (!panel.hidden) {
+                    open(false);
+                    return;
+                }
+                if (!panel.childElementCount) {
+                    try {
+                        buildEmojiPanel(panel, await loadEmojis());
+                    } catch {
+                        panel.replaceChildren(emptyEmojiResult());
+                        panel.firstChild.textContent = t("The emojis couldn't be loaded: check your connection.");
+                    }
+                } else {
+                    // The recent ones may have changed in another picker.
+                    panel.showAll?.();
+                }
+                open(true);
+                // Not on phones: their keyboard would cover the emojis.
+                if (matchMedia("(pointer: fine)").matches) {
+                    panel.querySelector(".emoji-search")?.focus({ preventScroll: true });
+                }
+            });
+            panel.addEventListener("click", (event) => {
+                const button = event.target.closest("[data-emoji]");
+                if (!button) {
+                    return;
+                }
+                const start = area.selectionStart ?? area.value.length;
+                const end = area.selectionEnd ?? start;
+                area.setRangeText(button.dataset.emoji, start, end, "end");
+                rememberEmoji(button.dataset.emoji, button.title);
+                area.focus();
+                // The preview, the counters... follow.
+                area.dispatchEvent(new Event("input", { bubbles: true }));
+            });
+            document.addEventListener("click", (event) => {
+                if (!picker.contains(event.target)) {
+                    open(false);
+                }
+            });
+            picker.addEventListener("keydown", (event) => {
+                if (event.key === "Escape") {
+                    event.preventDefault();
+                    open(false);
+                    toggle.focus();
+                }
+            });
+        });
+    }
+
+    /**
+     * The camera button of the post form (`[data-camera]`): the browser asks
+     * for permission, then a picture taken is added to the photos, like one
+     * chosen from the files. Needs https (or localhost).
+     */
+    function setupCamera() {
+        if (!navigator.mediaDevices?.getUserMedia || !window.isSecureContext) {
+            return;
+        }
+        document.querySelectorAll("[data-camera]").forEach((button) => {
+            const form = button.closest("form");
+            const input = form?.querySelector('input[name="photos"]');
+            if (!input) {
+                return;
+            }
+            button.hidden = false;
+            button.addEventListener("click", async () => {
+                let stream;
+                try {
+                    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+                } catch {
+                    alert(t("The camera can't be used: the browser refused it, or there is none."));
+                    return;
+                }
+                const dialog = document.createElement("dialog");
+                dialog.className = "camera-dialog";
+                const video = document.createElement("video");
+                video.autoplay = true;
+                video.playsInline = true;
+                video.muted = true;
+                video.srcObject = stream;
+                const actions = document.createElement("div");
+                actions.className = "camera-actions";
+                const take = document.createElement("button");
+                take.type = "button";
+                take.className = "button primary";
+                take.textContent = t("Take the photo");
+                const cancel = document.createElement("button");
+                cancel.type = "button";
+                cancel.className = "button";
+                cancel.textContent = t("Cancel");
+                actions.append(cancel, take);
+                dialog.append(video, actions);
+                document.body.append(dialog);
+                const close = () => {
+                    stream.getTracks().forEach((track) => track.stop());
+                    dialog.close();
+                    dialog.remove();
+                };
+                cancel.addEventListener("click", close);
+                dialog.addEventListener("cancel", close);
+                take.addEventListener("click", () => {
+                    const canvas = document.createElement("canvas");
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    canvas.getContext("2d").drawImage(video, 0, 0);
+                    canvas.toBlob((blob) => {
+                        if (blob) {
+                            const files = new DataTransfer();
+                            Array.from(input.files).forEach((file) => files.items.add(file));
+                            files.items.add(new File([blob], `camera-${Date.now()}.jpg`, { type: "image/jpeg" }));
+                            input.files = files.files;
+                            input.dispatchEvent(new Event("change"));
+                        }
+                        close();
+                    }, "image/jpeg", 0.9);
+                });
+                dialog.showModal();
+            });
+        });
+    }
+
+    /**
+     * The photos and files chosen for a message (`[data-file-input]`): in
+     * the list `data-file-list-id`, each removable, photos as thumbnails.
+     */
+    function setupFileLists() {
+        document.querySelectorAll("[data-file-input]").forEach((input) => {
+            const list = document.getElementById(input.dataset.fileListId);
+            if (!list) {
+                return;
+            }
+            const max = Number(input.dataset.max) || 4;
+            const show = () => {
+                list.querySelectorAll("img").forEach((image) => URL.revokeObjectURL(image.src));
+                list.replaceChildren();
+                const files = Array.from(input.files);
+                if (files.length > max) {
+                    alert(tf("At most {} files: choose again.", max));
+                    input.value = "";
+                    list.hidden = true;
+                    return;
+                }
+                files.forEach((file, index) => {
+                    const item = document.createElement("li");
+                    if (file.type.startsWith("image/")) {
+                        const image = document.createElement("img");
+                        image.src = URL.createObjectURL(file);
+                        image.alt = "";
+                        item.append(image);
+                    } else {
+                        item.append(`📄 ${file.name} `);
+                    }
+                    const remove = document.createElement("button");
+                    remove.type = "button";
+                    remove.className = "action danger";
+                    remove.textContent = t("Remove");
+                    remove.addEventListener("click", () => {
+                        const kept = new DataTransfer();
+                        Array.from(input.files).forEach((other, at) => at !== index && kept.items.add(other));
+                        input.files = kept.files;
+                        show();
+                    });
+                    item.append(remove);
+                    list.append(item);
+                });
+                list.hidden = files.length === 0;
+            };
+            input.addEventListener("change", show);
+            input.closest("form").addEventListener("reset", () => setTimeout(show));
+        });
     }
 
     // Live streams (see src/av/live.rs): HLS made of fMP4 pieces, in
@@ -2866,6 +3247,314 @@ const Tison = (() => {
         }
     }
 
+    // The cropping window: a frame moved and resized over the picture, at
+    // a ratio or free, then the picture cut to it in the browser (as JPEG,
+    // PNG when it had transparency). The server cleans and compresses it
+    // like any upload. Browsers turn the picture by its EXIF rotation
+    // themselves, so the result is upright.
+    const CROP_RATIOS = {
+        free: { label: () => t("Free"), value: null },
+        original: { label: () => t("Original"), value: "original" },
+        square: { label: () => "1:1", value: 1 },
+        portrait: { label: () => "4:5", value: 4 / 5 },
+        wide: { label: () => "16:9", value: 16 / 9 },
+        banner: { label: () => "3:1", value: 3 },
+    };
+
+    // `source`: a File or an address of this site. `ratios`: keys of
+    // CROP_RATIOS, the first chosen at first. Resolves to a File, or null
+    // when the window is closed without cropping.
+    function cropPicture(source, ratios, { maxSide = 4096, name = "picture" } = {}) {
+        return new Promise((resolve) => {
+            const url = source instanceof Blob ? URL.createObjectURL(source) : source;
+            const image = new Image();
+            image.decoding = "async";
+            image.onerror = () => {
+                if (source instanceof Blob) {
+                    URL.revokeObjectURL(url);
+                }
+                resolve(null);
+            };
+            image.onload = () => showCropper(image, source, ratios, maxSide, name, (file) => {
+                if (source instanceof Blob) {
+                    URL.revokeObjectURL(url);
+                }
+                resolve(file);
+            });
+            image.src = url;
+        });
+    }
+
+    function showCropper(image, source, ratios, maxSide, name, done) {
+        const dialog = document.createElement("dialog");
+        dialog.className = "crop-dialog";
+        dialog.setAttribute("aria-label", t("Crop the picture"));
+        const stage = document.createElement("div");
+        stage.className = "crop-stage";
+        const shown = image.cloneNode();
+        shown.alt = "";
+        shown.draggable = false;
+        const frame = document.createElement("div");
+        frame.className = "crop-frame";
+        frame.tabIndex = 0;
+        frame.setAttribute("role", "slider");
+        frame.setAttribute("aria-label", t("Crop frame: drag it, or move it with the arrow keys (Shift to resize)"));
+        const handle = document.createElement("span");
+        handle.className = "crop-handle";
+        frame.append(handle);
+        stage.append(shown, frame);
+
+        const choices = document.createElement("div");
+        choices.className = "crop-ratios";
+        choices.setAttribute("role", "group");
+        choices.setAttribute("aria-label", t("Shape"));
+        const actions = document.createElement("div");
+        actions.className = "crop-actions";
+        const cancel = document.createElement("button");
+        cancel.type = "button";
+        cancel.className = "button";
+        cancel.textContent = t("Keep it as it is");
+        const apply = document.createElement("button");
+        apply.type = "button";
+        apply.className = "button primary";
+        apply.textContent = t("Crop");
+        actions.append(cancel, apply);
+        dialog.append(stage, choices, actions);
+        document.body.append(dialog);
+
+        const width = image.naturalWidth;
+        const height = image.naturalHeight;
+        // The frame, in the picture's own pixels.
+        let ratio = null;
+        let box = { x: 0, y: 0, w: width, h: height };
+        const ratioValue = (key) => (CROP_RATIOS[key].value === "original" ? width / height : CROP_RATIOS[key].value);
+        const fit = () => {
+            // Inside the picture, at the ratio.
+            box.w = Math.max(16, Math.min(box.w, width));
+            box.h = Math.max(16, Math.min(box.h, height));
+            if (ratio) {
+                if (box.w / box.h > ratio) {
+                    box.w = box.h * ratio;
+                } else {
+                    box.h = box.w / ratio;
+                }
+                if (box.w > width) {
+                    box.w = width;
+                    box.h = width / ratio;
+                }
+                if (box.h > height) {
+                    box.h = height;
+                    box.w = height * ratio;
+                }
+            }
+            box.x = Math.min(Math.max(0, box.x), width - box.w);
+            box.y = Math.min(Math.max(0, box.y), height - box.h);
+        };
+        const draw = () => {
+            const scale = shown.clientWidth / width;
+            Object.assign(frame.style, {
+                left: `${box.x * scale}px`,
+                top: `${box.y * scale}px`,
+                width: `${box.w * scale}px`,
+                height: `${box.h * scale}px`,
+            });
+        };
+        const choose = (key) => {
+            ratio = ratioValue(key);
+            // The largest frame of this shape, centered.
+            const center = { x: box.x + box.w / 2, y: box.y + box.h / 2 };
+            box = { x: 0, y: 0, w: width, h: height };
+            fit();
+            box.x = center.x - box.w / 2;
+            box.y = center.y - box.h / 2;
+            fit();
+            draw();
+            choices.querySelectorAll("button").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.ratio === key)));
+        };
+        for (const key of ratios) {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "button";
+            button.dataset.ratio = key;
+            button.textContent = CROP_RATIOS[key].label();
+            button.addEventListener("click", () => choose(key));
+            choices.append(button);
+        }
+        choices.hidden = ratios.length < 2;
+
+        // Dragging moves the frame, the corner resizes it.
+        let drag = null;
+        frame.addEventListener("pointerdown", (event) => {
+            event.preventDefault();
+            frame.setPointerCapture(event.pointerId);
+            drag = { resize: event.target === handle, x: event.clientX, y: event.clientY, start: { ...box } };
+        });
+        frame.addEventListener("pointermove", (event) => {
+            if (!drag) {
+                return;
+            }
+            const scale = width / shown.clientWidth;
+            const dx = (event.clientX - drag.x) * scale;
+            const dy = (event.clientY - drag.y) * scale;
+            if (drag.resize) {
+                box.w = drag.start.w + dx;
+                box.h = ratio ? box.w / ratio : drag.start.h + dy;
+                box.x = drag.start.x;
+                box.y = drag.start.y;
+                // Not past the picture's edges.
+                box.w = Math.min(box.w, width - box.x);
+                box.h = Math.min(box.h, height - box.y);
+            } else {
+                box.x = drag.start.x + dx;
+                box.y = drag.start.y + dy;
+            }
+            fit();
+            draw();
+        });
+        const stop = () => (drag = null);
+        frame.addEventListener("pointerup", stop);
+        frame.addEventListener("pointercancel", stop);
+        frame.addEventListener("keydown", (event) => {
+            const step = Math.max(width, height) / 50;
+            const moves = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] };
+            const move = moves[event.key];
+            if (!move) {
+                return;
+            }
+            event.preventDefault();
+            if (event.shiftKey) {
+                box.w += move[0] || move[1];
+                box.h = ratio ? box.w / ratio : box.h + (move[1] || move[0]);
+            } else {
+                box.x += move[0];
+                box.y += move[1];
+            }
+            fit();
+            draw();
+        });
+        const resized = () => draw();
+        window.addEventListener("resize", resized);
+
+        const close = (file) => {
+            window.removeEventListener("resize", resized);
+            dialog.close();
+            dialog.remove();
+            done(file);
+        };
+        cancel.addEventListener("click", () => close(null));
+        dialog.addEventListener("cancel", (event) => {
+            event.preventDefault();
+            close(null);
+        });
+        apply.addEventListener("click", () => {
+            apply.disabled = true;
+            const scale = Math.min(1, maxSide / Math.max(box.w, box.h));
+            const canvas = document.createElement("canvas");
+            canvas.width = Math.max(1, Math.round(box.w * scale));
+            canvas.height = Math.max(1, Math.round(box.h * scale));
+            const context = canvas.getContext("2d");
+            context.imageSmoothingQuality = "high";
+            context.drawImage(image, box.x, box.y, box.w, box.h, 0, 0, canvas.width, canvas.height);
+            // PNG keeps the transparency of PNG and WebP pictures.
+            const type = source instanceof Blob && ["image/png", "image/webp", "image/gif"].includes(source.type) ? "image/png" : "image/jpeg";
+            canvas.toBlob((blob) => {
+                const base = (source instanceof Blob ? source.name : name).replace(/\.[^.]*$/, "") || name;
+                close(blob ? new File([blob], `${base}.${type === "image/png" ? "png" : "jpg"}`, { type }) : null);
+            }, type, 0.92);
+        });
+
+        dialog.showModal();
+        // Sized once shown.
+        requestAnimationFrame(() => {
+            choose(ratios[0]);
+            frame.focus();
+        });
+    }
+
+    // The originals of cropped pictures, sent with them (`original`, or
+    // `original-N` for the photos of a post) and kept by the server to crop
+    // them again from the whole picture. By file: name, size and date.
+    const cropOriginals = new Map();
+    const fileKey = (file) => `${file.name}|${file.size}|${file.lastModified}`;
+
+    // A form sends the originals of its cropped pictures, and `recrop` when
+    // its picture was cropped again from the original the server keeps.
+    function sendCropOriginals(form) {
+        if (form.dataset.cropOriginals) {
+            return;
+        }
+        form.dataset.cropOriginals = "1";
+        form.addEventListener("formdata", (event) => {
+            if (form.dataset.recrop) {
+                event.formData.append("recrop", "1");
+                return;
+            }
+            form.querySelectorAll("input[type=file]").forEach((input) => {
+                Array.from(input.files).forEach((file, index) => {
+                    const original = cropOriginals.get(fileKey(file));
+                    if (original) {
+                        event.formData.append(input.name === "photos" ? `original-${index}` : "original", original);
+                    }
+                });
+            });
+        });
+    }
+
+    /**
+     * `input[type=file][data-crop]`: a chosen picture opens the cropping
+     * window, `data-crop` listing its shapes (`square`, `banner`...), and the
+     * cropped one takes its place. GIFs stay as they are (animated).
+     */
+    function setupCropInputs() {
+        document.querySelectorAll("input[type=file][data-crop]").forEach((input) => {
+            sendCropOriginals(input.form);
+            input.addEventListener("change", async () => {
+                const file = input.files[0];
+                if (input.dataset.cropping || !file || !file.type.startsWith("image/") || file.type === "image/gif") {
+                    return;
+                }
+                delete input.form.dataset.recrop;
+                const cropped = await cropPicture(file, input.dataset.crop.split(" "), { maxSide: Number(input.dataset.cropMax) || 4096 });
+                if (cropped) {
+                    cropOriginals.set(fileKey(cropped), file);
+                    const files = new DataTransfer();
+                    files.items.add(cropped);
+                    input.dataset.cropping = "1";
+                    input.files = files.files;
+                    input.dispatchEvent(new Event("change", { bubbles: true }));
+                    delete input.dataset.cropping;
+                }
+            });
+        });
+        // "Crop the current one": its picture cropped, sent by its form.
+        document.querySelectorAll("[data-crop-current]").forEach((button) => {
+            button.hidden = false;
+            button.addEventListener("click", async () => {
+                const form = document.getElementById(button.dataset.cropForm);
+                const input = form?.querySelector("input[type=file]");
+                if (!input) {
+                    return;
+                }
+                button.disabled = true;
+                const cropped = await cropPicture(button.dataset.cropCurrent, button.dataset.crop.split(" "), {
+                    maxSide: Number(button.dataset.cropMax) || 4096,
+                    name: button.dataset.cropName || "picture",
+                });
+                button.disabled = false;
+                if (cropped) {
+                    const files = new DataTransfer();
+                    files.items.add(cropped);
+                    input.dataset.cropping = "1";
+                    input.files = files.files;
+                    // From the original the server keeps: it stays.
+                    sendCropOriginals(form);
+                    form.dataset.recrop = "1";
+                    form.requestSubmit();
+                }
+            });
+        });
+    }
+
     // A chosen thumbnail shown at once, cropped to 16:9 like the server does.
     function setupThumbnailPreviews() {
         for (const input of document.querySelectorAll("input[data-thumbnail-input]")) {
@@ -2935,11 +3624,15 @@ const Tison = (() => {
         setupCollapsible();
         setupPhotos();
         setupPhotoComposer();
+        setupEmojiPickers();
+        setupCamera();
+        setupFileLists();
         setupLivePlayers();
         setupDropZones();
         setupUploadProgress();
         setupConversions();
         setupThumbnailPreviews();
+        setupCropInputs();
         setupPlayers();
         setupVideoQualities();
         setupEventTimes();

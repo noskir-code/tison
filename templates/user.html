@@ -19,7 +19,7 @@
             <div class="flex center">
                 <h1 class="profile-name">{{ profile_name }}</h1>
                 {% if let Some(badge) = user.role.badge() %}<span class="role-badge {{ user.role.as_str() }}" title="{% if user.is_admin() %}{{ "Created this site"|t }}{% else %}{{ "Moderates this site"|t }}{% endif %}">{{ badge|t }}</span>{% endif %}
-                <p class="profile-username">@{{ user.username }}</p>
+                <p class="profile-username">{{ user.handle() }}</p>
             </div>
             <p class="profile-counts">
                 <a href="/user/{{ user.username }}?tab=followers"{% if tab.slug() == "followers" %} class="active" aria-current="page"{% endif %}><strong>{{ counts.followers }}</strong> {% if counts.followers == 1 %}{{ "follower"|t }}{% else %}{{ "followers"|t }}{% endif %}</a>
@@ -31,7 +31,8 @@
         <a href="/settings" class="button profile-edit-link">{{ "Edit profile"|t }}</a>
         {% else if let Some(follows) = viewer_follows %}
         <div class="profile-actions profile-edit-link">
-            {% if let Some(friendship) = friendship %}
+            {# The team account is followed, never a friend, see entities::user::sync_team_account. #}
+            {% if let Some(friendship) = friendship %}{% if !user.team %}
             {% match friendship %}
             {% when FriendState::None %}
             <form action="/user/{{ user.username }}/friend" method="post">
@@ -58,7 +59,7 @@
                 <button type="submit" class="button">{{ "Friends ✓"|t }}</button>
             </form>
             {% endmatch %}
-            {% endif %}
+            {% endif %}{% endif %}
             <form action="/user/{{ user.username }}/{% if follows %}unfollow{% else %}follow{% endif %}" method="post">
                 <input type="hidden" name="return" value="/user/{{ user.username }}" />
                 <button type="submit" class="button">{% if follows %}{{ "Unfollow"|t }}{% else %}{{ "Follow"|t }}{% endif %}</button>
@@ -68,7 +69,9 @@
                 <button type="submit" class="button">{{ "Message"|t }}</button>
             </form>
             {% endif %}
+            {% if !user.is_staff() %}
             <a href="/report?user={{ user.username }}" class="button report-button" title="{{ "Report @{} to the moderators"|tf(user.username) }}">{{ "Report"|t }}</a>
+            {% endif %}
         </div>
         {% else %}
         <a href="/login" class="button profile-edit-link">{{ "Login to"|t }} {% if crate::settings::services().dfrn %}{{ "add as friend or"|t }} {% endif %}{{ "follow"|t }}</a>

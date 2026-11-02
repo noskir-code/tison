@@ -49,10 +49,11 @@ fn group(row: &PgRow, title: &'static str, wanted: &[Wanted]) -> Result<Option<S
 pub async fn local(pool: &PgPool) -> Result<Vec<StatGroup>, sqlx::Error> {
     let row = sqlx::query(
         "SELECT
-            (SELECT COUNT(*) FROM users) AS users,
+            (SELECT COUNT(*) FROM users WHERE NOT team) AS users,
             (SELECT COUNT(*) FROM users WHERE created_at > NOW() - INTERVAL '30 days') AS new_users,
             (SELECT COUNT(*) FROM users WHERE role IN ('moderator', 'admin')) AS staff,
-            (SELECT COUNT(*) FROM users WHERE suspended_at IS NOT NULL) AS suspended,
+            (SELECT COUNT(*) FROM users WHERE suspended_at IS NOT NULL AND suspended_until IS NULL AND NOT team) AS banned,
+            (SELECT COUNT(*) FROM users WHERE suspended_at IS NOT NULL AND suspended_until IS NOT NULL) AS suspended,
             (SELECT COUNT(*) FROM two_factor) AS two_factor,
             (SELECT COUNT(DISTINCT user_id) FROM push_subscriptions) AS push_users,
             (SELECT COUNT(*) FROM posts WHERE user_id IS NOT NULL AND kind = 'post' AND title IS NULL) AS posts,
@@ -92,7 +93,8 @@ pub async fn local(pool: &PgPool) -> Result<Vec<StatGroup>, sqlx::Error> {
             ("Users", "users", "", true),
             ("New, last 30 days", "new_users", "", true),
             ("Staff", "staff", "The creator and the moderators", true),
-            ("Suspended", "suspended", "", true),
+            ("Banned accounts", "banned", "", true),
+            ("Suspended accounts", "suspended", "Until the end of their suspension", true),
             ("With two-factor", "two_factor", "Users who turned on two-factor authentication", true),
             ("With browser notifications", "push_users", "Users receiving notifications in at least one browser", true),
         ])?,

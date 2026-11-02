@@ -1,8 +1,9 @@
-//! The search bar of every page (`/search`): users and communities of this
-//! server by name, ignoring case, most relevant first (`/search/suggest`
-//! gives the first ones while typing, see `assets/system.js`), or an
-//! account of another Fediverse server from
-//! `@name@server` or the link of its profile, to follow it. Also the page of
+//! The search bar of every page (`/search`): users, communities and posts,
+//! of this server and of the other servers already known here, ignoring
+//! case, most relevant first (`/search/suggest` gives the first ones while
+//! typing, see `assets/system.js`); or an account of another Fediverse server
+//! from `name@server` or the link of its profile, asked to its server, to
+//! follow it. The texts are matched with trigram indexes (`Index::trigram`). Also the page of
 //! those accounts here (`/remote/{id}`) with their posts received by Tison.
 
 use std::collections::HashMap;
@@ -54,6 +55,20 @@ struct SearchTemplate {
     found: Option<Account>,
     users: Vec<User>,
     communities: Vec<Community>,
+    /// Accounts and communities of other servers already known here.
+    remote_people: Vec<store::KnownAccount>,
+    remote_communities: Vec<store::KnownAccount>,
+    /// Posts with the words, of here and of other servers: of the tab's
+    /// kind (videos, articles...).
+    posts: Vec<Post>,
+    /// Hashtags containing the words, see `post::search_tags`.
+    tags: Vec<post::FoundTag>,
+    /// The kinds of results, as tabs (`?type=`).
+    tab: SearchTab,
+    tabs: Vec<TabLink>,
+    /// `name@server` or a link: an account, without tabs.
+    address: bool,
+    signed_in: bool,
     error: Option<String>,
     /// `@name@domain` of the viewer, for people on other servers.
     own_handle: Option<String>,
@@ -61,6 +76,83 @@ struct SearchTemplate {
     fediverse: bool,
     /// Where the follow button comes back to: this search.
     return_to: String,
+}
+
+/// What the search shows: everything, or one kind (`?type=`).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SearchTab {
+    All,
+    People,
+    Communities,
+    Hashtags,
+    Posts,
+    Videos,
+    Articles,
+}
+
+impl SearchTab {
+    const ALL: [Self; 7] = [Self::All, Self::People, Self::Communities, Self::Hashtags, Self::Posts, Self::Videos, Self::Articles];
+
+    pub fn slug(self) -> &'static str {
+        match self {
+            Self::All => "all",
+            Self::People => "people",
+            Self::Communities => "communities",
+            Self::Hashtags => "hashtags",
+            Self::Posts => "posts",
+            Self::Videos => "videos",
+            Self::Articles => "articles",
+        }
+    }
+
+    /// In English, translated by the template.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::All => "All",
+            Self::People => "People",
+            Self::Communities => "Communities",
+            Self::Hashtags => "Hashtags",
+            Self::Posts => "Posts",
+            Self::Videos => "Videos",
+            Self::Articles => "Articles",
+        }
+    }
+
+    /// Without the services turned off.
+    fn available(self) -> bool {
+        let services = crate::settings::services();
+        match self {
+            Self::Communities => services.content_aggregator,
+            Self::Videos => services.video,
+            Self::Articles => services.publishing,
+            _ => true,
+        }
+    }
+
+    /// `?type=`, else hashtags for `#word`, else everything.
+    fn from_query(value: Option<&String>, search: &str) -> Self {
+        let chosen = value.and_then(|value| Self::ALL.into_iter().find(|tab| tab.slug() == value));
+        match chosen {
+            Some(tab) if tab.available() => tab,
+            _ if search.starts_with('#') => Self::Hashtags,
+            _ => Self::All,
+        }
+    }
+
+    fn post_kind(self) -> post::SearchKind {
+        match self {
+            Self::Posts => post::SearchKind::Posts,
+            Self::Videos => post::SearchKind::Videos,
+            Self::Articles => post::SearchKind::Articles,
+            _ => post::SearchKind::All,
+        }
+    }
+}
+
+pub struct TabLink {
+    pub label: &'static str,
+    pub url: String,
+    pub active: bool,
 }
 
 /// Whether `search` names an account of another server rather than words to
@@ -92,6 +184,12 @@ pub async fn search_page(
     let mut found = None;
     let mut users = Vec::new();
     let mut communities = Vec::new();
+    let mut remote_people = Vec::new();
+    let mut remote_communities = Vec::new();
+    let mut posts = Vec::new();
+    let mut tags = Vec::new();
+    let aggregator = crate::settings::services().content_aggregator;
+    let tab = SearchTab::from_query(query.get("type"), &search);
     if is_address(&search) {
         match &layout.viewer {
             Some(viewer) => match find_account(&state, &pool, viewer, &search).await {
@@ -101,18 +199,38 @@ pub async fn search_page(
             },
             None => error = Some("Login to find accounts of other servers.".to_string()),
         }
+        // Not found on its server (or a visitor): those already known here.
+        if found.is_none() && !search.starts_with("http") {
+            remote_people = store::search_accounts(&pool, &search, false, SEARCH_SIZE).await.unwrap_or_else(logged_empty("known accounts"));
+            if aggregator {
+                remote_communities = store::search_accounts(&pool, &search, true, SEARCH_SIZE).await.unwrap_or_else(logged_empty("known communities"));
+            }
+            if !remote_people.is_empty() || !remote_communities.is_empty() {
+                error = None;
+            }
+        }
     } else if !search.is_empty() {
-        users = user::search(&pool, &search, user::SEARCH_SIZE).await.unwrap_or_else(|err| {
-            tracing::error!("failed to search users: {}", err);
-            Vec::new()
-        });
-        if crate::settings::services().content_aggregator {
-            communities = community::list(&pool, Some(search.trim_start_matches(['@', '!'])))
-                .await
-                .unwrap_or_else(|err| {
-                    tracing::error!("failed to search communities: {}", err);
-                    Vec::new()
-                });
+        let viewer_id = layout.viewer.as_ref().map(|viewer| viewer.id);
+        let words = search.trim_start_matches(['@', '!', '#']);
+        // "All" shows a few of each kind, a tab more of its own.
+        let all = tab == SearchTab::All;
+        let size = if all { ALL_TAB_SIZE } else { SEARCH_SIZE };
+        if all || tab == SearchTab::People {
+            users = user::search(&pool, &search, size).await.unwrap_or_else(logged_empty("users"));
+            remote_people = store::search_accounts(&pool, words, false, size).await.unwrap_or_else(logged_empty("known accounts"));
+        }
+        if aggregator && (all || tab == SearchTab::Communities) {
+            communities = community::search_limited(&pool, Some(words), size).await.unwrap_or_else(logged_empty("communities"));
+            remote_communities = store::search_accounts(&pool, words, true, size).await.unwrap_or_else(logged_empty("known communities"));
+        }
+        if (all || tab == SearchTab::Hashtags) && !words.is_empty() {
+            tags = post::search_tags(&pool, viewer_id, words, if all { ALL_TAB_SIZE * 2 } else { SEARCH_SIZE * 2 }).await.unwrap_or_else(logged_empty("hashtags"));
+        }
+        // Posts need words of at least 3 letters: shorter, nearly all match.
+        let posts_tab = matches!(tab, SearchTab::All | SearchTab::Posts | SearchTab::Videos | SearchTab::Articles);
+        if posts_tab && words.chars().count() >= 3 {
+            let limit = if all { ALL_TAB_SIZE * 2 } else { SEARCH_SIZE * 2 };
+            posts = post::search(&pool, viewer_id, words, tab.post_kind(), limit).await.unwrap_or_else(logged_empty("posts"));
         }
     }
     let own_handle = match (&layout.viewer, &state.federation) {
@@ -122,6 +240,7 @@ pub async fn search_page(
         _ => None,
     };
     layout.search = search.clone();
+    let layout_signed_in = layout.viewer.is_some();
     let query_for_return = search.clone();
     render_template(&SearchTemplate {
         title: if search.is_empty() { "Search".to_string() } else { crate::i18n::tf("Search: {}", &search) },
@@ -130,12 +249,41 @@ pub async fn search_page(
         found,
         users,
         communities,
+        remote_people,
+        remote_communities,
+        posts,
+        tags,
+        tabs: SearchTab::ALL
+            .into_iter()
+            .filter(|kind| kind.available())
+            .map(|kind| TabLink {
+                label: kind.label(),
+                url: format!("/search?q={}&type={}", form_urlencode(&query_for_return), kind.slug()),
+                active: kind == tab,
+            })
+            .collect(),
+        tab,
+        address: is_address(&query_for_return),
+        signed_in: layout_signed_in,
         error,
         own_handle,
         fediverse: state.federation.is_some(),
-        return_to: format!("/search?q={}", form_urlencode(&query_for_return)),
+        return_to: format!("/search?q={}&type={}", form_urlencode(&query_for_return), tab.slug()),
     })
 }
+
+/// A failed search shows nothing of that kind, logged.
+fn logged_empty<T>(what: &'static str) -> impl FnOnce(sqlx::Error) -> Vec<T> {
+    move |err| {
+        tracing::error!("failed to search {}: {}", what, err);
+        Vec::new()
+    }
+}
+
+/// Results on a tab of the search page (twice for posts and hashtags).
+const SEARCH_SIZE: i64 = 20;
+/// Of each kind on the "All" tab, with a link to its own tab.
+const ALL_TAB_SIZE: i64 = 5;
 
 /// Suggestions shown while typing, from `SUGGEST_MIN_CHARS` characters.
 const SUGGEST_MIN_CHARS: usize = 3;

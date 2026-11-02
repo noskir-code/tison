@@ -118,11 +118,12 @@ pub async fn save(pool: &PgPool, url: &str, found: Option<&LinkPreview>) -> Resu
     Ok(())
 }
 
-/// Posts not looked at yet (new or edited), newest first: (id, text).
-/// Older ones are left: their links may not exist anymore.
-pub async fn posts_to_check(pool: &PgPool, limit: i64) -> Result<Vec<(i64, String)>, sqlx::Error> {
+/// Posts not looked at yet (new or edited), newest first: (id, text, is an
+/// article). Older ones are left: their links may not exist anymore.
+pub async fn posts_to_check(pool: &PgPool, limit: i64) -> Result<Vec<(i64, String, bool)>, sqlx::Error> {
     sqlx::query(
-        "SELECT id, body FROM posts WHERE NOT link_checked AND created_at > NOW() - make_interval(days => $2)
+        "SELECT id, body, (kind = 'post' AND title IS NOT NULL) AS article FROM posts
+         WHERE NOT link_checked AND created_at > NOW() - make_interval(days => $2)
          ORDER BY id DESC LIMIT $1",
     )
     .bind(limit)
@@ -130,7 +131,7 @@ pub async fn posts_to_check(pool: &PgPool, limit: i64) -> Result<Vec<(i64, Strin
     .fetch_all(pool)
     .await?
     .iter()
-    .map(|row| Ok((row.try_get("id")?, row.try_get("body")?)))
+    .map(|row| Ok((row.try_get("id")?, row.try_get("body")?, row.try_get("article")?)))
     .collect()
 }
 

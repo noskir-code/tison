@@ -81,6 +81,9 @@ async fn resolve_target(pool: &PgPool, me: &User, query: &HashMap<String, String
         if post.is_own {
             return Err("You can't report your own post.");
         }
+        if post.author.local().is_some_and(|author| author.team) {
+            return Err("The posts of the moderation team can't be reported.");
+        }
         let label = crate::i18n::tf("Post by {}", post.author.handle());
         return Ok((new(Target::Post(post_id), Some(account_of(&post.author)), &post.body, label), ("post", post_id.to_string())));
     }
@@ -101,6 +104,10 @@ async fn resolve_target(pool: &PgPool, me: &User, query: &HashMap<String, String
         let found = user::find_by_username(pool, username).await.ok().flatten().ok_or("This user does not exist.")?;
         if found.id == me.id {
             return Err("You can't report yourself.");
+        }
+        // The creator, the moderators and the team account.
+        if found.is_staff() {
+            return Err("The staff of the site can't be reported.");
         }
         let label = format!("@{}", found.username);
         return Ok((new(Target::User(found.id), None, &found.bio, label), ("user", found.username)));
@@ -190,6 +197,8 @@ struct ModerationTemplate {
     /// `?before=` of the next page, when there is one.
     next_before: Option<i64>,
     message: Option<&'static str>,
+    /// The choices of a suspension, see `SUSPENSION_DAYS`.
+    suspension_days: [i32; 7],
 }
 
 /// The signed-in member of the site's staff, else the page to show.
@@ -235,11 +244,14 @@ pub async fn dashboard(State(state): State<AppState>, session: Session, Query(qu
         .collect();
     let message = query.get("done").map(|done| match done.as_str() {
         "deleted" => "Deleted, and the report resolved.",
+        "banned" => "The account is banned, and the report resolved.",
         "suspended" => "The account is suspended, and the report resolved.",
         "unsuspended" => "The account is reinstated.",
+        "report_removed" => "The report is deleted.",
+        "account_deleted" => "The account and everything it posted are deleted, and the report resolved.",
         "blocked" => "The account is blocked, and the report resolved.",
         "unblocked" => "The account is unblocked.",
-        "staff" => "Accounts of the staff can't be suspended here.",
+        "staff" => "Accounts of the staff can't be banned, suspended or deleted here.",
         _ => "Saved.",
     });
     render_template(&ModerationTemplate {
@@ -251,12 +263,14 @@ pub async fn dashboard(State(state): State<AppState>, session: Session, Query(qu
         reports,
         next_before,
         message,
+        suspension_days: SUSPENSION_DAYS,
     })
 }
 
-/// Acts on a report: `resolve`, `dismiss`, `reopen`, `delete` (what it's
-/// about), `suspend` / `unsuspend` (a local user), `block` / `unblock` (an
-/// account of another server).
+/// Acts on a report: `remove` (the report itself), `resolve`, `dismiss`, `reopen`, `delete` (what it's
+/// about), `ban`, `suspend` (for `days`), `unsuspend` (reinstates) and
+/// `delete-account` (a local user), `block` / `unblock` (an account of
+/// another server).
 pub async fn act(
     State(state): State<AppState>,
     session: Session,
@@ -276,6 +290,10 @@ pub async fn act(
     };
     let result: Result<&str, sqlx::Error> = async {
         Ok(match action.as_str() {
+            "remove" => {
+                report::delete(&pool, id).await?;
+                "report_removed"
+            }
             "resolve" => {
                 report::set_status(&pool, id, Status::Resolved, me.id).await?;
                 "saved"
@@ -302,22 +320,43 @@ pub async fn act(
                 report::set_status(&pool, id, Status::Resolved, me.id).await?;
                 "deleted"
             }
-            "suspend" | "unsuspend" => {
+            "ban" | "suspend" | "unsuspend" | "delete-account" => {
                 let Some(user_id) = user_id else {
                     return Ok("saved");
                 };
-                let target = user::find_by_id(&pool, user_id).await?;
-                if target.as_ref().is_some_and(User::is_staff) {
+                let Some(target) = user::find_by_id(&pool, user_id).await? else {
+                    return Ok("saved");
+                };
+                if target.is_staff() {
                     return Ok("staff");
                 }
-                let suspend = action == "suspend";
-                user::set_suspended(&pool, user_id, suspend).await?;
-                if suspend {
-                    report::set_status(&pool, id, Status::Resolved, me.id).await?;
-                    "suspended"
-                } else {
-                    "unsuspended"
+                match action.as_str() {
+                    "unsuspend" => {
+                        user::reinstate(&pool, user_id).await?;
+                        notifier::account_status_changed(&state, &pool, user_id).await;
+                        return Ok("unsuspended");
+                    }
+                    "ban" => user::restrict(&pool, user_id, None).await?,
+                    "suspend" => {
+                        let days = form.get("days").and_then(|days| days.parse::<i32>().ok()).filter(|days| SUSPENSION_DAYS.contains(days));
+                        let Some(days) = days else {
+                            return Ok("saved");
+                        };
+                        user::restrict(&pool, user_id, Some(days)).await?;
+                    }
+                    _ => {
+                        report::set_status(&pool, id, Status::Resolved, me.id).await?;
+                        notifier::user_deleting(&state, &pool, &target).await;
+                        user::delete(&pool, user_id).await?;
+                        crate::handlers::image::remove_folder(crate::handlers::image::ImageOwner::User(user_id)).await;
+                        tracing::info!("moderator @{} deleted the account @{}", me.username, target.username);
+                        return Ok("account_deleted");
+                    }
                 }
+                // Other servers hide it too, see `notifier::account_status_changed`.
+                notifier::account_status_changed(&state, &pool, user_id).await;
+                report::set_status(&pool, id, Status::Resolved, me.id).await?;
+                if action == "ban" { "banned" } else { "suspended" }
             }
             "block" | "unblock" => {
                 let Some(actor_id) = actor_id else {
@@ -345,6 +384,29 @@ pub async fn act(
     }
 }
 
+/// The lengths of a suspension offered, in days; longer is a ban.
+pub const SUSPENSION_DAYS: [i32; 7] = [1, 3, 7, 14, 30, 90, 365];
+
+/// Ends the suspensions whose time is over, every minute, and tells other
+/// servers.
+pub async fn run_suspension_ends(state: AppState, pool: PgPool) {
+    let mut every = tokio::time::interval(std::time::Duration::from_secs(60));
+    loop {
+        every.tick().await;
+        match user::end_suspensions(&pool).await {
+            Ok(ended) => {
+                if !ended.is_empty() {
+                    tracing::info!("{} suspension(s) ended", ended.len());
+                }
+                for user_id in ended {
+                    notifier::account_status_changed(&state, &pool, user_id).await;
+                }
+            }
+            Err(err) => tracing::warn!("failed to end suspensions: {}", err),
+        }
+    }
+}
+
 async fn failed(state: &AppState, session: &Session, err: sqlx::Error) -> Response {
     tracing::error!("moderation action failed: {}", err);
     error_page(Layout::load(state, session).await, StatusCode::INTERNAL_SERVER_ERROR, "Something went wrong, try again later.")
@@ -363,16 +425,36 @@ struct StaffTemplate {
     can_manage: bool,
     error: Option<&'static str>,
     saved: bool,
+    /// The form posting as the team account, when it's on (`MULTI-MODERATOR`).
+    composer: Option<crate::handlers::post::Composer>,
+    /// The team account's latest posts, under its form.
+    team_posts: Vec<post::Post>,
+    /// A post was just published as the team.
+    published: bool,
 }
 
-/// The site's staff, and for the admin, the form naming moderators.
+/// The team account's posts shown under its form in the Staff tab.
+const TEAM_POSTS_SHOWN: usize = 5;
+
+/// The site's staff, and for the admin, the form naming moderators. With
+/// `MULTI-MODERATOR`, the forms writing posts and articles as the team.
 pub async fn staff_page(State(state): State<AppState>, session: Session, Query(query): Query<HashMap<String, String>>) -> Response {
     let (pool, me) = match staff(&state, &session).await {
         Ok(found) => found,
         Err(response) => return response,
     };
-    let members = match user::staff(&pool).await {
-        Ok(members) => members,
+    let loaded = async {
+        let members = user::staff(&pool).await?;
+        let team = user::team_account(&pool).await?;
+        let team_posts = match &team {
+            Some(team) => post::by_author(&pool, team.id, Some(me.id)).await?.into_iter().take(TEAM_POSTS_SHOWN).collect(),
+            None => Vec::new(),
+        };
+        Ok::<_, sqlx::Error>((members, team, team_posts))
+    }
+    .await;
+    let (members, team, team_posts) = match loaded {
+        Ok(loaded) => loaded,
         Err(err) => return failed(&state, &session, err).await,
     };
     render_template(&StaffTemplate {
@@ -381,12 +463,16 @@ pub async fn staff_page(State(state): State<AppState>, session: Session, Query(q
         layout: Layout::load(&state, &session).await,
         staff: members,
         can_manage: me.is_admin(),
-        error: query.get("error").map(|error| match error.as_str() {
-            "nobody" => "Nobody has this username.",
-            "suspended" => "This account is suspended: reinstate it first.",
-            _ => "Something went wrong, try again later.",
+        // Other codes are the team composer's, shown in it.
+        error: query.get("error").and_then(|error| match error.as_str() {
+            "nobody" => Some("Nobody has this username."),
+            "suspended" => Some("This account is suspended: reinstate it first."),
+            _ => None,
         }),
         saved: query.contains_key("saved"),
+        composer: team.map(|team| crate::handlers::post::Composer::for_team(&query, team.username)),
+        team_posts,
+        published: query.contains_key("published"),
     })
 }
 
@@ -437,7 +523,8 @@ pub async fn remove_moderator(State(state): State<AppState>, session: Session, P
         Err(response) => return response,
     };
     match user::find_by_id(&pool, user_id).await {
-        Ok(Some(target)) if target.role == Role::Moderator => {
+        // The team account stays a moderator, see `user::sync_team_account`.
+        Ok(Some(target)) if target.role == Role::Moderator && !target.team => {
             if let Err(err) = user::set_role(&pool, target.id, Role::User).await {
                 return failed(&state, &session, err).await;
             }
@@ -466,6 +553,7 @@ async fn sections(pool: &PgPool, active: &str, me: &User) -> Vec<Section> {
     let open = report::open_count(pool).await.unwrap_or(0);
     [
         ("Reports", "/moderation"),
+        ("Users", "/moderation/users"),
         ("Federation", "/moderation/federation"),
         ("Statistics", "/moderation/statistics"),
         ("Staff", "/moderation/staff"),
@@ -542,12 +630,7 @@ fn clean_domain(raw: &str) -> Option<String> {
         Some(_) => store::host_of(raw),
         None => raw.rsplit('@').next().unwrap_or_default().split('/').next().unwrap_or_default().to_ascii_lowercase(),
     };
-    let valid = domain.contains('.') || domain.contains(':');
-    let valid = valid
-        && domain.len() <= 253
-        && domain.chars().all(|letter| letter.is_ascii_alphanumeric() || matches!(letter, '.' | '-' | ':'))
-        && !domain.starts_with(['.', '-']);
-    valid.then_some(domain)
+    store::is_valid_domain(&domain).then_some(domain)
 }
 
 /// Limits, bans or clears a server (`policy`: `limited`, `banned`, `none`).
@@ -811,4 +894,81 @@ pub async fn site_page_preview(State(state): State<AppState>, session: Session, 
     let page = SitePage { kind: site_page::Kind::Terms, body: body.to_string(), updated_at: None, version: String::new() };
     let html = page.html(&state.instance_name, &state.public_base_url);
     ([(axum::http::header::CACHE_CONTROL, "no-store")], axum::Json(serde_json::json!({ "html": html }))).into_response()
+}
+
+// --- Users ---
+
+#[derive(Template)]
+#[template(path = "moderation_users.html")]
+struct UsersTemplate {
+    title: String,
+    layout: Layout,
+    sections: Vec<Section>,
+    users: Vec<user::ListedUser>,
+    search: String,
+    /// `?before=` of the next page, when there is one.
+    next_before: Option<i32>,
+    domains: Vec<crate::entities::email_domain::BlockedDomain>,
+    message: Option<&'static str>,
+}
+
+/// The site's accounts with their email, and the email domains blocked at
+/// signup. `?q=` searches, `?before=` pages.
+pub async fn users_page(State(state): State<AppState>, session: Session, Query(query): Query<HashMap<String, String>>) -> Response {
+    let (pool, me) = match staff(&state, &session).await {
+        Ok(found) => found,
+        Err(response) => return response,
+    };
+    let search = query.get("q").map(|search| search.trim().to_string()).unwrap_or_default();
+    let before = query.get("before").and_then(|before| before.parse::<i32>().ok());
+    let loaded = async {
+        Ok::<_, sqlx::Error>((
+            user::list_for_staff(&pool, &search, before).await?,
+            crate::entities::email_domain::list(&pool).await?,
+        ))
+    }
+    .await;
+    let (users, domains) = match loaded {
+        Ok(loaded) => loaded,
+        Err(err) => return failed(&state, &session, err).await,
+    };
+    let next_before = (users.len() as i64 == user::LIST_SIZE).then(|| users.last().map(|last| last.user.id)).flatten();
+    let message = query.get("done").map(|done| match done.as_str() {
+        "blocked" => "The domain is blocked: no new account can use it.",
+        "unblocked" => "The domain is unblocked.",
+        "invalid" => "This isn't a domain, like spam.example.",
+        _ => "Saved.",
+    });
+    render_template(&UsersTemplate {
+        title: "Users".to_string(),
+        sections: sections(&pool, "Users", &me).await,
+        layout: Layout::load(&state, &session).await,
+        users,
+        search,
+        next_before,
+        domains,
+        message,
+    })
+}
+
+/// Blocks (`domain`) or unblocks (`unblock`) an email domain for new accounts.
+pub async fn email_domains(State(state): State<AppState>, session: Session, Form(form): Form<HashMap<String, String>>) -> Response {
+    let (pool, me) = match staff(&state, &session).await {
+        Ok(found) => found,
+        Err(response) => return response,
+    };
+    let back = |done: &str| Redirect::to(&format!("/moderation/users?done={done}#email-domains")).into_response();
+    let result = if let Some(domain) = form.get("unblock") {
+        crate::entities::email_domain::remove(&pool, domain).await.map(|()| "unblocked")
+    } else {
+        let Some(domain) = crate::entities::email_domain::normalize(form.get("domain").map(String::as_str).unwrap_or_default()) else {
+            return back("invalid");
+        };
+        tracing::info!("@{} blocked the email domain {}", me.username, domain);
+        crate::entities::email_domain::add(&pool, &domain, me.id).await.map(|_| "blocked")
+    };
+    match result {
+        Ok(done) => back(done),
+        Err(err) => failed(&state, &session, err).await,
+    }
 }

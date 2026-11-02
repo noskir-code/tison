@@ -215,16 +215,38 @@ impl VideoFile {
             lines => format!("{lines}p"),
         }
     }
+}
 
-    /// `12.3 MB`.
-    pub fn size_label(&self) -> String {
-        let megabytes = self.size_bytes as f64 / 1024.0 / 1024.0;
-        if megabytes >= 1024.0 {
-            format!("{:.1} GB", megabytes / 1024.0)
-        } else {
-            format!("{megabytes:.1} MB")
-        }
-    }
+/// The categories of videos, PeerTube's: their numbers are sent to other
+/// servers (`category.identifier`), the names translated on the pages.
+pub const CATEGORIES: [(i16, &str); 18] = [
+    (1, "Music"),
+    (2, "Films"),
+    (3, "Vehicles"),
+    (4, "Art"),
+    (5, "Sports"),
+    (6, "Travels"),
+    (7, "Video games"),
+    (8, "People"),
+    (9, "Comedy"),
+    (10, "Entertainment"),
+    (11, "News & Politics"),
+    (12, "How To"),
+    (13, "Education"),
+    (14, "Activism"),
+    (15, "Science & Technology"),
+    (16, "Animals"),
+    (17, "Kids"),
+    (18, "Food"),
+];
+
+pub fn category_name(id: i16) -> Option<&'static str> {
+    CATEGORIES.iter().find(|(known, _)| *known == id).map(|(_, name)| *name)
+}
+
+/// A category sent by a form or another server, when it's one of `CATEGORIES`.
+pub fn parse_category(raw: &str) -> Option<i16> {
+    raw.trim().parse::<i16>().ok().filter(|id| category_name(*id).is_some())
 }
 
 /// Replaces the files of a video.

@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use askama::Template;
 use axum::{
     Form, Json,
-    extract::{Path, Query, State},
+    extract::{Multipart, Path, Query, State},
     http::StatusCode,
     response::{IntoResponse, Redirect, Response},
 };
@@ -23,12 +23,14 @@ use crate::{
     entities::{
         author::Author,
         friend,
+        media::{self, NewAttachment},
         message::{self, BODY_MAX_CHARS, Conversation, Message, Summary},
         notification,
         post::BodyError,
         user::{self, User},
     },
     handlers::{
+        image::{self, ImageOwner, MAX_IMAGE_BYTES},
         notifier,
         search::{self, Found},
         system::{Layout, error_page, render_template},
@@ -61,6 +63,7 @@ struct ConversationTemplate {
     messages: Vec<Message>,
     error: Option<String>,
     body_max_chars: usize,
+    max_attachments: usize,
     /// The other person can't receive messages: shown instead of the form.
     closed: Option<&'static str>,
 }
@@ -79,7 +82,13 @@ struct MessageItems<'a> {
 /// Results sent back as `?error=<code>`.
 fn error_message(code: &str) -> Option<String> {
     Some(match code {
-        "empty" => "Write something before sending.".to_string(),
+        "empty" => "Write something or add a photo or a file before sending.".to_string(),
+        "too-many" => crate::i18n::tf("A message can have at most {} photos and files.", MAX_ATTACHMENTS),
+        "photo" => crate::i18n::tf("Photos must be JPEG, PNG, GIF or WebP, of at most {} MB.", MAX_IMAGE_BYTES / 1024 / 1024),
+        "file" => crate::i18n::tf(
+            "Attached files must be PDF, text, office documents (Word, LibreOffice), EPUB or ZIP, of at most {} MB.",
+            crate::document::MAX_BYTES / 1024 / 1024,
+        ),
         "too-long" => format!("A message can be at most {BODY_MAX_CHARS} characters."),
         "invalid-characters" => "The message contains characters that are not allowed.".to_string(),
         "nobody" => "Nobody found with this name or address.".to_string(),
@@ -312,15 +321,95 @@ pub async fn conversation_page(
         messages,
         error: query.get("error").and_then(|code| error_message(code)),
         body_max_chars: BODY_MAX_CHARS,
+        max_attachments: MAX_ATTACHMENTS,
     })
 }
 
-pub async fn send(
-    State(state): State<AppState>,
-    session: Session,
-    Path(id): Path<i64>,
-    Form(form): Form<HashMap<String, String>>,
-) -> Response {
+/// Photos and files of one message, together.
+pub const MAX_ATTACHMENTS: usize = 4;
+
+/// The largest message form: its photos and files, and its text.
+pub const MAX_SEND_BYTES: usize = MAX_ATTACHMENTS * crate::document::MAX_BYTES + 1024 * 1024;
+
+/// A message form: its text, photos (`photos`, also from the camera) and
+/// files (`files`, see `document`). `Err` with the error code.
+struct SentForm {
+    body: String,
+    photos: Vec<Vec<u8>>,
+    files: Vec<(Vec<u8>, String)>,
+}
+
+async fn read_form(multipart: &mut Multipart) -> Result<SentForm, &'static str> {
+    let mut form = SentForm { body: String::new(), photos: Vec::new(), files: Vec::new() };
+    while let Some(field) = multipart.next_field().await.map_err(|_| "file")? {
+        let name = field.name().unwrap_or_default().to_string();
+        match name.as_str() {
+            "photos" | "files" => {
+                let file_name = crate::document::shown_name(field.file_name().unwrap_or_default());
+                let data = field.bytes().await.map_err(|_| "file")?;
+                if data.is_empty() {
+                    continue;
+                }
+                if form.photos.len() + form.files.len() == MAX_ATTACHMENTS {
+                    return Err("too-many");
+                }
+                if name == "photos" {
+                    if data.len() > MAX_IMAGE_BYTES {
+                        return Err("photo");
+                    }
+                    form.photos.push(data.to_vec());
+                } else {
+                    if data.len() > crate::document::MAX_BYTES {
+                        return Err("file");
+                    }
+                    form.files.push((data.to_vec(), file_name));
+                }
+            }
+            "body" => form.body = field.text().await.map_err(|_| "server")?,
+            _ => {}
+        }
+    }
+    Ok(form)
+}
+
+/// Saves the photos (their location and camera details removed) and files of
+/// a message under random names. Nothing is kept when one fails.
+async fn save_attachments(user_id: i32, form: &SentForm) -> Result<Vec<NewAttachment>, &'static str> {
+    let mut cleaned = Vec::new();
+    for data in &form.photos {
+        cleaned.push(crate::photo::prepare(data).await.map_err(|_| "photo")?);
+    }
+    let documents = form
+        .files
+        .iter()
+        .map(|(data, name)| crate::document::detect(data, name).map(|document| (data, name, document)).ok_or("file"))
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut saved: Vec<NewAttachment> = Vec::new();
+    let owner = ImageOwner::User(user_id);
+    let mut failed = false;
+    for photo in cleaned {
+        match image::save_private_file(owner, "message", photo.extension, &photo.data).await {
+            Ok(url) => saved.push(NewAttachment::new(url, photo.media_type.to_string(), "", i32::try_from(photo.width).ok(), i32::try_from(photo.height).ok())),
+            Err(_) => failed = true,
+        }
+    }
+    for (data, name, document) in documents {
+        match image::save_private_file(owner, "message", document.extension, data).await {
+            Ok(url) => saved.push(NewAttachment::new(url, document.media_type.to_string(), name, None, None)),
+            Err(_) => failed = true,
+        }
+    }
+    if failed {
+        tracing::error!("failed to save the attachments of a message of user {}", user_id);
+        for attachment in &saved {
+            image::remove_image(owner, &attachment.url).await;
+        }
+        return Err("server");
+    }
+    Ok(saved)
+}
+
+pub async fn send(State(state): State<AppState>, session: Session, Path(id): Path<i64>, mut multipart: Multipart) -> Response {
     let (pool, me, conversation) = match load(&state, &session, id).await {
         Ok(loaded) => loaded,
         Err(response) => return response,
@@ -328,20 +417,39 @@ pub async fn send(
     if closed(&state, &me, &conversation).is_some() {
         return Redirect::to(&format!("/messenger/{id}")).into_response();
     }
-    let body = match message::validate_body(form.get("body").map(String::as_str).unwrap_or("")) {
-        Ok(body) => body,
-        Err(err) => return Redirect::to(&format!("/messenger/{id}?error={}#composer", body_error_code(err))).into_response(),
+    let back = |code: &str| Redirect::to(&format!("/messenger/{id}?error={code}#composer")).into_response();
+    let form = match read_form(&mut multipart).await {
+        Ok(form) => form,
+        Err(code) => return back(code),
     };
-    match message::add(&pool, id, me.id, &body).await {
+    let has_attachments = !form.photos.is_empty() || !form.files.is_empty();
+    // A photo or a file can go alone.
+    let body = match message::validate_body(&form.body) {
+        Ok(body) => body,
+        Err(BodyError::Empty) if has_attachments => String::new(),
+        Err(err) => return back(body_error_code(err)),
+    };
+    let attachments = match save_attachments(me.id, &form).await {
+        Ok(attachments) => attachments,
+        Err(code) => return back(code),
+    };
+    let added = match message::add(&pool, id, me.id, &body).await {
+        Ok(added) => media::save_attachments(&pool, media::Owner::Message(added.0), &attachments).await.map(|()| added),
+        Err(err) => Err(err),
+    };
+    match added {
         Ok((message_id, sent_at)) => {
             signal(&pool, id).await;
             signal_received(&pool, id, me.id, message_id).await;
-            notifier::message_sent(&state, &pool, &me, &conversation, message_id, &body, &sent_at).await;
+            notifier::message_sent(&state, &pool, &me, &conversation, message_id, &body, &attachments, &sent_at).await;
             Redirect::to(&format!("/messenger/{id}#message-{message_id}")).into_response()
         }
         Err(err) => {
             tracing::error!("failed to send a message in {}: {}", id, err);
-            Redirect::to(&format!("/messenger/{id}?error=server#composer")).into_response()
+            for attachment in &attachments {
+                image::remove_image(ImageOwner::User(me.id), &attachment.url).await;
+            }
+            back("server")
         }
     }
 }
@@ -352,8 +460,13 @@ pub async fn delete(State(state): State<AppState>, session: Session, Path((id, m
         Ok(loaded) => loaded,
         Err(response) => return response,
     };
+    // Its photos and files go with it: they were private.
+    let files = media::local_files_of_message(&pool, message_id).await.unwrap_or_default();
     match message::delete_own(&pool, message_id, me.id).await {
         Ok(Some(conversation_id)) if conversation_id == id => {
+            for url in &files {
+                image::remove_image(ImageOwner::User(me.id), url).await;
+            }
             signal(&pool, id).await;
             notifier::message_deleted(&state, &pool, &me, &conversation, message_id).await;
         }

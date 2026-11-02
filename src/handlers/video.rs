@@ -225,22 +225,28 @@ struct VideosTemplate {
     videos: Vec<Post>,
     /// `LIVE-STREAMING`: the "Go live" button.
     live_streaming: bool,
+    /// The categories to choose from, and the one chosen (`?category=`).
+    categories: [(i16, &'static str); 18],
+    category: Option<i16>,
 }
 
 /// The newest videos and the streams going on, like PeerTube's "Discover".
-pub async fn videos_page(State(state): State<AppState>, session: Session) -> Response {
+/// `?category=7`: the videos of a category only.
+pub async fn videos_page(State(state): State<AppState>, session: Session, Query(query): Query<HashMap<String, String>>) -> Response {
     let layout = Layout::load(&state, &session).await;
     let Some(pool) = &state.pool else {
         return error_page(layout, StatusCode::SERVICE_UNAVAILABLE, "The database is not configured.");
     };
     let viewer_id = layout.viewer.as_ref().map(|viewer| viewer.id);
     let services = crate::settings::services();
-    let live_now = match services.live_streaming {
+    let category = query.get("category").and_then(|category| video::parse_category(category));
+    let live_now = match services.live_streaming && category.is_none() {
         true => or_empty(post::media_list(pool, viewer_id, MediaList::LiveNow).await, "live streams"),
         false => Vec::new(),
     };
+    let list = category.map_or(MediaList::Videos, MediaList::VideosIn);
     let videos = match services.video {
-        true => or_empty(post::media_list(pool, viewer_id, MediaList::Videos).await, "videos"),
+        true => or_empty(post::media_list(pool, viewer_id, list).await, "videos"),
         false => Vec::new(),
     };
     let converting = match viewer_id {
@@ -254,6 +260,8 @@ pub async fn videos_page(State(state): State<AppState>, session: Session) -> Res
         live_now,
         videos,
         live_streaming: services.live_streaming,
+        categories: video::CATEGORIES,
+        category,
     })
 }
 
@@ -267,6 +275,7 @@ struct VideoUploadTemplate {
     max_mb: usize,
     title_max_chars: usize,
     description_max_chars: usize,
+    categories: [(i16, &'static str); 18],
 }
 
 pub async fn upload_page(State(state): State<AppState>, session: Session, Query(query): Query<HashMap<String, String>>) -> Response {
@@ -282,6 +291,7 @@ pub async fn upload_page(State(state): State<AppState>, session: Session, Query(
         max_mb: state.max_video_bytes / 1024 / 1024,
         title_max_chars: video::TITLE_MAX_CHARS,
         description_max_chars: BODY_MAX_CHARS,
+        categories: video::CATEGORIES,
     })
 }
 
@@ -337,6 +347,7 @@ pub async fn upload(State(state): State<AppState>, session: Session, mut multipa
         podcast_id: None,
         source: &source,
         poster_url: poster_url.as_deref(),
+        category: video::parse_category(upload.field("category")),
     };
     match post::create_media(&pool, me.id, &media).await {
         Ok(post_id) => {
@@ -358,7 +369,7 @@ pub async fn upload(State(state): State<AppState>, session: Session, mut multipa
 async fn save_thumbnail(owner: ImageOwner, picture: &std::path::Path) -> Result<String, MediaError> {
     let tools = crate::av::tools().ok_or(MediaError::Server)?;
     let data = tokio::fs::read(picture).await.map_err(|_| MediaError::Server)?;
-    let photo = crate::photo::clean(&data).map_err(|_| MediaError::ThumbnailFormat)?;
+    let photo = crate::photo::prepare(&data).await.map_err(|_| MediaError::ThumbnailFormat)?;
     let cleaned = PathBuf::from(jobs::SOURCES_DIR).join(format!("{}.{}", crate::handlers::session::random_part(), photo.extension));
     tokio::fs::write(&cleaned, &photo.data).await.map_err(|_| MediaError::Server)?;
     let made = async {

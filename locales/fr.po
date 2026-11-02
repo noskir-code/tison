@@ -1747,8 +1747,8 @@ msgstr "Réinitialiser la clé"
 msgid "Reset the stream key"
 msgstr "Réinitialiser la clé de diffusion"
 
-msgid "Reset your Tison password"
-msgstr "Réinitialisez votre mot de passe Tison"
+msgid "Reset your {} password"
+msgstr "Réinitialisez votre mot de passe {}"
 
 msgid "Resolve"
 msgstr "Résoudre"
@@ -2488,8 +2488,8 @@ msgstr "Utilisateurs ayant activé l'authentification à deux facteurs"
 msgid "Verified"
 msgstr "Vérifié"
 
-msgid "Verify your Tison email"
-msgstr "Vérifiez votre e-mail Tison"
+msgid "Verify your {} email"
+msgstr "Vérifiez votre e-mail {}"
 
 msgid "Verify your email."
 msgstr "Vérifiez votre e-mail."
@@ -2551,8 +2551,8 @@ msgstr "Semaine"
 msgid "Week of {}"
 msgstr "Semaine du {}"
 
-msgid "Welcome to Tison"
-msgstr "Bienvenue sur Tison"
+msgid "Welcome to {}"
+msgstr "Bienvenue sur {}"
 
 msgid "What do you want to share with the community?"
 msgstr "Que voulez-vous partager avec la communauté ?"
@@ -2770,8 +2770,8 @@ msgstr "l'ajouter en ami ou"
 msgid "address"
 msgstr "adresse"
 
-msgid "and reminders even when Tison is closed."
-msgstr "et rappels même quand Tison est fermé."
+msgid "and reminders even when {} is closed."
+msgstr "et rappels même quand {} est fermé."
 
 msgid "as sensitive."
 msgstr "comme sensible."
@@ -3168,8 +3168,8 @@ msgstr "Choisissez un nouveau mot de passe dans les {} minutes."
 msgid "Reset your password"
 msgstr "Réinitialisez votre mot de passe"
 
-msgid "Someone asked to reset the password of your Tison account."
-msgstr "Quelqu'un a demandé à réinitialiser le mot de passe de votre compte Tison."
+msgid "Someone asked to reset the password of your {} account."
+msgstr "Quelqu'un a demandé à réinitialiser le mot de passe de votre compte {}."
 
 msgid "This link is valid for {} minutes:"
 msgstr "Ce lien est valable {} minutes :"
@@ -3195,11 +3195,11 @@ msgstr "L'authentification à deux facteurs est activée."
 msgid "Two-factor authentication was turned off."
 msgstr "L'authentification à deux facteurs a été désactivée."
 
-msgid "Logging in to your Tison account now asks for a code from your authenticator app after your password."
-msgstr "La connexion à votre compte Tison demande désormais un code de votre application d'authentification après votre mot de passe."
+msgid "Logging in to your {} account now asks for a code from your authenticator app after your password."
+msgstr "La connexion à votre compte {} demande désormais un code de votre application d'authentification après votre mot de passe."
 
-msgid "Your password alone is now enough to log in to your Tison account."
-msgstr "Votre mot de passe suffit désormais pour vous connecter à votre compte Tison."
+msgid "Your password alone is now enough to log in to your {} account."
+msgstr "Votre mot de passe suffit désormais pour vous connecter à votre compte {}."
 
 msgid "If it wasn't you, change your password now and turn it back on."
 msgstr "Si ce n'était pas vous, changez votre mot de passe dès maintenant et réactivez-la."
@@ -3210,11 +3210,11 @@ msgstr "Si ce n'était pas vous, changez votre mot de passe dès maintenant et r
 msgid "Your two-factor settings"
 msgstr "Vos réglages d'authentification à deux facteurs"
 
-msgid "Two-factor authentication is now on for your Tison account: logging in asks for a code from your authenticator app after your password."
-msgstr "L'authentification à deux facteurs est maintenant activée sur votre compte Tison : la connexion demande un code de votre application d'authentification après votre mot de passe."
+msgid "Two-factor authentication is now on for your {} account: logging in asks for a code from your authenticator app after your password."
+msgstr "L'authentification à deux facteurs est maintenant activée sur votre compte {} : la connexion demande un code de votre application d'authentification après votre mot de passe."
 
-msgid "Two-factor authentication was turned off on your Tison account: your password alone is now enough to log in."
-msgstr "L'authentification à deux facteurs a été désactivée sur votre compte Tison : votre mot de passe suffit désormais pour vous connecter."
+msgid "Two-factor authentication was turned off on your {} account: your password alone is now enough to log in."
+msgstr "L'authentification à deux facteurs a été désactivée sur votre compte {} : votre mot de passe suffit désormais pour vous connecter."
 
 msgid "Confirm this address within {} hours."
 msgstr "Confirmez cette adresse dans les {} heures."
@@ -3222,8 +3222,8 @@ msgstr "Confirmez cette adresse dans les {} heures."
 msgid "Verify your email"
 msgstr "Vérifiez votre e-mail"
 
-msgid "Welcome to Tison, @{}!"
-msgstr "Bienvenue sur Tison, @{} !"
+msgid "Welcome to {}, @{}!"
+msgstr "Bienvenue sur {}, @{} !"
 
 msgid "Confirm that this address is yours, so it can be used to reset your password and send you important messages."
 msgstr "Confirmez que cette adresse est bien la vôtre, pour qu'elle serve à réinitialiser votre mot de passe et à vous envoyer des messages importants."
@@ -3237,14 +3237,14 @@ msgstr "Si vous n'avez pas créé ce compte, ignorez cet e-mail : l'adresse rest
 msgid "Hello @{},"
 msgstr "Bonjour @{},"
 
-msgid "Welcome to Tison!"
-msgstr "Bienvenue sur Tison !"
+msgid "Welcome to {}!"
+msgstr "Bienvenue sur {} !"
 
 msgid "Open this link within {} hours:"
 msgstr "Ouvrez ce lien dans les {} heures :"
 
-msgid "You receive this email because of an action on your Tison account."
-msgstr "Vous recevez cet e-mail à la suite d'une action sur votre compte Tison."
+msgid "You receive this email because of an action on your {} account."
+msgstr "Vous recevez cet e-mail à la suite d'une action sur votre compte {}."
 
 # Pages of the site (entities/site_page.rs)
 
@@ -3315,3 +3315,404 @@ msgstr "{} n'a pas pu être écrit : vérifiez que Tison peut écrire dans ce do
 
 msgid "The page shows here as you write it."
 msgstr "La page s'affiche ici pendant que vous l'écrivez."
+
+# Moderation: bans, suspensions, deleted accounts
+
+msgid "1 day"
+msgstr "1 jour"
+
+msgid "Accounts of the staff can't be banned, suspended or deleted here."
+msgstr "Les comptes de l'équipe ne peuvent pas être bannis, suspendus ou supprimés ici."
+
+msgid "Ban account"
+msgstr "Bannir le compte"
+
+msgid "Ban {}? They are signed out, can't sign in anymore, and their posts and profile are hidden, until a moderator reinstates them."
+msgstr "Bannir {} ? Le compte est déconnecté, ne peut plus se connecter, et ses publications et son profil sont masqués, jusqu'à ce qu'un modérateur le rétablisse."
+
+msgid "Delete account"
+msgstr "Supprimer le compte"
+
+msgid "Delete {} for good? The account and everything it posted (posts, comments, photos, videos, messages) are deleted, here and on other servers. This can't be undone: for fake accounts and spam."
+msgstr "Supprimer {} définitivement ? Le compte et tout ce qu'il a publié (publications, commentaires, photos, vidéos, messages) sont supprimés, ici et sur les autres serveurs. C'est irréversible : pour les faux comptes et le spam."
+
+msgid "Length of the suspension"
+msgstr "Durée de la suspension"
+
+msgid "Source Code"
+msgstr "Code source"
+
+msgid "Suspend {}? They are signed out and can't sign in, and their posts and profile are hidden, until the end of the suspension."
+msgstr "Suspendre {} ? Le compte est déconnecté et ne peut pas se connecter, et ses publications et son profil sont masqués, jusqu'à la fin de la suspension."
+
+msgid "The account and everything it posted are deleted, and the report resolved."
+msgstr "Le compte et tout ce qu'il a publié sont supprimés, et le signalement est résolu."
+
+msgid "The account is banned, and the report resolved."
+msgstr "Le compte est banni, et le signalement est résolu."
+
+msgid "The accounts and the Fediverse of the site."
+msgstr "Les comptes et le Fédivers du site."
+
+msgid "Until the end of their suspension"
+msgstr "Jusqu'à la fin de leur suspension"
+
+msgid "banned"
+msgstr "banni"
+
+msgid "suspended until {}"
+msgstr "suspendu jusqu'au {}"
+
+msgid "Banned accounts"
+msgstr "Comptes bannis"
+
+msgid "Suspended accounts"
+msgstr "Comptes suspendus"
+
+# Users tab, team account, blocked email domains
+
+msgid "1 account uses it"
+msgstr "1 compte l'utilise"
+
+msgid "{} accounts use it"
+msgstr "{} comptes l'utilisent"
+
+msgid "Accounts can't be made with addresses of this domain. Use another email."
+msgstr "Impossible de créer un compte avec une adresse de ce domaine. Utilisez un autre e-mail."
+
+msgid "Active"
+msgstr "Actif"
+
+msgid "Blocked email domains"
+msgstr "Domaines d'e-mail bloqués"
+
+msgid "Delete report"
+msgstr "Supprimer le signalement"
+
+msgid "Delete this report? Only the report goes, not what it's about."
+msgstr "Supprimer ce signalement ? Seul le signalement est supprimé, pas ce qu'il concerne."
+
+msgid "Find a user"
+msgstr "Trouver un utilisateur"
+
+msgid "No account matches."
+msgstr "Aucun compte ne correspond."
+
+msgid "No account yet."
+msgstr "Aucun compte pour l'instant."
+
+msgid "Nobody can sign up with an address of these domains, nor of their subdomains: those of throwaway emails used for fake accounts. Accounts already using one stay."
+msgstr "Personne ne peut s'inscrire avec une adresse de ces domaines, ni de leurs sous-domaines : ceux des e-mails jetables utilisés pour les faux comptes. Les comptes qui en utilisent déjà une restent."
+
+msgid "Older accounts"
+msgstr "Comptes plus anciens"
+
+msgid "Post as"
+msgstr "Publier en tant que"
+
+msgid "Preferred name"
+msgstr "Nom affiché"
+
+msgid "Role"
+msgstr "Rôle"
+
+msgid "Suspended until {}"
+msgstr "Suspendu jusqu'au {}"
+
+msgid "Team"
+msgstr "Équipe"
+
+msgid "The accounts of this site. Their emails are private: only the staff sees them here."
+msgstr "Les comptes de ce site. Leurs e-mails sont privés : seule l'équipe les voit ici."
+
+msgid "The domain is blocked: no new account can use it."
+msgstr "Le domaine est bloqué : aucun nouveau compte ne peut l'utiliser."
+
+msgid "The domain is unblocked."
+msgstr "Le domaine est débloqué."
+
+msgid "The moderation team's account can't be added as a friend."
+msgstr "Le compte de l'équipe de modération ne peut pas être ajouté en ami."
+
+msgid "The posts of the moderation team can't be reported."
+msgstr "Les publications de l'équipe de modération ne peuvent pas être signalées."
+
+msgid "The report is deleted."
+msgstr "Le signalement est supprimé."
+
+msgid "The staff of the site can't be reported."
+msgstr "L'équipe du site ne peut pas être signalée."
+
+msgid "This isn't a domain, like spam.example."
+msgstr "Ce n'est pas un domaine, comme spam.example."
+
+msgid "User"
+msgstr "Utilisateur"
+
+msgid "Username, name or email"
+msgstr "Nom d'utilisateur, nom ou e-mail"
+
+msgid "not verified"
+msgstr "non vérifié"
+
+msgid "Published as @{}"
+msgstr "Publié en tant que @{}"
+
+msgid "Published as the team."
+msgstr "Publié au nom de l'équipe."
+
+msgid "Latest posts of the team"
+msgstr "Dernières publications de l'équipe"
+
+# Search, communities, hashtags, categories, files, emojis, settings tabs
+
+msgid "A post can have at most {} attached files."
+msgstr "Une publication peut avoir au plus {} fichiers joints."
+
+msgid "Account"
+msgstr "Compte"
+
+msgid "Activism"
+msgstr "Militantisme"
+
+msgid "Add an emoji"
+msgstr "Ajouter un émoji"
+
+msgid "All"
+msgstr "Toutes"
+
+msgid "An attached file can be at most {} MB."
+msgstr "Un fichier joint peut faire au plus {} Mo."
+
+msgid "Animals"
+msgstr "Animaux"
+
+msgid "Art"
+msgstr "Art"
+
+msgid "At most {} files: choose again."
+msgstr "Au plus {} fichiers : choisissez à nouveau."
+
+msgid "Attach a file"
+msgstr "Joindre un fichier"
+
+msgid "Attached files must be PDF, text, office documents (Word, LibreOffice), EPUB or ZIP."
+msgstr "Les fichiers joints doivent être des PDF, du texte, des documents bureautiques (Word, LibreOffice), des EPUB ou des ZIP."
+
+msgid "Camera"
+msgstr "Caméra"
+
+msgid "Categories"
+msgstr "Catégories"
+
+msgid "Discovered on other servers"
+msgstr "Découvertes sur d'autres serveurs"
+
+msgid "Emojis"
+msgstr "Émojis"
+
+msgid "Entertainment"
+msgstr "Divertissement"
+
+msgid "Films"
+msgstr "Films"
+
+msgid "Food"
+msgstr "Cuisine"
+
+msgid "How To"
+msgstr "Tutoriels"
+
+msgid "Kids"
+msgstr "Enfants"
+
+msgid "Login to create a community"
+msgstr "Connectez-vous pour créer une communauté"
+
+msgid "Mark as read"
+msgstr "Marquer comme lu"
+
+msgid "Mark this notification as read"
+msgstr "Marquer cette notification comme lue"
+
+msgid "News & Politics"
+msgstr "Actualités et politique"
+
+msgid "No category"
+msgstr "Aucune catégorie"
+
+msgid "No community yet: create the first one."
+msgstr "Aucune communauté pour l'instant : créez la première."
+
+msgid "No post found."
+msgstr "Aucune publication trouvée."
+
+msgid "No post with this hashtag yet."
+msgstr "Aucune publication avec ce mot-clic pour l'instant."
+
+msgid "On other servers"
+msgstr "Sur d'autres serveurs"
+
+msgid "PDF, text, office documents, EPUB or ZIP, up to {} files."
+msgstr "PDF, texte, documents bureautiques, EPUB ou ZIP, jusqu'à {} fichiers."
+
+msgid "Posts with this hashtag, from here and from the other servers known here."
+msgstr "Les publications avec ce mot-clic, d'ici et des autres serveurs connus ici."
+
+msgid "Profile"
+msgstr "Profil"
+
+msgid "Science & Technology"
+msgstr "Sciences et technologies"
+
+msgid "Settings sections"
+msgstr "Sections des paramètres"
+
+msgid "Take the photo"
+msgstr "Prendre la photo"
+
+msgid "The camera can't be used: the browser refused it, or there is none."
+msgstr "La caméra ne peut pas être utilisée : le navigateur l'a refusée, ou il n'y en a pas."
+
+msgid "This isn't a hashtag."
+msgstr "Ce n'est pas un mot-clic."
+
+msgid "Travels"
+msgstr "Voyages"
+
+msgid "Vehicles"
+msgstr "Véhicules"
+
+msgid "Video games"
+msgstr "Jeux vidéo"
+
+msgid "Write at least 3 letters to search posts."
+msgstr "Écrivez au moins 3 lettres pour chercher des publications."
+
+msgid "Write something or add a photo or a file before publishing."
+msgstr "Écrivez quelque chose ou ajoutez une photo ou un fichier avant de publier."
+
+msgid "← Communities"
+msgstr "← Communautés"
+
+# Messenger: photos and files
+
+msgid "Write something or add a photo or a file before sending."
+msgstr "Écrivez quelque chose ou ajoutez une photo ou un fichier avant d'envoyer."
+
+msgid "A message can have at most {} photos and files."
+msgstr "Un message peut avoir au plus {} photos et fichiers."
+
+msgid "Photos must be JPEG, PNG, GIF or WebP, of at most {} MB."
+msgstr "Les photos doivent être en JPEG, PNG, GIF ou WebP, de {} Mo au plus."
+
+msgid "Attached files must be PDF, text, office documents (Word, LibreOffice), EPUB or ZIP, of at most {} MB."
+msgstr "Les fichiers joints doivent être des PDF, du texte, des documents bureautiques (Word, LibreOffice), des EPUB ou des ZIP, de {} Mo au plus."
+
+# Emoji picker
+
+msgid "Search emojis"
+msgstr "Chercher un émoji"
+
+msgid "Recently used"
+msgstr "Utilisés récemment"
+
+msgid "No emoji found."
+msgstr "Aucun émoji trouvé."
+
+msgid "The emojis couldn't be loaded: check your connection."
+msgstr "Les émojis n'ont pas pu être chargés : vérifiez votre connexion."
+
+msgid "Smileys & Emotion"
+msgstr "Smileys et émotions"
+
+msgid "People & Body"
+msgstr "Personnes et corps"
+
+msgid "Animals & Nature"
+msgstr "Animaux et nature"
+
+msgid "Food & Drink"
+msgstr "Nourriture et boissons"
+
+msgid "Travel & Places"
+msgstr "Voyages et lieux"
+
+msgid "Activities"
+msgstr "Activités"
+
+msgid "Objects"
+msgstr "Objets"
+
+msgid "Symbols"
+msgstr "Symboles"
+
+msgid "Flags"
+msgstr "Drapeaux"
+
+msgid "Results for “{}”"
+msgstr "Résultats pour « {} »"
+
+# Cropping
+
+msgid "Free"
+msgstr "Libre"
+
+msgid "Crop the picture"
+msgstr "Recadrer l'image"
+
+msgid "Crop frame: drag it, or move it with the arrow keys (Shift to resize)"
+msgstr "Cadre de recadrage : faites-le glisser, ou déplacez-le avec les flèches (Maj pour le redimensionner)"
+
+msgid "Shape"
+msgstr "Forme"
+
+msgid "Keep it as it is"
+msgstr "La garder telle quelle"
+
+msgid "Crop"
+msgstr "Recadrer"
+
+msgid "Crop the current photo"
+msgstr "Recadrer la photo actuelle"
+
+msgid "Crop the current background"
+msgstr "Recadrer l'arrière-plan actuel"
+
+msgid "Crop the current cover"
+msgstr "Recadrer la couverture actuelle"
+
+msgid "Change the cover"
+msgstr "Changer la couverture"
+
+msgid "Save the cover"
+msgstr "Enregistrer la couverture"
+
+msgid "More videos of this category"
+msgstr "Plus de vidéos de cette catégorie"
+
+# Search tabs and hashtags
+
+msgid "Hashtags"
+msgstr "Mots-clics"
+
+msgid "See all"
+msgstr "Tout voir"
+
+msgid "Kinds of results"
+msgstr "Types de résultats"
+
+msgid "No hashtag found."
+msgstr "Aucun mot-clic trouvé."
+
+msgid "1 post"
+msgstr "1 publication"
+
+msgid "{} posts"
+msgstr "{} publications"
+
+msgid "No video found."
+msgstr "Aucune vidéo trouvée."
+
+msgid "No article found."
+msgstr "Aucun article trouvé."

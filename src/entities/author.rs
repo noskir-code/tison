@@ -90,6 +90,11 @@ impl Author {
         Ok(Self::Remote(RemoteAuthor::from_row(row)?))
     }
 
+    /// Written by the moderation team's account, see `user::sync_team_account`.
+    pub fn is_team(&self) -> bool {
+        self.local().is_some_and(|user| user.team)
+    }
+
     pub fn local(&self) -> Option<&User> {
         match self {
             Self::Local(user) => Some(user),
@@ -126,17 +131,23 @@ impl Author {
         }
     }
 
-    /// The server of a remote account, like `peertube.example`.
+    /// The server of a remote account, like `peertube.example`; this
+    /// site's name (`INSTANCE_NAME`) for a local one.
     pub fn host(&self) -> String {
         match self {
-            Self::Local(_) => "Tison".to_string(),
+            Self::Local(_) => crate::settings::instance_name().to_string(),
             Self::Remote(remote) => remote.host.clone(),
         }
     }
 
     /// `@alice` or `@alice@misskey.io`.
+    /// `@alice@tison.social` or `@bob@mastodon.social`: with the server, as
+    /// the Fediverse writes them.
     pub fn handle(&self) -> String {
-        format!("@{}", self.mention())
+        match self {
+            Self::Local(user) => user.handle(),
+            Self::Remote(remote) => remote.handle(),
+        }
     }
 
     /// Their profile here: a local user's, or the page of a remote account.

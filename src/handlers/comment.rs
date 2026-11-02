@@ -178,7 +178,11 @@ pub async fn post_page(
         _ => false,
     };
     render_template(&PostTemplate {
-        title: crate::i18n::tf("Post by {}", post.author.handle()),
+        // Videos, articles, episodes and events by their own title.
+        title: match post.title.as_deref().map(str::trim).filter(|title| !title.is_empty()) {
+            Some(title) => title.to_string(),
+            None => crate::i18n::tf("Post by {}", post.author.handle()),
+        },
         can_moderate,
         activitypub_url,
         layout,
@@ -363,6 +367,8 @@ pub async fn edit_page(
         Err(err) => return comment_failed(layout, comment_id, err),
     };
     render_template(&EditTemplate {
+        video_category: None,
+        photos: Vec::new(),
         title: "Edit the comment".to_string(),
         layout,
         action: format!("/comments/{comment_id}/edit"),

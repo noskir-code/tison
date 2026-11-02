@@ -67,6 +67,11 @@ pub const TABLE: Table = Table {
         Column::new("sensitive", "BOOLEAN").default("FALSE"),
         // Views of a video, see `entities::views`.
         Column::new("view_count", "BIGINT").default("0"),
+        // Hashtags given apart from the text, like PeerTube's tags: lowercase,
+        // without `#`, separated by spaces. Those of the text are read from it.
+        Column::new("tags", "TEXT").default("''"),
+        // A video's category, PeerTube's numbers: see `video::CATEGORIES`.
+        Column::new("category", "SMALLINT").nullable(),
         Column::new("created_at", "TIMESTAMPTZ").default("NOW()"),
         Column::new("updated_at", "TIMESTAMPTZ").default("NOW()"),
         // Last edit by its author, shown as "edited".
@@ -82,6 +87,11 @@ pub const TABLE: Table = Table {
         Index::new("posts_user_id_created_at_idx", "user_id, created_at DESC"),
         Index::new("posts_community_created_at_idx", "community_id, created_at DESC"),
         Index::unique("posts_ap_id_idx", "ap_id"),
+        // `search`: words of posts and titles, fast with ILIKE.
+        Index::trigram("posts_body_trgm_idx", "body"),
+        Index::trigram("posts_title_trgm_idx", "title"),
+        Index::trigram("posts_tags_trgm_idx", "tags"),
+        Index::new("posts_category_idx", "category, created_at DESC"),
     ],
 };
 
@@ -230,6 +240,10 @@ pub struct Post {
     pub duration_seconds: Option<i32>,
     /// Views of a video, see `entities::views`.
     pub view_count: i64,
+    /// The `tags` column, see `hashtags`.
+    pub extra_tags: String,
+    /// A video's category, see `video::CATEGORIES`.
+    pub category: Option<i16>,
     pub poster_url: Option<String>,
     pub podcast: Option<PostPodcast>,
     /// The HLS of a stream going on, see `av::live`.
@@ -262,6 +276,8 @@ pub struct Post {
     pub video_files: Vec<crate::entities::video::VideoFile>,
     /// The card of its first link, when it has no media.
     pub preview: Option<LinkPreview>,
+    /// An article's: the cards of its links, see `article_html`.
+    pub link_previews: Vec<LinkPreview>,
 }
 
 impl Post {
@@ -274,6 +290,8 @@ impl Post {
             media_status: row.try_get("media_status")?,
             duration_seconds: row.try_get("duration_seconds")?,
             view_count: row.try_get("view_count")?,
+            extra_tags: row.try_get("tags")?,
+            category: row.try_get("category")?,
             poster_url: row.try_get("poster_url")?,
             live_playlist: row.try_get("live_playlist")?,
             event: crate::entities::event::EventDetails::from_row(row)?,
@@ -317,6 +335,7 @@ impl Post {
             attachments: Vec::new(),
             video_files: Vec::new(),
             preview: None,
+            link_previews: Vec::new(),
         })
     }
 
@@ -424,9 +443,26 @@ impl Post {
     /// The article as HTML, pictures of other servers through the media
     /// proxy.
     pub fn article_html(&self) -> String {
-        crate::markdown::to_html(&self.body, &|address| match media::is_local(address) {
+        let html = crate::markdown::to_html(&self.body, &|address| match media::is_local(address) {
             true => address.to_string(),
             false => media::proxy_url(address),
+        });
+        // The cards of its links, small, under their paragraph.
+        crate::markdown::with_link_cards(&html, &|link| {
+            let found = self.link_previews.iter().find(|preview| preview.url == link)?;
+            let escape = crate::linkify::escape;
+            let image = match found.image_proxy_url() {
+                Some(image) => format!("<img src=\"{}\" alt=\"\" loading=\"lazy\" class=\"link-card-image\">", escape(&image)),
+                None => String::new(),
+            };
+            Some(format!(
+                "<a href=\"{}\" class=\"link-card article-link-card{}\" rel=\"nofollow noopener noreferrer ugc\" target=\"_blank\">{image}\
+                 <span class=\"link-card-text\"><span class=\"link-card-site\">{}</span><strong class=\"link-card-title\">{}</strong></span></a>\n",
+                escape(&found.url),
+                if image.is_empty() { " no-image" } else { "" },
+                escape(&found.site()),
+                escape(&found.title),
+            ))
         })
     }
 
@@ -440,13 +476,28 @@ impl Post {
     }
 
     /// The picture of its preview card in feeds, like Mastodon's: its first
-    /// picture, else its first attached one.
+    /// picture, else its first attached one, else the site's logo for the
+    /// moderation team's (see `user::sync_team_account`).
     pub fn article_picture(&self) -> Option<String> {
         match crate::markdown::first_picture(&self.body) {
             Some(address) if media::is_local(&address) => Some(address),
             Some(address) => Some(media::proxy_url(&address)),
-            None => self.attachments.iter().find(|attachment| attachment.is_image()).map(Attachment::proxy_url),
+            None => self
+                .attachments
+                .iter()
+                .find(|attachment| attachment.is_image())
+                .map(Attachment::proxy_url)
+                .or_else(|| self.author.is_team().then(|| SITE_LOGO.to_string())),
         }
+    }
+
+    /// `article_picture` as a full address, for other sites (Open Graph,
+    /// the Fediverse).
+    pub fn article_picture_url(&self) -> Option<String> {
+        self.article_picture().map(|picture| match picture.starts_with('/') {
+            true => format!("{}{picture}", crate::settings::site_base_url()),
+            false => picture,
+        })
     }
 
     /// Where it was published, on its preview card: this site, or the
@@ -454,7 +505,7 @@ impl Post {
     pub fn article_site(&self) -> String {
         match &self.ap_url {
             Some(url) => crate::entities::author::host_of(url).trim_start_matches("www.").to_string(),
-            None => "Tison".to_string(),
+            None => crate::settings::instance_name().to_string(),
         }
     }
 
@@ -469,6 +520,28 @@ impl Post {
 
     pub fn is_followers_only(&self) -> bool {
         self.visibility == Visibility::Followers
+    }
+
+    /// Its hashtags, lowercase without `#`: of its title and text, then those
+    /// given apart (PeerTube's).
+    pub fn hashtags(&self) -> Vec<String> {
+        let mut tags = crate::hashtag::find(&[self.title_text(), &self.body]);
+        for tag in self.extra_tags.split_whitespace() {
+            if !tags.iter().any(|known| known == tag) {
+                tags.push(tag.to_string());
+            }
+        }
+        tags
+    }
+
+    /// The tags given apart from the text, linked under it.
+    pub fn extra_tag_list(&self) -> Vec<&str> {
+        self.extra_tags.split_whitespace().collect()
+    }
+
+    /// A video's category, in English (translated by the templates).
+    pub fn category_name(&self) -> Option<&'static str> {
+        self.category.and_then(crate::entities::video::category_name)
     }
 
     /// Written here by the viewer: they can edit it.
@@ -505,6 +578,9 @@ macro_rules! like_count {
     };
 }
 
+/// The site's logo, the picture of the team's articles without one.
+pub const SITE_LOGO: &str = "/public/logo.png";
+
 /// Columns read by `Post::from_row`. `$1` is always the viewer id (NULL for
 /// visitors), `$shared_by` and `$shared_by_url` the SQL giving who shared it
 /// and their page. Queries using it must only show what the viewer can see,
@@ -513,13 +589,15 @@ macro_rules! post_select {
     ($shared_by:literal, $shared_by_url:literal) => {
         concat!(
             "SELECT p.id AS post_id, p.kind, p.title, p.media_status, p.duration_seconds, p.poster_url, p.view_count,
+                    p.tags, p.category,
                     p.podcast_id, pod.title AS podcast_title, pod.cover_url AS podcast_cover,
                     CASE WHEN p.kind = 'live' AND p.media_status = 'live' THEN p.media_source END AS live_playlist, ",
             crate::entities::event::event_columns!(),
             ",
                     p.body, p.visibility, p.sensitive, p.created_at AS posted_at,
                     p.edited_at, p.ap_id, p.ap_url,
-                    COALESCE(p.user_id = $1, FALSE) AS is_own, ",
+                    COALESCE(p.user_id = $1 OR (u.team AND EXISTS (
+                        SELECT 1 FROM users staff WHERE staff.id = $1 AND staff.role IN ('moderator', 'admin'))), FALSE) AS is_own, ",
             like_count!(),
             " AS like_count,
                     (SELECT COUNT(*) FROM comments pc WHERE pc.post_id = p.id) AS comment_count,
@@ -750,6 +828,8 @@ pub enum MediaList {
     LatestEpisodes,
     /// A user's videos and episodes still converting: only for themselves.
     ConvertingBy(i32),
+    /// The newest videos of a category, see `video::CATEGORIES`.
+    VideosIn(i16),
 }
 
 /// How many posts a media list shows.
@@ -773,6 +853,10 @@ pub async fn media_list(pool: &PgPool, viewer_id: Option<i32>, list: MediaList) 
     let (query, id) = match list {
         MediaList::Videos => (media_query!("p.kind = 'video' AND p.media_status = 'ready' AND $2::bigint IS NULL"), None),
         MediaList::LiveNow => (media_query!("p.kind = 'live' AND p.media_status = 'live' AND $2::bigint IS NULL"), None),
+        MediaList::VideosIn(category) => (
+            media_query!("p.kind = 'video' AND p.media_status = 'ready' AND p.category = $2::bigint"),
+            Some(i64::from(category)),
+        ),
         MediaList::VideosBy(user_id) => (media_query!("p.kind = 'video' AND p.user_id = $2"), Some(i64::from(user_id))),
         MediaList::Episodes(podcast_id) => (media_query!("p.kind = 'episode' AND p.podcast_id = $2"), Some(podcast_id)),
         MediaList::LatestEpisodes => (media_query!("p.kind = 'episode' AND p.media_status = 'ready' AND $2::bigint IS NULL"), None),
@@ -930,12 +1014,14 @@ pub struct NewMedia<'a> {
     pub source: &'a str,
     /// A thumbnail chosen by the author, else ffmpeg makes one.
     pub poster_url: Option<&'a str>,
+    /// A video's category, see `video::CATEGORIES`.
+    pub category: Option<i16>,
 }
 
 pub async fn create_media(pool: &PgPool, user_id: i32, media: &NewMedia<'_>) -> Result<i64, sqlx::Error> {
     sqlx::query_scalar(
-        "INSERT INTO posts (user_id, kind, title, body, visibility, sensitive, podcast_id, media_status, media_source, poster_url)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, 'processing', $8, $9) RETURNING id",
+        "INSERT INTO posts (user_id, kind, title, body, visibility, sensitive, podcast_id, media_status, media_source, poster_url, category)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'processing', $8, $9, $10) RETURNING id",
     )
     .bind(user_id)
     .bind(media.kind.as_str())
@@ -946,6 +1032,7 @@ pub async fn create_media(pool: &PgPool, user_id: i32, media: &NewMedia<'_>) -> 
     .bind(media.podcast_id)
     .bind(media.source)
     .bind(media.poster_url)
+    .bind(media.category)
     .fetch_one(pool)
     .await
 }
@@ -980,6 +1067,10 @@ pub struct RemotePost<'a> {
     pub visibility: Visibility,
     pub sensitive: bool,
     pub published: Option<DateTime<Utc>>,
+    /// Its hashtags not in its text, see the `tags` column.
+    pub tags: String,
+    /// A PeerTube video's category.
+    pub category: Option<i16>,
 }
 
 /// A post received from another server, in a community or from an account
@@ -997,9 +1088,9 @@ pub async fn create_remote(
     }
     sqlx::query_scalar(
         "INSERT INTO posts (remote_actor_id, community_id, ap_id, ap_url, body, created_at, visibility, sensitive, title,
-                            kind, duration_seconds, poster_url, media_status)
+                            kind, duration_seconds, poster_url, media_status, tags, category)
          VALUES ($1, $2, $3, $4, $5, COALESCE($6, NOW()), $7, $8, $9, $10, $11, $12,
-                 CASE WHEN $10 IN ('post', 'event') THEN NULL ELSE 'ready' END)
+                 CASE WHEN $10 IN ('post', 'event') THEN NULL ELSE 'ready' END, $13, $14)
          ON CONFLICT (ap_id) DO NOTHING
          RETURNING id",
     )
@@ -1015,6 +1106,8 @@ pub async fn create_remote(
     .bind(post.kind.as_str())
     .bind(post.duration_seconds)
     .bind(post.poster_url)
+    .bind(&post.tags)
+    .bind(post.category)
     .fetch_optional(pool)
     .await
 }
@@ -1118,19 +1211,48 @@ pub async fn find_remote_object(pool: &PgPool, remote_actor_id: i64, ap_id: &str
 }
 
 /// A post or comment edited on its server. `title` is kept for a comment.
-pub async fn update_remote(pool: &PgPool, object: &RemoteObject, title: Option<&str>, body: &str, sensitive: bool) -> Result<(), sqlx::Error> {
+/// An edit other than the text (a photo cropped): shown as edited, and
+/// the federated object gets its `updated`.
+pub async fn mark_edited(pool: &PgPool, post_id: i64) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE posts SET edited_at = NOW(), updated_at = NOW() WHERE id = $1").bind(post_id).execute(pool).await?;
+    Ok(())
+}
+
+/// Changes a video's category, by its author (or the staff, for the team's).
+pub async fn set_category(pool: &PgPool, post_id: i64, category: Option<i16>) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE posts SET category = $2 WHERE id = $1 AND kind = 'video'")
+        .bind(post_id)
+        .bind(category)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// `tags` and `category`: see `RemotePost`; kept for comments.
+pub async fn update_remote(
+    pool: &PgPool,
+    object: &RemoteObject,
+    title: Option<&str>,
+    body: &str,
+    sensitive: bool,
+    tags: &str,
+    category: Option<i16>,
+) -> Result<(), sqlx::Error> {
     if title.is_some() && matches!(object, RemoteObject::Post(..)) {
         media::register_article_pictures(pool, body).await?;
     }
     let query = match object {
         RemoteObject::Post(id, _) => sqlx::query(
-            "UPDATE posts SET body = $1, sensitive = $3, title = $4, edited_at = NOW(), updated_at = NOW(), link_checked = FALSE
+            "UPDATE posts SET body = $1, sensitive = $3, title = $4, tags = $5, category = $6,
+                              edited_at = NOW(), updated_at = NOW(), link_checked = FALSE
              WHERE id = $2",
         )
         .bind(body)
         .bind(*id)
         .bind(sensitive)
-        .bind(title),
+        .bind(title)
+        .bind(tags)
+        .bind(category),
         RemoteObject::Comment(id) => {
             sqlx::query("UPDATE comments SET body = $1, sensitive = $3, edited_at = NOW(), updated_at = NOW() WHERE id = $2")
                 .bind(body)
@@ -1194,10 +1316,16 @@ async fn to_posts(pool: &PgPool, rows: Vec<PgRow>) -> Result<Vec<Post>, sqlx::Er
         .iter()
         .map(|post| post.attachments.is_empty().then(|| crate::linkify::first_link(&post.body)).flatten())
         .collect();
-    let urls: Vec<String> = links.iter().flatten().cloned().collect();
+    // Articles: every link, for the cards in them.
+    let article_links: Vec<Vec<String>> = posts
+        .iter()
+        .map(|post| if post.is_article() { crate::markdown::links(&post.body) } else { Vec::new() })
+        .collect();
+    let urls: Vec<String> = links.iter().flatten().chain(article_links.iter().flatten()).cloned().collect();
     let previews = preview::find_many(pool, &urls).await?;
-    for (post, link) in posts.iter_mut().zip(links) {
+    for ((post, link), article_links) in posts.iter_mut().zip(links).zip(article_links) {
         post.preview = link.and_then(|link| previews.get(&link).cloned());
+        post.link_previews = article_links.iter().filter_map(|link| previews.get(link).cloned()).collect();
     }
     Ok(posts)
 }
@@ -1205,6 +1333,122 @@ async fn to_posts(pool: &PgPool, rows: Vec<PgRow>) -> Result<Vec<Post>, sqlx::Er
 /// Public posts of everyone here and of communities, and the viewer's own
 /// private ones. Posts of the communities the viewer ignores are left out, and
 /// posts of accounts followed from other servers only go to the feed.
+/// Posts with the hashtag `tag` (lowercase, see `hashtag::normalize`) in
+/// their text or title, or given apart (`tags`), newest first. `tag` has
+/// only letters, digits and `_`: safe in the regular expression.
+pub async fn by_tag(pool: &PgPool, viewer_id: Option<i32>, tag: &str, limit: i64) -> Result<Vec<Post>, sqlx::Error> {
+    let pattern = format!("(^|[^[:alnum:]_&/#])#{tag}([^[:alnum:]_]|$)");
+    let rows = sqlx::query(concat!(
+        post_select!("NULL::text", "NULL::text"),
+        " WHERE ",
+        post_visible!(),
+        " AND (p.body ~* $2 OR p.title ~* $2 OR (' ' || p.tags || ' ') LIKE '% ' || $3 || ' %')
+         ORDER BY p.created_at DESC, p.id DESC
+         LIMIT $4"
+    ))
+    .bind(viewer_id)
+    .bind(pattern)
+    .bind(tag)
+    .bind(limit)
+    .fetch_all(pool)
+    .await?;
+    to_posts(pool, rows).await
+}
+
+/// Posts found by the search bar, of here and of other servers already
+/// received, newest first: `words` in their text or title.
+pub async fn search(pool: &PgPool, viewer_id: Option<i32>, words: &str, kind: SearchKind, limit: i64) -> Result<Vec<Post>, sqlx::Error> {
+    let pattern = format!("%{}%", crate::entities::user::escape_like(words.trim()));
+    let rows = sqlx::query(concat!(
+        post_select!("NULL::text", "NULL::text"),
+        " WHERE ",
+        post_visible!(),
+        " AND (p.body ILIKE $2 OR p.title ILIKE $2)
+          AND ($4 = 'all'
+               OR ($4 = 'posts' AND p.kind = 'post' AND p.title IS NULL)
+               OR ($4 = 'articles' AND p.kind = 'post' AND p.title IS NOT NULL)
+               OR ($4 = 'videos' AND p.kind = 'video' AND p.media_status = 'ready'))
+         ORDER BY p.created_at DESC, p.id DESC
+         LIMIT $3"
+    ))
+    .bind(viewer_id)
+    .bind(pattern)
+    .bind(limit)
+    .bind(kind.as_str())
+    .fetch_all(pool)
+    .await?;
+    to_posts(pool, rows).await
+}
+
+/// Which posts a search looks at, see `search`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SearchKind {
+    All,
+    /// Posts and photo posts, not articles nor videos.
+    Posts,
+    Articles,
+    Videos,
+}
+
+impl SearchKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::All => "all",
+            Self::Posts => "posts",
+            Self::Articles => "articles",
+            Self::Videos => "videos",
+        }
+    }
+}
+
+/// A hashtag found by the search, with how many posts use it.
+pub struct FoundTag {
+    pub tag: String,
+    pub uses: i64,
+}
+
+impl FoundTag {
+    pub fn path(&self) -> String {
+        crate::hashtag::path(&self.tag)
+    }
+}
+
+/// The hashtags containing `words` (`game` finds `#videogames`) in the
+/// posts the viewer can see, of here and of other servers known here, the
+/// most used first. The trigram index of the texts finds the posts fast.
+pub async fn search_tags(pool: &PgPool, viewer_id: Option<i32>, words: &str, limit: i64) -> Result<Vec<FoundTag>, sqlx::Error> {
+    let words = crate::entities::user::escape_like(&words.trim().trim_start_matches('#').to_lowercase());
+    let rows = sqlx::query(concat!(
+        "SELECT LOWER(m[1]) AS tag, COUNT(DISTINCT p.id) AS uses
+         FROM posts p
+         LEFT JOIN communities cm ON cm.id = p.community_id
+         CROSS JOIN LATERAL regexp_matches(
+             COALESCE(p.title, '') || ' ' || p.body || ' ' || regexp_replace(p.tags, '(\\S+)', '#\\1', 'g'),
+             '(?:^|[^[:alnum:]_&/#])#([[:alnum:]_]+)', 'g') m
+         WHERE ",
+        post_visible!(),
+        " AND (p.body ILIKE '%' || $2 || '%' OR p.title ILIKE '%' || $2 || '%' OR p.tags ILIKE '%' || $2 || '%')
+          AND LOWER(m[1]) LIKE '%' || $2 || '%'
+         GROUP BY 1
+         ORDER BY uses DESC, tag
+         LIMIT $3"
+    ))
+    .bind(viewer_id)
+    .bind(&words)
+    .bind(limit)
+    .fetch_all(pool)
+    .await?;
+    let mut found = Vec::new();
+    for row in &rows {
+        let tag: String = row.try_get("tag")?;
+        // Only real hashtags: with a letter, not too long (see `hashtag`).
+        if let Some(tag) = crate::hashtag::normalize(&tag) {
+            found.push(FoundTag { tag, uses: row.try_get("uses")? });
+        }
+    }
+    Ok(found)
+}
+
 pub async fn timeline(pool: &PgPool, viewer_id: Option<i32>) -> Result<Vec<Post>, sqlx::Error> {
     let rows = sqlx::query(concat!(
         post_select!("NULL::text", "NULL::text"),

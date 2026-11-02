@@ -302,6 +302,18 @@ pub async fn register(
         return page.with_errors(StatusCode::INTERNAL_SERVER_ERROR, vec![server_error()]);
     };
     account.password_hash = password_hash;
+    // Throwaway addresses of fake accounts, see `entities::email_domain`.
+    match crate::entities::email_domain::is_blocked(pool, &account.email).await {
+        Ok(false) => {}
+        Ok(true) => {
+            let error = FormError::field("email", "Accounts can't be made with addresses of this domain. Use another email.");
+            return page.with_errors(StatusCode::BAD_REQUEST, vec![error]);
+        }
+        Err(err) => {
+            tracing::error!("failed to check the email domain: {}", err);
+            return page.with_errors(StatusCode::INTERNAL_SERVER_ERROR, vec![server_error()]);
+        }
+    }
 
     let created = match user::create_account(pool, &account).await {
         Ok(created) => created,

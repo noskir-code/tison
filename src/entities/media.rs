@@ -44,7 +44,14 @@ pub const ATTACHMENTS_TABLE: Table = Table {
         Column::new("comment_id", "BIGINT")
             .nullable()
             .references("comments(id) ON DELETE CASCADE"),
+        // Photos and files of a private message, see `handlers::messenger`.
+        Column::new("message_id", "BIGINT")
+            .nullable()
+            .references("messages(id) ON DELETE CASCADE"),
         Column::new("url", "TEXT"),
+        // A cropped photo's original (cleaned like it), never shown nor
+        // sent: cropped again from it, see `handlers::post::crop_photo`.
+        Column::new("original_url", "TEXT").nullable(),
         Column::new("media_type", "TEXT").default("''"),
         // The alt text written by the author.
         Column::new("description", "TEXT").default("''"),
@@ -55,6 +62,7 @@ pub const ATTACHMENTS_TABLE: Table = Table {
     indexes: &[
         Index::new("attachments_post_idx", "post_id, position"),
         Index::new("attachments_comment_idx", "comment_id, position"),
+        Index::new("attachments_message_idx", "message_id, position"),
     ],
 };
 
@@ -175,6 +183,8 @@ pub enum MediaKind {
 #[derive(Clone, Debug)]
 pub struct Attachment {
     pub url: String,
+    /// The picture it was cropped from, when it was.
+    pub original_url: Option<String>,
     pub media_type: String,
     pub description: String,
     pub width: Option<i32>,
@@ -185,6 +195,7 @@ impl Attachment {
     fn from_row(row: &PgRow) -> Result<Self, sqlx::Error> {
         Ok(Self {
             url: row.try_get("url")?,
+            original_url: row.try_get("original_url")?,
             media_type: row.try_get("media_type")?,
             description: row.try_get("description")?,
             width: row.try_get("width")?,
@@ -269,6 +280,8 @@ pub fn layout(attachments: &[Attachment]) -> &'static str {
 /// An attachment read from a note, before it's saved.
 pub struct NewAttachment {
     pub url: String,
+    /// The original of a cropped photo, see `Attachment::original_url`.
+    pub original_url: Option<String>,
     pub media_type: String,
     pub description: String,
     pub width: Option<i32>,
@@ -280,6 +293,7 @@ impl NewAttachment {
     pub fn new(url: String, media_type: String, description: &str, width: Option<i32>, height: Option<i32>) -> Self {
         Self {
             url,
+            original_url: None,
             media_type,
             description: description.trim().chars().take(DESCRIPTION_MAX_CHARS).collect(),
             width,
@@ -308,7 +322,10 @@ pub async fn remove_local_files(urls: &[String]) {
 
 /// The photos uploaded here for a post.
 pub async fn local_files(pool: &PgPool, post_id: i64) -> Result<Vec<String>, sqlx::Error> {
-    sqlx::query_scalar("SELECT url FROM attachments WHERE post_id = $1 AND url LIKE '/public/uploads/%'")
+    sqlx::query_scalar(
+        "SELECT url FROM attachments WHERE post_id = $1 AND url LIKE '/public/uploads/%'
+         UNION SELECT original_url FROM attachments WHERE post_id = $1 AND original_url LIKE '/public/uploads/%'",
+    )
         .bind(post_id)
         .fetch_all(pool)
         .await
@@ -319,24 +336,27 @@ pub async fn local_files(pool: &PgPool, post_id: i64) -> Result<Vec<String>, sql
 pub enum Owner {
     Post(i64),
     Comment(i64),
+    Message(i64),
 }
 
-/// Replaces the attachments of a post or comment (an edit can change them).
+/// Replaces the attachments of a post, comment or message (an edit can change them).
 pub async fn save_attachments(pool: &PgPool, owner: Owner, attachments: &[NewAttachment]) -> Result<(), sqlx::Error> {
-    let (post_id, comment_id) = match owner {
-        Owner::Post(id) => (Some(id), None),
-        Owner::Comment(id) => (None, Some(id)),
+    let (post_id, comment_id, message_id) = match owner {
+        Owner::Post(id) => (Some(id), None, None),
+        Owner::Comment(id) => (None, Some(id), None),
+        Owner::Message(id) => (None, None, Some(id)),
     };
     let mut transaction = pool.begin().await?;
-    sqlx::query("DELETE FROM attachments WHERE post_id = $1 OR comment_id = $2")
+    sqlx::query("DELETE FROM attachments WHERE post_id = $1 OR comment_id = $2 OR message_id = $3")
         .bind(post_id)
         .bind(comment_id)
+        .bind(message_id)
         .execute(&mut *transaction)
         .await?;
     for (position, attachment) in attachments.iter().take(MAX_ATTACHMENTS).enumerate() {
         sqlx::query(
-            "INSERT INTO attachments (post_id, comment_id, url, media_type, description, width, height, position)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+            "INSERT INTO attachments (post_id, comment_id, message_id, url, media_type, description, width, height, position, original_url)
+             VALUES ($1, $2, $9, $3, $4, $5, $6, $7, $8, $10)",
         )
         .bind(post_id)
         .bind(comment_id)
@@ -346,6 +366,8 @@ pub async fn save_attachments(pool: &PgPool, owner: Owner, attachments: &[NewAtt
         .bind(attachment.width)
         .bind(attachment.height)
         .bind(position as i32)
+        .bind(message_id)
+        .bind(&attachment.original_url)
         .execute(&mut *transaction)
         .await?;
         if is_local(&attachment.url) {
@@ -366,7 +388,7 @@ pub async fn for_posts(pool: &PgPool, post_ids: &[i64]) -> Result<HashMap<i64, V
         return Ok(HashMap::new());
     }
     let rows = sqlx::query(
-        "SELECT post_id AS owner_id, url, media_type, description, width, height FROM attachments
+        "SELECT post_id AS owner_id, url, original_url, media_type, description, width, height FROM attachments
          WHERE post_id = ANY($1) ORDER BY position, id",
     )
     .bind(post_ids)
@@ -375,13 +397,71 @@ pub async fn for_posts(pool: &PgPool, post_ids: &[i64]) -> Result<HashMap<i64, V
     group(&rows)
 }
 
+/// Replaces the picture of a post's photo at `position` (from 0, in order)
+/// by one cropped from its original, its description kept. A photo never
+/// cropped is its own original: it's kept as such. Returns the address it
+/// had, when that file isn't needed anymore (`Some(None)`: kept).
+pub async fn replace_photo(
+    pool: &PgPool,
+    post_id: i64,
+    position: i64,
+    url: &str,
+    media_type: &str,
+    width: Option<i32>,
+    height: Option<i32>,
+) -> Result<Option<Option<String>>, sqlx::Error> {
+    let found: Option<(i64, String, Option<String>)> =
+        sqlx::query_as("SELECT id, url, original_url FROM attachments WHERE post_id = $1 ORDER BY position, id OFFSET $2 LIMIT 1")
+            .bind(post_id)
+            .bind(position)
+            .fetch_optional(pool)
+            .await?;
+    let Some((id, old, original)) = found else {
+        return Ok(None);
+    };
+    sqlx::query(
+        "UPDATE attachments SET url = $2, media_type = $3, width = $4, height = $5, original_url = COALESCE(original_url, $6)
+         WHERE id = $1",
+    )
+    .bind(id)
+    .bind(url)
+    .bind(media_type)
+    .bind(width)
+    .bind(height)
+    .bind(&old)
+    .execute(pool)
+    .await?;
+    Ok(Some(original.is_some().then_some(old)))
+}
+
+/// Attachments of these messages, in order.
+pub async fn for_messages(pool: &PgPool, message_ids: &[i64]) -> Result<HashMap<i64, Vec<Attachment>>, sqlx::Error> {
+    if message_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let rows = sqlx::query(
+        "SELECT message_id AS owner_id, url, original_url, media_type, description, width, height FROM attachments
+         WHERE message_id = ANY($1) ORDER BY position, id",
+    )
+    .bind(message_ids)
+    .fetch_all(pool)
+    .await?;
+    group(&rows)
+}
+
+/// The files saved here of a message, to remove with it.
+pub async fn local_files_of_message(pool: &PgPool, message_id: i64) -> Result<Vec<String>, sqlx::Error> {
+    let urls: Vec<String> = sqlx::query_scalar("SELECT url FROM attachments WHERE message_id = $1").bind(message_id).fetch_all(pool).await?;
+    Ok(urls.into_iter().filter(|url| is_local(url)).collect())
+}
+
 /// Attachments of these comments, in order.
 pub async fn for_comments(pool: &PgPool, comment_ids: &[i64]) -> Result<HashMap<i64, Vec<Attachment>>, sqlx::Error> {
     if comment_ids.is_empty() {
         return Ok(HashMap::new());
     }
     let rows = sqlx::query(
-        "SELECT comment_id AS owner_id, url, media_type, description, width, height FROM attachments
+        "SELECT comment_id AS owner_id, url, original_url, media_type, description, width, height FROM attachments
          WHERE comment_id = ANY($1) ORDER BY position, id",
     )
     .bind(comment_ids)
@@ -410,6 +490,7 @@ mod tests {
     #[test]
     fn kind_from_type_or_extension() {
         let attachment = |url: &str, media_type: &str| Attachment {
+            original_url: None,
             url: url.to_string(),
             media_type: media_type.to_string(),
             description: String::new(),
@@ -425,6 +506,7 @@ mod tests {
     #[test]
     fn up_to_four_pictures_make_a_gallery() {
         let attachment = |url: &str| Attachment {
+            original_url: None,
             url: url.to_string(),
             media_type: String::new(),
             description: String::new(),

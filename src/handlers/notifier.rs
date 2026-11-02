@@ -24,7 +24,7 @@ use crate::{
         federation::{self as store, RemoteActor, Signer},
         message,
         post::{self, Post, Reaction, Toggled},
-        user::User,
+        user::{self, User},
     },
 };
 
@@ -244,12 +244,25 @@ pub async fn post_created(state: &AppState, pool: &PgPool, post_id: i64) {
 /// The user's profile changed, like the name it shows: their followers'
 /// servers (Mastodon, Hubzilla...) are sent it again.
 pub async fn profile_updated(state: &AppState, pool: &PgPool, user: &User) {
+    if user.is_federated() {
+        send_person(state, pool, user).await;
+    }
+}
+
+/// The account was banned, suspended or reinstated: its followers' servers
+/// are sent its Person with `suspended`, which Mastodon follows.
+pub async fn account_status_changed(state: &AppState, pool: &PgPool, user_id: i32) {
+    match user::find_by_id(pool, user_id).await {
+        Ok(Some(user)) if user.federation_enabled => send_person(state, pool, &user).await,
+        Ok(_) => {}
+        Err(err) => tracing::warn!("failed to load user {}: {}", user_id, err),
+    }
+}
+
+async fn send_person(state: &AppState, pool: &PgPool, user: &User) {
     let Some(federation) = state.federation.as_deref() else {
         return;
     };
-    if !user.is_federated() {
-        return;
-    }
     let public_pem = match linker::keys(pool, Signer::User(user.id)).await {
         Ok((_, public_pem, _)) => public_pem,
         Err(err) => {
@@ -506,6 +519,46 @@ pub async fn community_deleting(state: &AppState, pool: &PgPool, community: &Com
     deletions
 }
 
+/// An account about to be deleted by the staff: its followers' servers are
+/// sent the Delete of its Person, signed with its key, at once like
+/// `community_deleting` (its queued deliveries go with it).
+pub async fn user_deleting(state: &AppState, pool: &PgPool, user: &User) {
+    let Some(federation) = state.federation.clone() else {
+        return;
+    };
+    if !user.federation_enabled {
+        return;
+    }
+    let audience = Audience {
+        users: vec![user.id],
+        ..Audience::default()
+    };
+    let inboxes = match audience.inboxes(pool).await {
+        Ok(inboxes) if !inboxes.is_empty() => inboxes,
+        Ok(_) => return,
+        Err(err) => {
+            tracing::warn!("failed to load the followers of @{}: {}", user.username, err);
+            return;
+        }
+    };
+    let key = match linker::local_key(&federation, pool, Signer::User(user.id)).await {
+        Ok(key) => key,
+        Err(err) => {
+            tracing::warn!("failed to load the key of @{}: {}", user.username, err);
+            return;
+        }
+    };
+    let delete = activities::delete_person(&federation, user).to_string();
+    let username = user.username.clone();
+    tokio::spawn(async move {
+        for inbox in inboxes {
+            if let Err(linker::SendError::Retry(err) | linker::SendError::GiveUp(err)) = linker::send(&federation, &key, &inbox, &delete).await {
+                tracing::info!("failed to tell {} that @{} was deleted: {}", inbox, username, err);
+            }
+        }
+    });
+}
+
 /// A local user follows an account of another server. The follow waits for
 /// its Accept, see `API::activities::receive`.
 pub async fn follow(federation: &Federation, pool: &PgPool, user: &User, actor: &RemoteActor) -> Result<(), String> {
@@ -540,6 +593,7 @@ pub async fn message_sent(
     conversation: &message::Conversation,
     message_id: i64,
     body: &str,
+    attachments: &[crate::entities::media::NewAttachment],
     sent_at: &sqlx::types::chrono::DateTime<sqlx::types::chrono::Utc>,
 ) {
     let Some(federation) = state.federation.as_deref() else {
@@ -551,7 +605,7 @@ pub async fn message_sent(
     let Some(inbox) = remote_inbox(pool, &to.actor_id).await else {
         return;
     };
-    let activity = activities::direct_message(federation, sender, to, message_id, body, sent_at, conversation.remote_kind == "chat");
+    let activity = activities::direct_message(federation, sender, to, message_id, body, attachments, sent_at, conversation.remote_kind == "chat");
     queue_to(federation, pool, Signer::User(sender.id), &[inbox], &activity).await;
 }
 

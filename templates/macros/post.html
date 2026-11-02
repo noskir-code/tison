@@ -1,4 +1,5 @@
 {% import "macros/upload.html" as upload_ui %}
+{% import "macros/emoji.html" as emoji_ui %}
 {# Buttons writing the Markdown of an article (see src/markdown.rs) around
    the selection, or where the cursor is, in the textarea `target`. Shown by
    assets/system.js: without JavaScript the Markdown is written by hand. #}
@@ -23,6 +24,7 @@
     <input type="file" accept="image/jpeg,image/png,image/gif,image/webp" multiple hidden data-picture-file />
     {% endif %}
     <button type="button" data-format="line" title="{{ "Separating line"|t }}" aria-label="{{ "Separating line"|t }}">―</button>
+    {% call emoji_ui::emoji_button(target) %}{% endcall %}
     <span class="markdown-toolbar-status" role="status" data-picture-status></span>
 </div>
 {% endmacro %}
@@ -86,6 +88,10 @@
             <p class="post-username" data-upload-status hidden></p>
         </div>
         {% endif %}
+        {# Emojis, see macros/emoji.html. #}
+        <div class="composer-tools">
+            {% call emoji_ui::emoji_button("post-body") %}{% endcall %}
+        </div>
         <div class="flex center space-between">
             <label>
                 {{ "Who can see it"|t }}
@@ -95,6 +101,21 @@
                     {% endfor %}
                 </select>
             </label>
+            {% if let Some(team) = composer.team %}
+            {# The staff posts as the moderation team, see handlers::post::create_post. #}
+            {% if composer.team_only %}
+            <input type="hidden" name="author" value="team" />
+            <span class="post-username">{{ "Published as @{}"|tf(team) }}</span>
+            {% else %}
+            <label>
+                {{ "Post as"|t }}
+                <select name="author">
+                    <option value="me">{{ "You"|t }}</option>
+                    <option value="team">@{{ team }}</option>
+                </select>
+            </label>
+            {% endif %}
+            {% endif %}
             <button type="submit" class="button">{{ "Publish"|t }}</button>
         </div>
     </form>
@@ -142,6 +163,21 @@
                     {% endfor %}
                 </select>
             </label>
+            {% if let Some(team) = composer.team %}
+            {# The staff posts as the moderation team, see handlers::post::create_post. #}
+            {% if composer.team_only %}
+            <input type="hidden" name="author" value="team" />
+            <span class="post-username">{{ "Published as @{}"|tf(team) }}</span>
+            {% else %}
+            <label>
+                {{ "Post as"|t }}
+                <select name="author">
+                    <option value="me">{{ "You"|t }}</option>
+                    <option value="team">@{{ team }}</option>
+                </select>
+            </label>
+            {% endif %}
+            {% endif %}
             <button type="submit" class="button">{{ "Publish the article"|t }}</button>
         </div>
     </form>
@@ -241,7 +277,7 @@
         <a href="{{ url }}" class="action" rel="nofollow noopener">{{ "Original"|t }}</a>
         {% endif %}
 
-        {% if signed_in && !post.is_own %}
+        {% if signed_in && !post.is_own && !post.author.is_team() %}
         <a href="/report?post={{ post.id }}" class="action report-link">{{ "Report"|t }}</a>
         {% endif %}
 
@@ -559,7 +595,7 @@
 {% if let Some(playlist) = post.live_playlist %}
 {# The same player as videos, without the position: always live. #}
 <div class="video-frame live" data-player data-player-live>
-    <video class="live-player" controls playsinline data-live-player="{{ playlist }}"{% if let Some(poster) = post.poster() %} poster="{{ poster }}"{% endif %} data-player-video></video>
+    <video class="live-player" controls controlslist="nodownload" playsinline data-live-player="{{ playlist }}"{% if let Some(poster) = post.poster() %} poster="{{ poster }}"{% endif %} data-player-video></video>
     <p class="live-waiting" data-live-waiting>{{ "Starting the stream…"|t }}</p>
     {% call player_chrome(post, true) %}{% endcall %}
 </div>
@@ -574,7 +610,7 @@
    ours (`setupPlayers` in system.js) at the bottom, like PeerTube's. #}
 {# `data-view`: where the player counts a view, see `setupPlayers`. #}
 <div class="video-frame{% if post.sensitive %} sensitive{% endif %}" data-player{% if post.is_video() %} data-view="/posts/{{ post.id }}/view"{% endif %}>
-    <video controls preload="metadata" playsinline src="{{ url }}"{% if let Some(poster) = post.poster() %} poster="{{ poster }}"{% endif %}{% if post.video_files.len() > 1 %} data-quality-video{% endif %} data-player-video></video>
+    <video controls controlslist="nodownload" preload="metadata" playsinline src="{{ url }}"{% if let Some(poster) = post.poster() %} poster="{{ poster }}"{% endif %}{% if post.video_files.len() > 1 %} data-quality-video{% endif %} data-player-video></video>
     {% if post.sensitive %}
     <label class="media-cover">
         <input type="checkbox" class="media-reveal visually-hidden" />
@@ -584,19 +620,6 @@
     {% endif %}
     {% call player_chrome(post, false) %}{% endcall %}
 </div>
-{# Every quality to download, without JavaScript too. #}
-{% if !post.video_files.is_empty() %}
-<div class="video-tools">
-    <details class="video-downloads">
-        <summary>{{ "Download"|t }}</summary>
-        <ul>
-            {% for file in post.video_files %}
-            <li><a href="{{ file.url }}" download>{{ file.label() }}</a> <span class="post-meta">{{ file.width }}×{{ file.height }} · {{ file.size_label() }}</span></li>
-            {% endfor %}
-        </ul>
-    </details>
-</div>
-{% endif %}
 {% endif %}
 {% else if let Some(link) = post.ap_url %}
 <a href="{{ link }}" class="video-elsewhere" rel="nofollow noopener noreferrer" target="_blank">
@@ -635,11 +658,13 @@
     {% else %}
     <h2 class="media-title">{% if post.is_on_air() %}<span class="live-dot" aria-hidden="true"></span>{% endif %}<a href="/posts/{{ post.id }}{% if post.is_video() %}?play{% endif %}">{{ post.title_text() }}</a></h2>
     {% endif %}
-    {% if let Some(duration) = post.duration_label() %}<p class="post-meta media-meta">{% if post.is_video() %}{{ "Video"|t }}{% else %}{{ "Live replay"|t }}{% endif %} · {{ duration }}{% if post.is_video() %} · {{ post.views_label() }}{% endif %}</p>{% endif %}
+    {% if let Some(duration) = post.duration_label() %}<p class="post-meta media-meta">{% if post.is_video() %}{{ "Video"|t }}{% else %}{{ "Live replay"|t }}{% endif %} · {{ duration }}{% if post.is_video() %} · {{ post.views_label() }}{% endif %}{% if let Some(category) = post.category_name() %} <a href="/videos?category={{ post.category.unwrap_or_default() }}" class="category-badge" title="{{ "More videos of this category"|t }}">{{ category|t }}</a>{% endif %}</p>
+    {% else if let Some(category) = post.category_name() %}<p class="post-meta media-meta"><a href="/videos?category={{ post.category.unwrap_or_default() }}" class="category-badge" title="{{ "More videos of this category"|t }}">{{ category|t }}</a></p>{% endif %}
     {% endif %}
     {% if !post.body.is_empty() %}
     <p class="post-body" id="post-{{ post.id }}-body"{% if !full %} data-collapsible{% endif %}>{{ post.body_html()|safe }}</p>
     {% endif %}
+    {% call extra_tags(post) %}{% endcall %}
     {% call post_actions(post, signed_in, return_to, moderate) %}{% endcall %}
 </article>
 {% endmacro %}
@@ -728,6 +753,17 @@
    `moderate` shows "Remove" to the moderators of the post's community.
    Posts of only photos look like on Pixelfed: the photos, the actions, then
    the caption under the author's name. #}
+{# Hashtags given apart from the text (PeerTube's), see `Post::extra_tags`. #}
+{% macro extra_tags(post) %}
+{% if !post.extra_tags.is_empty() %}
+<p class="post-tags">
+    {% for tag in post.extra_tag_list() %}
+    <a href="{{ crate::hashtag::path(tag) }}" class="mention hashtag" rel="tag">#{{ tag }}</a>
+    {% endfor %}
+</p>
+{% endif %}
+{% endmacro %}
+
 {% macro post_card(post, signed_in, return_to, collapse, moderate) %}
 {% if post.is_event() %}
 {% call event_card(post, signed_in, return_to, moderate) %}{% endcall %}
@@ -749,6 +785,7 @@
     {% if !post.body.is_empty() %}
     <p class="post-body photo-caption" id="post-{{ post.id }}-body"{% if collapse %} data-collapsible{% endif %}><a href="{{ post.author.profile_url() }}" class="photo-caption-author">{{ post.author.display_name() }}</a> {{ post.body_html()|safe }}</p>
     {% endif %}
+    {% call extra_tags(post) %}{% endcall %}
 </article>
 {% else %}
 <article class="box content post" id="post-{{ post.id }}">
@@ -762,6 +799,7 @@
     {% if !post.body.is_empty() %}
     <p class="post-body" id="post-{{ post.id }}-body"{% if collapse %} data-collapsible{% endif %}>{{ post.body_html()|safe }}</p>
     {% endif %}
+    {% call extra_tags(post) %}{% endcall %}
     {% call attachments(post.attachments.as_slice(), post.sensitive) %}{% endcall %}
     {# The card of its first link, see src/preview.rs. #}
     {% if let Some(preview) = post.preview %}

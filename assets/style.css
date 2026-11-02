@@ -14,12 +14,12 @@
    see base.html and system.js). The two dark blocks must stay the same. */
 :root {
     color-scheme: light;
-    --main: hsl(200, 23%, 96.5%);
+    --main: white;
     --text: black;
     --light-text: hsl(0, 0%, 30%);
     --button: hsl(200, 23%, 90%);
     --text-button: black;
-    --background: white;
+    --background: hsl(200, 23%, 96.5%);
     --error: hsl(0, 70%, 45%);
     --danger: hsl(0, 70%, 40%);
     --success: hsl(140, 50%, 35%);
@@ -2060,6 +2060,61 @@ body:has(.conversation) {
     padding: 0.55em 1.2em;
 }
 
+/* Under the message: photos, camera, files and emojis (handlers/messenger.rs). */
+.message-tools {
+    display: flex;
+    flex-basis: 100%;
+    align-items: center;
+    gap: 0.2em;
+}
+
+.message-tool {
+    width: auto;
+    padding: 0.2em 0.45em;
+    border: none;
+    border-radius: 0.3em;
+    background: none;
+    font-size: 1.2em;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.message-tool:hover,
+.message-tool:focus-within {
+    background-color: var(--button);
+}
+
+.message-form .file-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4em 0.8em;
+}
+
+.file-list li {
+    display: flex;
+    align-items: center;
+    gap: 0.3em;
+}
+
+.file-list img {
+    width: 3.5em;
+    height: 3.5em;
+    object-fit: cover;
+    border-radius: 0.3em;
+}
+
+/* At the bottom of the conversation: the emojis open above their button. */
+.message-tools .emoji-panel {
+    top: auto;
+    bottom: 100%;
+    margin-bottom: 0.3em;
+}
+
+/* Photos and files in a message's bubble. */
+.message-bubble .attachments {
+    margin-top: 0.3em;
+}
+
 @media (prefers-reduced-motion: reduce) {
     .message.arriving {
         animation: none;
@@ -2237,6 +2292,17 @@ body:has(.conversation) {
     margin: 0;
 }
 
+/* The length of a suspension, then its button. */
+.report-actions .suspend-form {
+    display: flex;
+    align-items: center;
+    gap: 0.3em;
+}
+
+.suspend-form select {
+    width: auto;
+}
+
 .button.danger {
     background-color: var(--button);
 }
@@ -2372,6 +2438,407 @@ body:has(.conversation) {
 /* Configuration tab: the files, read-only. */
 .config-file + .config-file {
     margin-top: 2em;
+}
+
+/* Emojis (macros/emoji.html): a panel under their button. */
+.emoji-picker {
+    position: relative;
+    display: inline-flex;
+}
+
+.emoji-toggle {
+    width: auto;
+    padding: 0.2em 0.45em;
+    border: none;
+    border-radius: 0.3em;
+    background: none;
+    font-size: 1.2em;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.emoji-toggle:hover,
+.emoji-toggle[aria-expanded="true"] {
+    background-color: var(--button);
+}
+
+.emoji-panel {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4em;
+    width: min(22em, calc(100vw - 2em));
+    padding: 0.5em;
+    border: solid 0.1em var(--button);
+    border-radius: 0.5em;
+    background-color: var(--main);
+    box-shadow: 0 0.3em 1em rgba(0, 0, 0, 0.2);
+}
+
+.emoji-panel[hidden] {
+    display: none;
+}
+
+/* Unicode's categories, and the recent ones first. */
+.emoji-categories {
+    display: flex;
+    justify-content: space-between;
+    border-bottom: solid 0.1em var(--button);
+    padding-bottom: 0.3em;
+}
+
+.emoji-categories button,
+.emoji-grid button {
+    width: 2em;
+    height: 2em;
+    padding: 0;
+    border: none;
+    border-radius: 0.3em;
+    background: none;
+    font-size: 1.1em;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.emoji-categories button:hover,
+.emoji-categories button:focus-visible,
+.emoji-grid button:hover,
+.emoji-grid button:focus-visible {
+    background-color: var(--button);
+}
+
+.emoji-search {
+    width: 100%;
+    padding: 0.35em 0.6em;
+    border: solid 0.1em var(--button);
+    border-radius: 0.4em;
+    background-color: var(--background);
+    color: var(--text);
+    font: inherit;
+}
+
+.emoji-list {
+    height: 15em;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.emoji-section h3 {
+    position: sticky;
+    top: 0;
+    margin: 0;
+    padding: 0.2em 0;
+    font-size: 0.8em;
+    color: var(--light-text);
+    background-color: var(--main);
+}
+
+/* The buttons' font is larger than the grid's: the columns count with it. */
+.emoji-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(2.3em, 1fr));
+}
+
+.emoji-grid button {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 1;
+}
+
+.emoji-empty {
+    margin: 0.5em 0;
+    color: var(--light-text);
+}
+
+/* The post form's files and emojis, under its photos. */
+.composer-tools {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4em 0.8em;
+    margin: 0.5em 0;
+}
+
+.file-list {
+    flex-basis: 100%;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.file-list li {
+    overflow-wrap: anywhere;
+}
+
+/* The cropping window (setupCropInputs in system.js): the picture, a frame
+   over it darkening the rest, the shapes and the buttons under it. */
+.crop-dialog {
+    max-width: min(48em, 96vw);
+    padding: 0.8em;
+    border: none;
+    border-radius: 0.6em;
+    background-color: var(--main);
+    color: var(--text);
+}
+
+.crop-dialog::backdrop {
+    background: rgba(0, 0, 0, 0.6);
+}
+
+.crop-stage {
+    position: relative;
+    width: fit-content;
+    margin: 0 auto;
+    overflow: hidden;
+    touch-action: none;
+    user-select: none;
+}
+
+.crop-stage > img {
+    display: block;
+    max-width: min(46em, calc(96vw - 1.6em));
+    max-height: 65vh;
+}
+
+.crop-frame {
+    position: absolute;
+    box-sizing: border-box;
+    border: solid 0.15em white;
+    outline: dashed 0.1em rgba(0, 0, 0, 0.6);
+    box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.55);
+    cursor: move;
+}
+
+.crop-frame:focus-visible {
+    outline: solid 0.2em var(--chart-line);
+}
+
+/* The corner that resizes it, inside the frame (the picture's edges cut
+   what's outside), large enough for a finger. */
+.crop-handle {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: 1.6em;
+    height: 1.6em;
+    border: solid 0.15em white;
+    border-radius: 50%;
+    background-color: var(--chart-line);
+    cursor: nwse-resize;
+}
+
+.crop-ratios {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.4em;
+    margin-top: 0.7em;
+}
+
+/* One shape only (a photo, a banner): nothing to choose. */
+.crop-ratios[hidden] {
+    display: none;
+}
+
+.crop-ratios .button[aria-pressed="true"] {
+    background-color: var(--text);
+    color: var(--main);
+}
+
+.crop-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5em;
+    margin-top: 0.7em;
+}
+
+/* A photo post's photos on its edit page, each with "Crop". */
+.edit-photos ul {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6em;
+    margin: 0.3em 0 0.8em;
+    padding: 0;
+    list-style: none;
+}
+
+.edit-photos li {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.edit-photos img {
+    width: 7em;
+    height: 7em;
+    object-fit: cover;
+    border-radius: 0.4em;
+}
+
+/* The camera of the post form: its picture, and the buttons under it. */
+.camera-dialog {
+    max-width: min(40em, 95vw);
+    padding: 0.8em;
+    border: none;
+    border-radius: 0.6em;
+    background-color: var(--main);
+    color: var(--text);
+}
+
+.camera-dialog::backdrop {
+    background: rgba(0, 0, 0, 0.6);
+}
+
+.camera-dialog video {
+    display: block;
+    width: 100%;
+    max-height: 70vh;
+    border-radius: 0.4em;
+    background: black;
+}
+
+.camera-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5em;
+    margin-top: 0.6em;
+}
+
+/* The categories above the videos, like PeerTube's. */
+nav.video-categories {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4em;
+    height: auto;
+    margin: 0.5em 0 1em;
+}
+
+nav.video-categories a {
+    width: auto;
+    padding: 0.3em 0.8em;
+    border-radius: 1em;
+    background-color: var(--button);
+    color: var(--text-button);
+    font-size: 0.9em;
+    text-decoration: none;
+}
+
+nav.video-categories a.active {
+    background-color: var(--text);
+    color: var(--main);
+}
+
+/* A video's category, under its title: a pill like the choices of the
+   Videos page, leading to the videos of that category. */
+.category-badge {
+    display: inline-block;
+    margin-left: 0.4em;
+    padding: 0.1em 0.7em;
+    border-radius: 1em;
+    background-color: var(--button);
+    color: var(--text-button);
+    font-size: 0.9em;
+    font-weight: 600;
+    line-height: 1.6;
+    text-decoration: none;
+    vertical-align: baseline;
+}
+
+.category-badge:hover,
+.category-badge:focus-visible {
+    background-color: var(--text);
+    color: var(--main);
+}
+
+.media-meta > .category-badge:first-child {
+    margin-left: 0;
+}
+
+/* The search page: its tabs, the titles of the "All" tab with "See all",
+   and the hashtags found as pills with how many posts use them. */
+nav.search-tabs {
+    margin: 0.5em 0 0.5em;
+}
+
+nav.search-tabs a {
+    min-width: 5em;
+    padding: 0.6em 0.8em;
+}
+
+.search-section-title {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1em;
+}
+
+.search-section-title .action {
+    font-size: 0.65em;
+    font-weight: normal;
+}
+
+.search-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5em;
+    margin: 0.5em 0 1em;
+    padding: 0;
+    list-style: none;
+}
+
+.search-tag {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.4em;
+    padding: 0.35em 0.9em;
+    border-radius: 1em;
+    background-color: var(--button);
+    color: var(--text-button);
+    text-decoration: none;
+}
+
+.search-tag:hover,
+.search-tag:focus-visible {
+    background-color: var(--text);
+    color: var(--main);
+}
+
+.search-tag:hover .post-meta,
+.search-tag:focus-visible .post-meta {
+    color: inherit;
+}
+
+/* Hashtags: in the text, and those given apart under it (PeerTube's). */
+a.hashtag {
+    text-decoration: none;
+    font-weight: 600;
+}
+
+a.hashtag:hover {
+    text-decoration: underline;
+}
+
+.post-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.2em 0.7em;
+    margin: 0.4em 0;
+    font-size: 0.9em;
+}
+
+/* The Staff tab's form posting as the team account: its boxes sit in the
+   column like the others. */
+.team-composer {
+    display: contents;
+}
+
+.team-posts-title {
+    margin: 1.5em 0 0.5em;
+    font-size: 1.2em;
 }
 
 /* Terms of Use, Privacy Policy... in the Configuration tab, see entities/site_page.rs. */
@@ -3299,6 +3766,40 @@ see `composer` and `article_card` / `article_full` in macros/post.html.
     background-color: var(--button);
 }
 
+/* The small card of a link, under its paragraph in an article (see
+   Post::article_html): the interface's font, a small square picture. */
+.article-body .article-link-card {
+    max-width: 30em;
+    margin: -0.4em 0 1em;
+    font-size: 0.85em;
+    line-height: 1.35;
+}
+
+.article-body .article-link-card,
+.article-body .article-link-card :not(code, pre) {
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, sans-serif;
+}
+
+.article-body .article-link-card img.link-card-image {
+    width: 4.5em;
+    height: 4.5em;
+    max-height: none;
+    margin: 0;
+    border-radius: 0;
+}
+
+.article-body .article-link-card .link-card-text {
+    justify-content: center;
+    padding: 0.4em 0.7em;
+}
+
+.article-body .article-link-card .link-card-title {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
 /* A page of legal/ starting with its own `# Title`, shown as the page's. */
 .site-page .article-body > h1:first-child {
     font-size: 2em;
@@ -3850,37 +4351,6 @@ h1.media-title {
     width: 100%;
     height: 100%;
     object-fit: cover;
-}
-
-/* Under a video: its downloads, like PeerTube's. */
-.video-tools {
-    display: flex;
-    justify-content: flex-end;
-    margin: 0.25em 0 0.5em;
-    font-size: 0.9em;
-}
-
-.video-downloads {
-    margin-left: auto;
-}
-
-.video-downloads summary {
-    cursor: pointer;
-    color: var(--light-text);
-    text-align: right;
-}
-
-.video-downloads ul {
-    margin: 0.4em 0 0;
-    padding: 0;
-    list-style: none;
-}
-
-.video-downloads li {
-    display: flex;
-    justify-content: space-between;
-    gap: 1em;
-    padding: 0.15em 0;
 }
 
 /*

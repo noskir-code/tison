@@ -52,7 +52,6 @@
                         <label class="config-key" for="{{ file.id }}-{{ line.number }}">{{ line.key }}</label>
                         {% if line.boolean %}
                         <select id="{{ file.id }}-{{ line.number }}" name="line-{{ line.number }}" class="config-input">
-                            <option value=""{% if line.choice() == "" %} selected{% endif %}>{{ line.default_label()|t }}</option>
                             <option value="true"{% if line.choice() == "true" %} selected{% endif %}>true</option>
                             <option value="false"{% if line.choice() == "false" %} selected{% endif %}>false</option>
                         </select>

@@ -191,10 +191,12 @@ async fn actor(State(state): State<AppState>, Path(public_id): Path<i64>) -> Res
     let Some((federation, pool)) = enabled(&state) else {
         return not_found();
     };
-    let user = match federated_user(pool, public_id).await {
-        Ok(Some(user)) => user,
-        Ok(None) => return not_found(),
-        Err(response) => return response,
+    // Banned or suspended accounts are still served, marked `suspended`
+    // like on Mastodon: other servers check the Update telling them.
+    let user = match user::find_by_public_id(pool, public_id).await {
+        Ok(Some(user)) if user.federation_enabled => user,
+        Ok(_) => return not_found(),
+        Err(err) => return server_error("failed to load user", err),
     };
     match linker::keys(pool, Signer::User(user.id)).await {
         Ok((_, public_pem, _)) => activity_response(&activities::person(federation, &user, &public_pem)),

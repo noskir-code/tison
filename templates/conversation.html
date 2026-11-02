@@ -1,4 +1,4 @@
-{% extends "base.html" %} {% import "macros/message.html" as ui %} {% block content %}
+{% extends "base.html" %} {% import "macros/emoji.html" as emoji_ui %} {% import "macros/message.html" as ui %} {% block content %}
 <section class="box content conversation" data-conversation="{{ conversation.id }}">
     <header class="conversation-header">
         <a href="/messenger" class="action" aria-label="{{ "Back to the conversations"|t }}">←</a>
@@ -28,13 +28,30 @@
     {% if let Some(reason) = closed %}
     <p class="empty">{{ reason }}</p>
     {% else %}
-    <form action="/messenger/{{ conversation.id }}" method="post" class="message-form" id="composer">
+    <form action="/messenger/{{ conversation.id }}" method="post" enctype="multipart/form-data" class="message-form" id="composer">
         {% if let Some(message) = error %}
         <p class="error">{{ message|t }}</p>
         {% endif %}
         <label for="message-body" class="visually-hidden">{{ "Message"|t }}</label>
-        <textarea id="message-body" name="body" rows="2" maxlength="{{ body_max_chars }}" placeholder="{{ "Write a message..."|t }}" required data-message-input></textarea>
+        <textarea id="message-body" name="body" rows="2" maxlength="{{ body_max_chars }}" placeholder="{{ "Write a message..."|t }}" data-message-input></textarea>
         <button type="submit" class="button primary">{{ "Send"|t }}</button>
+        {# Photos (also from the camera) and files, see handlers/messenger.rs. #}
+        <div class="message-tools">
+            {% if crate::settings::services().image_sharing %}
+            <label class="photo-add message-tool" title="{{ "Add photos"|t }}">
+                🖼<span class="visually-hidden">{{ "Add photos"|t }}</span>
+                <input type="file" name="photos" accept="image/jpeg,image/png,image/gif,image/webp" multiple data-max="{{ max_attachments }}" data-file-input data-file-list-id="message-photos" />
+            </label>
+            <button type="button" class="message-tool" data-camera hidden title="{{ "Camera"|t }}" aria-label="{{ "Camera"|t }}">📷</button>
+            {% endif %}
+            <label class="photo-add message-tool" title="{{ "Attach a file"|t }}">
+                📎<span class="visually-hidden">{{ "Attach a file"|t }}</span>
+                <input type="file" name="files" accept="{{ crate::document::ACCEPTED }}" multiple data-max="{{ max_attachments }}" data-file-input data-file-list-id="message-files" />
+            </label>
+            {% call emoji_ui::emoji_button("message-body") %}{% endcall %}
+        </div>
+        <ul class="file-list" id="message-photos" hidden></ul>
+        <ul class="file-list" id="message-files" hidden></ul>
     </form>
     {% endif %}
 </section>

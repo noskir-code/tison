@@ -35,7 +35,7 @@ macro_rules! user_columns {
             $prefix, "birthday_public, ",
             $prefix, "photo_url, ", $prefix, "background_url, ", $prefix, "created_at, ",
             $prefix, "session_version, ", $prefix, "public_id, ",
-            $prefix, "federation_enabled, ", $prefix, "role, ", $prefix, "suspended_at, ",
+            $prefix, "federation_enabled, ", $prefix, "role, ", $prefix, "suspended_at, ", $prefix, "suspended_until, ", $prefix, "team, ",
             $prefix, "email_verified"
         )
     };
@@ -80,6 +80,10 @@ pub const TABLE: Table = Table {
         Column::new("photo_style", "TEXT").default("''"),
         Column::new("background_url", "TEXT").nullable(),
         Column::new("background_style", "TEXT").default("''"),
+        // The originals of the photo and background cropped in the browser,
+        // to crop them again: never shown nor sent, see `image_originals`.
+        Column::new("photo_original_url", "TEXT").nullable(),
+        Column::new("background_original_url", "TEXT").nullable(),
         // ActivityPub actor. Nullable until the keys and URLs are generated.
         Column::new("ap_id", "TEXT").nullable(),
         Column::new("ap_inbox", "TEXT").nullable(),
@@ -93,6 +97,10 @@ pub const TABLE: Table = Table {
         Column::new("federation_display_name_mode", "TEXT").default("'full_name'"),
         // Set by the site's staff: can't sign in, posts and profile hidden.
         Column::new("suspended_at", "TIMESTAMPTZ").nullable(),
+        // The account of the moderation team, see `sync_team_account`.
+        Column::new("team", "BOOLEAN").default("FALSE"),
+        // The end of a suspension; none with `suspended_at` is a ban, for good.
+        Column::new("suspended_until", "TIMESTAMPTZ").nullable(),
         Column::new("created_at", "TIMESTAMPTZ").default("NOW()"),
     ],
     indexes: &[
@@ -100,6 +108,9 @@ pub const TABLE: Table = Table {
         Index::unique("users_username_lower_idx", "LOWER(username)"),
         Index::unique(EMAIL_INDEX, "LOWER(email)"),
         Index::unique("users_public_id_idx", "public_id"),
+        // `search`: fast with ILIKE.
+        Index::trigram("users_username_trgm_idx", "username"),
+        Index::trigram("users_displayname_trgm_idx", "displayname"),
         Index::unique("users_email_verification_token_idx", "email_verification_token"),
         // Searching users by name.
         Index::new("users_displayname_lower_idx", "LOWER(displayname)"),
@@ -240,8 +251,12 @@ pub struct User {
     /// Whether other Fediverse servers can find and follow the account.
     pub federation_enabled: bool,
     pub role: Role,
-    /// Suspended by the staff, see `set_suspended`.
+    /// Banned or suspended by the staff, see `restrict`.
     pub suspended_at: Option<DateTime<Utc>>,
+    /// The end of a suspension, `None` for a ban.
+    pub suspended_until: Option<DateTime<Utc>>,
+    /// The account of the moderation team, see `sync_team_account`.
+    pub team: bool,
     /// The link sent to the email was opened, see `handlers::verify_email`.
     pub email_verified: bool,
 }
@@ -267,6 +282,8 @@ impl User {
             federation_enabled: row.try_get("federation_enabled")?,
             role: Role::parse(&row.try_get::<String, _>("role")?),
             suspended_at: row.try_get("suspended_at")?,
+            suspended_until: row.try_get("suspended_until")?,
+            team: row.try_get("team")?,
             email_verified: row.try_get("email_verified")?,
         })
     }
@@ -327,8 +344,19 @@ impl User {
         self.role == Role::Admin
     }
 
+    /// Banned, or suspended and not yet at its end.
     pub fn is_suspended(&self) -> bool {
-        self.suspended_at.is_some()
+        self.suspended_at.is_some() && self.suspended_until.is_none_or(|until| until > Utc::now())
+    }
+
+    /// `@alice@tison.social`: the username with the site's domain.
+    pub fn handle(&self) -> String {
+        format!("@{}@{}", self.username, crate::settings::site_domain())
+    }
+
+    /// Restricted for good, not until a date.
+    pub fn is_banned(&self) -> bool {
+        self.suspended_at.is_some() && self.suspended_until.is_none()
     }
 
     /// Other Fediverse servers can see and reach the account: on the
@@ -469,7 +497,7 @@ pub async fn create_account(pool: &PgPool, account: &NewAccount) -> Result<User,
     // first account of the site is its admin, whoever installed it.
     let result = sqlx::query(concat!(
         "INSERT INTO users (username, email, password_hash, firstname, lastname, birthday, role, names_visibility)
-         SELECT $1, $2, $3, $4, $5, $6, CASE WHEN EXISTS (SELECT 1 FROM users) THEN 'user' ELSE 'admin' END, $7
+         SELECT $1, $2, $3, $4, $5, $6, CASE WHEN EXISTS (SELECT 1 FROM users WHERE NOT team) THEN 'user' ELSE 'admin' END, $7
          WHERE NOT EXISTS (SELECT 1 FROM communities WHERE LOWER(slug) = LOWER($1))
          RETURNING ",
         user_columns!()
@@ -485,7 +513,11 @@ pub async fn create_account(pool: &PgPool, account: &NewAccount) -> Result<User,
     .await;
 
     match result {
-        Ok(Some(row)) => User::from_row(&row).map_err(CreateAccountError::Database),
+        Ok(Some(row)) => {
+            let user = User::from_row(&row).map_err(CreateAccountError::Database)?;
+            follow_team(pool, Some(user.id)).await.map_err(CreateAccountError::Database)?;
+            Ok(user)
+        }
         Ok(None) => Err(CreateAccountError::UsernameTaken),
         Err(err) if is_unique_violation(&err) => {
             let constraint = err.as_database_error().and_then(|db_err| db_err.constraint());
@@ -577,23 +609,186 @@ pub async fn staff(pool: &PgPool) -> Result<Vec<User>, sqlx::Error> {
     .collect()
 }
 
-/// Suspends or reinstates an account. A suspension also signs it out
-/// everywhere (`session_version`).
-pub async fn set_suspended(pool: &PgPool, id: i32, suspended: bool) -> Result<(), sqlx::Error> {
+/// Bans an account (`days` none) or suspends it for some days. It's also
+/// signed out everywhere (`session_version`).
+pub async fn restrict(pool: &PgPool, id: i32, days: Option<i32>) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "UPDATE users SET suspended_at = CASE WHEN $2 THEN NOW() END,
-                          session_version = session_version + CASE WHEN $2 THEN 1 ELSE 0 END
+        "UPDATE users SET suspended_at = NOW(), suspended_until = NOW() + make_interval(days => $2),
+                          session_version = session_version + 1
          WHERE id = $1",
     )
     .bind(id)
-    .bind(suspended)
+    .bind(days)
     .execute(pool)
     .await?;
     Ok(())
 }
 
-/// Users shown at once in search results.
-pub const SEARCH_SIZE: i64 = 30;
+/// `Tison Social` → `tison_social`: the start of the team account's names.
+fn team_slug(instance_name: &str) -> String {
+    let mut slug = String::new();
+    for letter in instance_name.trim().chars().flat_map(char::to_lowercase) {
+        if letter.is_ascii_alphanumeric() {
+            slug.push(letter);
+        } else if !slug.is_empty() && !slug.ends_with('_') {
+            slug.push('_');
+        }
+    }
+    // With `_team`, within `USERNAME_MAX_LEN`.
+    slug.truncate(USERNAME_MAX_LEN - "_team".len());
+    let slug = slug.trim_end_matches('_');
+    if slug.is_empty() { "tison".to_string() } else { slug.to_string() }
+}
+
+/// The username and email of the moderation team's account: `tison_team`
+/// (usernames have no `-`) and `tison-team@local.invalid`, an address that
+/// can't receive emails.
+pub fn team_names(instance_name: &str) -> (String, String) {
+    let slug = team_slug(instance_name);
+    (format!("{slug}_team"), format!("{}-team@local.invalid", slug.replace('_', "-")))
+}
+
+/// The account of the moderation team (`MULTI-MODERATOR` in settings.conf):
+/// a moderator nobody signs in to (no password), shown as "{name} Team".
+/// Made when it's turned on, hidden like a ban when it's off: its posts stay.
+pub async fn sync_team_account(pool: &PgPool, instance_name: &str, active: bool) -> Result<(), sqlx::Error> {
+    let existing: Option<i32> = sqlx::query_scalar("SELECT id FROM users WHERE team").fetch_optional(pool).await?;
+    match existing {
+        Some(id) => {
+            sqlx::query(
+                "UPDATE users SET suspended_at = CASE WHEN $2 THEN NULL ELSE COALESCE(suspended_at, NOW()) END,
+                                  suspended_until = NULL, role = 'moderator'
+                 WHERE id = $1",
+            )
+            .bind(id)
+            .bind(active)
+            .execute(pool)
+            .await?;
+        }
+        None if active => {
+            let (username, email) = team_names(instance_name);
+            let created = sqlx::query(
+                "INSERT INTO users (username, email, displayname, role, team, email_verified, bio)
+                 SELECT $1, $2, $3, 'moderator', TRUE, TRUE, $4
+                 WHERE NOT EXISTS (SELECT 1 FROM users WHERE LOWER(username) = LOWER($1) OR LOWER(email) = LOWER($2))
+                   AND NOT EXISTS (SELECT 1 FROM communities WHERE LOWER(slug) = LOWER($1))",
+            )
+            .bind(&username)
+            .bind(&email)
+            .bind(format!("{} Team", instance_name.trim()))
+            .bind(format!("The moderation team of {}.", instance_name.trim()))
+            .execute(pool)
+            .await?;
+            if created.rows_affected() == 0 {
+                tracing::warn!("the team account @{} can't be made: the name is taken", username);
+            } else {
+                // Everyone follows it, like the ones signing up later.
+                follow_team(pool, None).await?;
+                tracing::info!("team account @{} ({}) made", username, email);
+            }
+        }
+        None => {}
+    }
+    Ok(())
+}
+
+/// The team account when it's on (`MULTI-MODERATOR`), else `None`.
+pub async fn team_account(pool: &PgPool) -> Result<Option<User>, sqlx::Error> {
+    sqlx::query(concat!("SELECT ", user_columns!(), " FROM users WHERE team AND suspended_at IS NULL"))
+        .fetch_optional(pool)
+        .await?
+        .as_ref()
+        .map(User::from_row)
+        .transpose()
+}
+
+/// `user_id` (or every user) follows the team account when it's on. They
+/// can unfollow it like any account.
+async fn follow_team(pool: &PgPool, user_id: Option<i32>) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO user_follows (follower_id, followed_id)
+         SELECT u.id, t.id FROM users u, users t
+         WHERE t.team AND t.suspended_at IS NULL AND NOT u.team AND ($1::INTEGER IS NULL OR u.id = $1)
+         ON CONFLICT DO NOTHING",
+    )
+    .bind(user_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Lifts a ban or a suspension.
+pub async fn reinstate(pool: &PgPool, id: i32) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE users SET suspended_at = NULL, suspended_until = NULL WHERE id = $1")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// Ends the suspensions whose time is over: the queries hiding suspended
+/// accounts only look at `suspended_at`. Returns the accounts.
+pub async fn end_suspensions(pool: &PgPool) -> Result<Vec<i32>, sqlx::Error> {
+    sqlx::query_scalar("UPDATE users SET suspended_at = NULL, suspended_until = NULL WHERE suspended_until <= NOW() RETURNING id")
+        .fetch_all(pool)
+        .await
+}
+
+/// Deletes an account and all it made (posts, comments, messages...): the
+/// tables referencing users cascade, reports keep their snapshot.
+pub async fn delete(pool: &PgPool, id: i32) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM users WHERE id = $1").bind(id).execute(pool).await?;
+    Ok(())
+}
+
+/// An account in the staff's list of users (Moderation > Users).
+pub struct ListedUser {
+    pub user: User,
+    /// `None` for accounts made before emails were asked.
+    pub email: Option<String>,
+}
+
+impl ListedUser {
+    /// "Active", "Banned", "Suspended until Nov 9, 2026".
+    pub fn status(&self) -> String {
+        match (self.user.suspended_at, self.user.suspended_until) {
+            (None, _) => crate::i18n::t("Active"),
+            (Some(_), None) => crate::i18n::t("Banned"),
+            (Some(_), Some(until)) => crate::i18n::tf("Suspended until {}", crate::i18n::date(until.date_naive())),
+        }
+    }
+
+    pub fn joined_label(&self) -> String {
+        crate::i18n::date(self.user.created_at.date_naive())
+    }
+}
+
+/// Users shown at once in the staff's list.
+pub const LIST_SIZE: i64 = 50;
+
+/// The site's accounts for the staff, newest first, older than the id
+/// `before`, those whose username, display name or email contains `search`.
+pub async fn list_for_staff(pool: &PgPool, search: &str, before: Option<i32>) -> Result<Vec<ListedUser>, sqlx::Error> {
+    let search = escape_like(&search.trim().trim_start_matches('@').to_lowercase());
+    sqlx::query(concat!(
+        "SELECT ",
+        user_columns!(),
+        ", email FROM users
+         WHERE ($1 = '' OR LOWER(username) LIKE '%' || $1 || '%' OR LOWER(displayname) LIKE '%' || $1 || '%'
+                OR LOWER(COALESCE(email, '')) LIKE '%' || $1 || '%')
+           AND ($2::INTEGER IS NULL OR id < $2)
+         ORDER BY id DESC LIMIT $3"
+    ))
+    .bind(search)
+    .bind(before)
+    .bind(LIST_SIZE)
+    .fetch_all(pool)
+    .await?
+    .iter()
+    .map(|row| Ok(ListedUser { user: User::from_row(row)?, email: row.try_get("email")? }))
+    .collect()
+}
+
 
 /// `%` and `_` typed by the user are searched as is in a LIKE pattern.
 pub fn escape_like(text: &str) -> String {
@@ -614,8 +809,8 @@ pub async fn search(pool: &PgPool, search: &str, limit: i64) -> Result<Vec<User>
                               CASE WHEN names_visibility = 'public' THEN LOWER(firstname) ELSE '' END AS first,
                               CASE WHEN names_visibility = 'public' THEN LOWER(lastname) ELSE '' END AS last) n
          WHERE suspended_at IS NULL
-           AND (LOWER(username) LIKE '%' || $1 || '%' OR n.display LIKE '%' || $1 || '%'
-            OR n.first LIKE '%' || $1 || '%' OR n.last LIKE '%' || $1 || '%')
+           AND (username ILIKE '%' || $1 || '%' OR displayname ILIKE '%' || $1 || '%'
+            OR (names_visibility = 'public' AND (firstname ILIKE '%' || $1 || '%' OR lastname ILIKE '%' || $1 || '%')))
          ORDER BY CASE
                     WHEN LOWER(username) = $2 THEN 0
                     WHEN LOWER(username) LIKE $1 || '%' THEN 1
@@ -770,18 +965,29 @@ pub async fn update_username(pool: &PgPool, id: i32, username: &str) -> Result<b
 }
 
 /// `None` removes the image.
+/// The picture and the original it was cropped from (`None`: it's its own).
 pub async fn update_image(
     pool: &PgPool,
     id: i32,
     image: ProfileImage,
     url: Option<&str>,
+    original_url: Option<&str>,
 ) -> Result<(), sqlx::Error> {
     let query = match image {
-        ProfileImage::Photo => "UPDATE users SET photo_url = $1 WHERE id = $2",
-        ProfileImage::Background => "UPDATE users SET background_url = $1 WHERE id = $2",
+        ProfileImage::Photo => "UPDATE users SET photo_url = $1, photo_original_url = $3 WHERE id = $2",
+        ProfileImage::Background => "UPDATE users SET background_url = $1, background_original_url = $3 WHERE id = $2",
     };
-    sqlx::query(query).bind(url).bind(id).execute(pool).await?;
+    sqlx::query(query).bind(url).bind(id).bind(original_url).execute(pool).await?;
     Ok(())
+}
+
+/// The originals of the photo and the background, when they were cropped.
+pub async fn image_originals(pool: &PgPool, id: i32) -> Result<(Option<String>, Option<String>), sqlx::Error> {
+    Ok(sqlx::query_as("SELECT photo_original_url, background_original_url FROM users WHERE id = $1")
+        .bind(id)
+        .fetch_optional(pool)
+        .await?
+        .unwrap_or_default())
 }
 
 fn is_unique_violation(err: &sqlx::Error) -> bool {
@@ -793,6 +999,14 @@ fn is_unique_violation(err: &sqlx::Error) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn team_account_names() {
+        assert_eq!(team_names("Tison"), ("tison_team".to_string(), "tison-team@local.invalid".to_string()));
+        assert_eq!(team_names(" Lynx Social! "), ("lynx_social_team".to_string(), "lynx-social-team@local.invalid".to_string()));
+        assert_eq!(team_names("???").0, "tison_team");
+        assert!(validate_username(&team_names(&"Very long name ".repeat(5)).0).is_some());
+    }
 
     fn named(displayname: &str, visibility: NameVisibility) -> User {
         User {
@@ -814,6 +1028,8 @@ mod tests {
             federation_enabled: true,
             role: Role::User,
             suspended_at: None,
+            suspended_until: None,
+            team: false,
             email_verified: true,
         }
     }

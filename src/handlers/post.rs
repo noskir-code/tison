@@ -31,6 +31,8 @@ use crate::i18n::filters;
 pub enum PostPage {
     Home,
     Feed,
+    /// Moderation > Staff: posts of the team account, see `Composer::for_team`.
+    Staff,
 }
 
 impl PostPage {
@@ -38,6 +40,7 @@ impl PostPage {
         match self {
             Self::Home => "home",
             Self::Feed => "feed",
+            Self::Staff => "staff",
         }
     }
 
@@ -45,14 +48,15 @@ impl PostPage {
         match self {
             Self::Home => "/",
             Self::Feed => "/your-feed",
+            Self::Staff => "/moderation/staff",
         }
     }
 
     fn parse(value: &str) -> Self {
-        if value == Self::Feed.as_str() {
-            Self::Feed
-        } else {
-            Self::Home
+        match value {
+            "feed" => Self::Feed,
+            "staff" => Self::Staff,
+            _ => Self::Home,
         }
     }
 }
@@ -143,24 +147,30 @@ pub const MAX_POST_BYTES: usize = MAX_PHOTOS * MAX_IMAGE_BYTES + 1024 * 1024;
 
 /// Data used by the post form in `macros/post.html`.
 pub struct Composer {
-    page: &'static str,
-    error: Option<String>,
-    visibilities: [Visibility; 2],
-    body_max_chars: usize,
+    pub(crate) page: &'static str,
+    pub(crate) error: Option<String>,
+    pub(crate) visibilities: [Visibility; 2],
+    pub(crate) body_max_chars: usize,
     /// `IMAGESHARING` in `configs/services.conf`.
-    photos: bool,
-    max_photos: usize,
+    pub(crate) photos: bool,
+    pub(crate) max_photos: usize,
     /// The Article tab, with `PUBLISHING` in `configs/services.conf`.
-    articles: bool,
+    pub(crate) articles: bool,
     /// Opened on the Article tab (`?compose=article`), after an error in it.
-    article_open: bool,
-    title_max_chars: usize,
-    article_max_chars: usize,
+    pub(crate) article_open: bool,
+    pub(crate) title_max_chars: usize,
+    pub(crate) article_max_chars: usize,
+    /// The username of the team account, which the staff can post as.
+    pub(crate) team: Option<String>,
+    /// Always as the team account, without the choice (the Staff tab).
+    pub(crate) team_only: bool,
 }
 
 impl Composer {
     fn new(page: PostPage, query: &HashMap<String, String>) -> Self {
         Self {
+            team: None,
+            team_only: false,
             page: page.as_str(),
             error: query
                 .get("error")
@@ -218,10 +228,12 @@ pub async fn home_page(
         }
         None => Vec::new(),
     };
+    let mut composer = Composer::new(PostPage::Home, &query);
+    composer.team = team_for(&state, &layout).await;
     render_template(&HomeTemplate {
         title: "Home".to_string(),
         layout,
-        composer: Composer::new(PostPage::Home, &query),
+        composer,
         posts,
     })
 }
@@ -239,12 +251,35 @@ pub async fn feed_page(
         return Redirect::to("/login").into_response();
     };
     let posts = or_empty(post::feed(pool, viewer_id).await);
+    let mut composer = Composer::new(PostPage::Feed, &query);
+    composer.team = team_for(&state, &layout).await;
     render_template(&FeedTemplate {
         title: "Feed".to_string(),
         layout,
-        composer: Composer::new(PostPage::Feed, &query),
+        composer,
         posts,
     })
+}
+
+impl Composer {
+    /// The form of the Staff tab: posts and articles of the team account
+    /// `team` (its username).
+    pub fn for_team(query: &HashMap<String, String>, team: String) -> Self {
+        Self {
+            team: Some(team),
+            team_only: true,
+            ..Self::new(PostPage::Staff, query)
+        }
+    }
+}
+
+/// The team account's username, when the viewer is of the staff and it's on.
+async fn team_for(state: &AppState, layout: &Layout) -> Option<String> {
+    let pool = state.pool.as_ref()?;
+    if !layout.viewer.as_ref().is_some_and(crate::entities::user::User::is_staff) {
+        return None;
+    }
+    crate::entities::user::team_account(pool).await.ok().flatten().map(|team| team.username)
 }
 
 /// What the post form sent: `multipart/form-data`, for the photos.
@@ -256,16 +291,31 @@ struct PostForm {
     title: String,
     body: String,
     visibility: String,
+    /// `team` to post as the team account (the staff only).
+    author: String,
     sensitive: bool,
     photos: Vec<Vec<u8>>,
     /// Alt texts, in the order of the photos.
     alts: Vec<String>,
+    /// The originals of the cropped photos (`original-N`, N their index),
+    /// kept to crop them again.
+    originals: HashMap<usize, Vec<u8>>,
 }
 
 async fn read_post_form(multipart: &mut Multipart) -> Result<PostForm, PostError> {
     let mut form = PostForm::default();
     while let Some(field) = multipart.next_field().await.map_err(|_| PostError::PhotoTooLarge)? {
         let name = field.name().unwrap_or_default().to_string();
+        if let Some(index) = name.strip_prefix("original-").and_then(|index| index.parse::<usize>().ok()).filter(|index| *index < MAX_PHOTOS) {
+            let data = field.bytes().await.map_err(|_| PostError::PhotoTooLarge)?;
+            if data.len() > MAX_IMAGE_BYTES {
+                return Err(PostError::PhotoTooLarge);
+            }
+            if !data.is_empty() {
+                form.originals.insert(index, data.to_vec());
+            }
+            continue;
+        }
         if name == "photos" {
             // Fails when the body goes over `MAX_POST_BYTES`.
             let data = field.bytes().await.map_err(|_| PostError::PhotoTooLarge)?;
@@ -282,6 +332,7 @@ async fn read_post_form(multipart: &mut Multipart) -> Result<PostForm, PostError
             form.photos.push(data.to_vec());
             continue;
         }
+
         let text = field.text().await.map_err(|_| PostError::Server)?;
         match name.as_str() {
             "page" => form.page = text,
@@ -289,6 +340,7 @@ async fn read_post_form(multipart: &mut Multipart) -> Result<PostForm, PostError
             "title" => form.title = text,
             "body" => form.body = text,
             "visibility" => form.visibility = text,
+            "author" => form.author = text,
             "sensitive" => form.sensitive = !text.is_empty(),
             "alt" => form.alts.push(text),
             _ => {}
@@ -301,18 +353,25 @@ async fn read_post_form(multipart: &mut Multipart) -> Result<PostForm, PostError
 async fn save_photos(user_id: i32, form: &PostForm) -> Result<Vec<NewAttachment>, PostError> {
     let mut cleaned = Vec::new();
     for data in &form.photos {
-        cleaned.push(crate::photo::clean(data).map_err(|_| PostError::PhotoFormat)?);
+        cleaned.push(crate::photo::prepare(data).await.map_err(|_| PostError::PhotoFormat)?);
     }
     let mut saved: Vec<NewAttachment> = Vec::new();
     for (index, photo) in cleaned.into_iter().enumerate() {
         match image::save_file(ImageOwner::User(user_id), "post", photo.extension, &photo.data).await {
-            Ok(url) => saved.push(NewAttachment::new(
-                url,
-                photo.media_type.to_string(),
-                form.alts.get(index).map(String::as_str).unwrap_or(""),
-                i32::try_from(photo.width).ok(),
-                i32::try_from(photo.height).ok(),
-            )),
+            Ok(url) => {
+                let mut attachment = NewAttachment::new(
+                    url,
+                    photo.media_type.to_string(),
+                    form.alts.get(index).map(String::as_str).unwrap_or(""),
+                    i32::try_from(photo.width).ok(),
+                    i32::try_from(photo.height).ok(),
+                );
+                // Cropped in the browser: its original, to crop it again.
+                if let Some(original) = form.originals.get(&index) {
+                    attachment.original_url = image::save_original(ImageOwner::User(user_id), original).await.ok();
+                }
+                saved.push(attachment);
+            }
             Err(err) => {
                 tracing::error!("failed to save a photo: {:?}", err);
                 remove_saved(&saved).await;
@@ -324,7 +383,7 @@ async fn save_photos(user_id: i32, form: &PostForm) -> Result<Vec<NewAttachment>
 }
 
 async fn remove_saved(photos: &[NewAttachment]) {
-    let urls: Vec<String> = photos.iter().map(|photo| photo.url.clone()).collect();
+    let urls: Vec<String> = photos.iter().flat_map(|photo| std::iter::once(photo.url.clone()).chain(photo.original_url.clone())).collect();
     crate::entities::media::remove_local_files(&urls).await;
 }
 
@@ -339,13 +398,29 @@ pub async fn create_post(State(state): State<AppState>, session: Session, mut mu
 
     let result = async {
         let mut form = form?;
+        // Posting as the team account: the staff only, while it's on.
+        let author_id = if form.author == "team" {
+            let team = crate::entities::user::team_account(&pool).await.map_err(|err| {
+                tracing::error!("failed to load the team account: {}", err);
+                PostError::Server
+            })?;
+            match team {
+                Some(team) if me.is_staff() => {
+                    tracing::info!("@{} posts as @{}", me.username, team.username);
+                    team.id
+                }
+                _ => return Err(PostError::Server),
+            }
+        } else {
+            me.id
+        };
         if is_article {
             if !crate::settings::services().publishing {
                 return Err(PostError::Server);
             }
             let (title, body) = validate_article(&form.title, &form.body)?;
             let visibility = Visibility::parse(&form.visibility).ok_or(PostError::InvalidVisibility)?;
-            return post::create_article(&pool, me.id, &title, &body, visibility).await.map_err(|err| {
+            return post::create_article(&pool, author_id, &title, &body, visibility).await.map_err(|err| {
                 tracing::error!("failed to create article: {}", err);
                 PostError::Server
             });
@@ -364,10 +439,10 @@ pub async fn create_post(State(state): State<AppState>, session: Session, mut mu
             PostError::Server
         };
         if form.photos.is_empty() {
-            return post::create(&pool, me.id, &body, visibility, None).await.map_err(failed);
+            return post::create(&pool, author_id, &body, visibility, None).await.map_err(failed);
         }
-        let photos = save_photos(me.id, &form).await?;
-        match post::create_with_photos(&pool, me.id, &body, visibility, form.sensitive, &photos).await {
+        let photos = save_photos(author_id, &form).await?;
+        match post::create_with_photos(&pool, author_id, &body, visibility, form.sensitive, &photos).await {
             Ok(post_id) => Ok(post_id),
             Err(err) => {
                 remove_saved(&photos).await;
@@ -384,6 +459,7 @@ pub async fn create_post(State(state): State<AppState>, session: Session, mut mu
     let location = match result {
         // An article opens on its own page, like on WriteFreely.
         Ok(post_id) if is_article => format!("/posts/{post_id}"),
+        Ok(_) if page == PostPage::Staff => format!("{}?published=1#team-composer", page.url()),
         Ok(_) => page.url().to_string(),
         Err(error) if is_article => format!("{}?error={}&compose=article", page.url(), error.code()),
         Err(error) => format!("{}?error={}", page.url(), error.code()),
@@ -425,6 +501,11 @@ pub struct EditTemplate {
     pub federated: bool,
     /// The thumbnail form, for a video.
     pub video_thumbnail: Option<VideoThumbnail>,
+    /// A video's category now (`Some(None)`: none), `None` for the others.
+    pub video_category: Option<Option<i16>>,
+    /// The photos of a photo post, to crop again (see `crop_photo`): shown,
+    /// and their original.
+    pub photos: Vec<(String, String)>,
 }
 
 /// The thumbnail of a video being edited (`/posts/{id}/thumbnail`).
@@ -476,6 +557,17 @@ pub async fn edit_page(
         width: crate::av::THUMBNAIL_SIZE.0,
         height: crate::av::THUMBNAIL_SIZE.1,
     });
+    let video_category = post.is_video().then_some(post.category);
+    // Each shown cropped, cropped again from its original.
+    let photos = match post.kind == post::Kind::Post && post.title.is_none() {
+        true => post
+            .attachments
+            .iter()
+            .filter(|attachment| attachment.is_image() && crate::entities::media::is_local(&attachment.url))
+            .map(|attachment| (attachment.url.clone(), attachment.original_url.clone().unwrap_or_else(|| attachment.url.clone())))
+            .collect(),
+        false => Vec::new(),
+    };
     render_template(&EditTemplate {
         title: if post.is_article() {
             "Edit the article"
@@ -497,6 +589,8 @@ pub async fn edit_page(
             .map(PostError::message),
         federated: state.federation.is_some() && post.visibility == Visibility::Public,
         video_thumbnail,
+        video_category,
+        photos,
         body: post.body,
     })
 }
@@ -528,7 +622,16 @@ pub async fn update_post(
             }
             (false, false) => (None, post::validate_body(field("body"))?),
         };
-        post::update_own(&pool, post_id, me.id, title.as_deref(), &body).await.map_err(|err| {
+        // The staff edits the posts of the team account too, see `post_select!`.
+        let author_id = post.author.local().map_or(me.id, |author| author.id);
+        if post.is_video() {
+            let category = crate::entities::video::parse_category(field("category"));
+            post::set_category(&pool, post_id, category).await.map_err(|err| {
+                tracing::error!("failed to change the category of {}: {}", post_id, err);
+                PostError::Server
+            })?;
+        }
+        post::update_own(&pool, post_id, author_id, title.as_deref(), &body).await.map_err(|err| {
             tracing::error!("failed to update post {}: {}", post_id, err);
             PostError::Server
         })
@@ -581,4 +684,83 @@ pub async fn delete_post(
             error_page(Layout::load(&state, &session).await, StatusCode::INTERNAL_SERVER_ERROR, "Something went wrong, try again later.")
         }
     }
+}
+
+#[derive(Template)]
+#[template(path = "tag.html")]
+struct TagTemplate {
+    title: String,
+    layout: Layout,
+    tag: String,
+    posts: Vec<Post>,
+}
+
+/// Posts shown on a hashtag's page.
+const TAG_PAGE_SIZE: i64 = 50;
+
+/// `/tags/{tag}`: the posts with this hashtag, of here and of other servers
+/// already received, like Mastodon's page of a hashtag.
+pub async fn tag_page(State(state): State<AppState>, session: Session, Path(raw): Path<String>) -> Response {
+    let layout = Layout::load(&state, &session).await;
+    let Some(tag) = crate::hashtag::normalize(&raw) else {
+        return error_page(layout, StatusCode::NOT_FOUND, "This isn't a hashtag.");
+    };
+    let posts = match &state.pool {
+        Some(pool) => or_empty(post::by_tag(pool, layout.viewer.as_ref().map(|viewer| viewer.id), &tag, TAG_PAGE_SIZE).await),
+        None => Vec::new(),
+    };
+    render_template(&TagTemplate { title: format!("#{tag}"), layout, tag, posts })
+}
+
+/// A photo of a post cropped again from its original (in the browser, see
+/// `setupCropInputs`): `position` from 0, its alt text and original kept.
+/// Other servers get the edited post.
+pub async fn crop_photo(
+    State(state): State<AppState>,
+    session: Session,
+    Path((post_id, position)): Path<(i64, i64)>,
+    mut multipart: Multipart,
+) -> Response {
+    let (pool, me, post) = match own_post(&state, &session, post_id).await {
+        Ok(found) => found,
+        Err(response) => return response,
+    };
+    let back = |done: &str| Redirect::to(&format!("/posts/{post_id}/edit?{done}#photos")).into_response();
+    let is_local_photo = usize::try_from(position)
+        .ok()
+        .and_then(|index| post.attachments.get(index))
+        .is_some_and(|attachment| attachment.is_image() && crate::entities::media::is_local(&attachment.url));
+    if !is_local_photo {
+        return back("error=photo-format");
+    }
+    let photo = match image::read_image_field(&mut multipart).await {
+        Ok(data) => match crate::photo::prepare(&data).await {
+            Ok(photo) => photo,
+            Err(_) => return back("error=photo-format"),
+        },
+        Err(_) => return back("error=photo-too-large"),
+    };
+    let author_id = post.author.local().map_or(me.id, |author| author.id);
+    let Ok(url) = image::save_file(ImageOwner::User(author_id), "post", photo.extension, &photo.data).await else {
+        return back("error=server");
+    };
+    let size = |value: u32| i32::try_from(value).ok();
+    match crate::entities::media::replace_photo(&pool, post_id, position, &url, photo.media_type, size(photo.width), size(photo.height)).await {
+        Ok(Some(unused)) => crate::entities::media::remove_local_files(&unused.into_iter().collect::<Vec<_>>()).await,
+        Ok(None) => {
+            crate::entities::media::remove_local_files(&[url]).await;
+            return back("error=photo-format");
+        }
+        Err(err) => {
+            tracing::error!("failed to crop a photo of post {}: {}", post_id, err);
+            crate::entities::media::remove_local_files(&[url]).await;
+            return back("error=server");
+        }
+    }
+    // Shown as edited, and sent again to the servers that have it.
+    if let Err(err) = post::mark_edited(&pool, post_id).await {
+        tracing::warn!("failed to mark post {} edited: {}", post_id, err);
+    }
+    notifier::post_updated(&state, &pool, post_id).await;
+    back("photo-saved")
 }

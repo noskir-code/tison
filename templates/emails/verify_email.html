@@ -1,10 +1,10 @@
 {% extends "emails/layout.html" %}
-{% block title %}{{ "Verify your Tison email"|t }}{% endblock %}
+{% block title %}{{ "Verify your {} email"|tf(crate::settings::instance_name()) }}{% endblock %}
 {% block preview %}{{ "Confirm this address within {} hours."|tf(valid_hours) }}{% endblock %}
 {% block content %}
 <h1 class="title">{{ "Verify your email"|t }}</h1>
 <p class="text">
-    {{ "Welcome to Tison, @{}!"|tf(username) }}
+    {{ "Welcome to {}, @{}!"|tf2(crate::settings::instance_name(), username) }}
     {{ "Confirm that this address is yours, so it can be used to reset your password and send you important messages."|t }}
     {{ "This link is valid for {} hours:"|tf(valid_hours) }}
 </p>

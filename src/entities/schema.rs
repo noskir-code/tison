@@ -93,6 +93,8 @@ pub struct Index {
     pub unique: bool,
     /// What is indexed, like `LOWER(username)` or `community_id, created_at`.
     pub on: &'static str,
+    /// A trigram index (`pg_trgm`) of a text column, for `ILIKE '%words%'`.
+    pub trigram: bool,
 }
 
 impl Index {
@@ -101,6 +103,7 @@ impl Index {
             name,
             unique: false,
             on,
+            trigram: false,
         }
     }
 
@@ -109,6 +112,17 @@ impl Index {
             name,
             unique: true,
             on,
+            trigram: false,
+        }
+    }
+
+    /// Makes searches with `column ILIKE '%words%'` fast, see `search`.
+    pub const fn trigram(name: &'static str, column: &'static str) -> Self {
+        Self {
+            name,
+            unique: false,
+            on: column,
+            trigram: true,
         }
     }
 }
@@ -143,6 +157,12 @@ pub async fn sync(pool: &PgPool, tables: &[&Table]) -> Result<(), sqlx::Error> {
         .bind(SCHEMA_LOCK_ID)
         .execute(&mut *conn)
         .await?;
+
+    // For `Index::trigram`. Trusted since PostgreSQL 13: the database's owner
+    // can add it. Without it those indexes fail, logged, and searches are slower.
+    if let Err(err) = sqlx::query("CREATE EXTENSION IF NOT EXISTS pg_trgm").execute(&mut *conn).await {
+        tracing::warn!("schema: pg_trgm can't be added, searches will be slower: {}", err);
+    }
 
     let mut result = Ok(());
     for table in tables {
@@ -427,7 +447,10 @@ async fn sync_indexes(conn: &mut PgConnection, table: &Table) -> Result<(), sqlx
             continue;
         }
         let unique = if index.unique { "UNIQUE " } else { "" };
-        let sql = format!("CREATE {unique}INDEX {} ON {} ({})", index.name, table.name, index.on);
+        let sql = match index.trigram {
+            true => format!("CREATE INDEX {} ON {} USING gin ({} gin_trgm_ops)", index.name, table.name, index.on),
+            false => format!("CREATE {unique}INDEX {} ON {} ({})", index.name, table.name, index.on),
+        };
         if !apply(conn, sql, &format!("create index {}", index.name)).await && index.unique {
             tracing::warn!("schema: {} can't be created while rows have duplicate values", index.name);
         }

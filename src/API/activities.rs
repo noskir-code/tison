@@ -56,6 +56,69 @@ pub fn text_to_html(text: &str) -> String {
         .collect()
 }
 
+/// Hashtag links of `linkify` point to `/tags/…` on this site: absolute for
+/// other servers.
+fn absolute_tags(html: &str, base_url: &str) -> String {
+    html.replace("href=\"/tags/", &format!("href=\"{base_url}/tags/"))
+}
+
+/// The `tag` of an object for its hashtags, as Mastodon and Pixelfed send
+/// them (`#word`), or PeerTube for videos (`word`).
+fn hashtag_tags(base_url: &str, tags: &[String], with_sign: bool) -> Vec<Value> {
+    tags.iter()
+        .map(|tag| {
+            json!({
+                "type": "Hashtag",
+                "href": format!("{base_url}{}", crate::hashtag::path(tag)),
+                "name": if with_sign { format!("#{tag}") } else { tag.clone() },
+            })
+        })
+        .collect()
+}
+
+/// Adds the hashtags to the `tag` of `note` (after its mentions), and makes
+/// their links in its `content` absolute.
+fn add_hashtags(base_url: &str, note: &mut Value, tags: &[String], with_sign: bool) {
+    if let Some(content) = note["content"].as_str() {
+        note["content"] = json!(absolute_tags(content, base_url));
+    }
+    let mut all = match note["tag"].take() {
+        Value::Array(existing) => existing,
+        _ => Vec::new(),
+    };
+    all.extend(hashtag_tags(base_url, tags, with_sign));
+    note["tag"] = json!(all);
+}
+
+/// The hashtags of another server's object given only in its `tag` (like
+/// PeerTube's), not already in `texts`: for the `tags` column.
+pub(crate) fn remote_tags(object: &Value, texts: &[&str]) -> String {
+    let in_text = crate::hashtag::find(texts);
+    let mut tags: Vec<String> = Vec::new();
+    if let Value::Array(items) = &object["tag"] {
+        for item in items.iter().filter(|item| item["type"] == "Hashtag") {
+            if let Some(tag) = item["name"].as_str().and_then(crate::hashtag::normalize)
+                && !in_text.contains(&tag)
+                && !tags.contains(&tag)
+                && tags.len() < MAX_REMOTE_TAGS
+            {
+                tags.push(tag);
+            }
+        }
+    }
+    tags.join(" ")
+}
+
+/// More are ignored: some servers send dozens.
+const MAX_REMOTE_TAGS: usize = 30;
+
+/// A PeerTube video's category: `{"identifier": "7", "name": "Gaming"}`.
+pub(crate) fn remote_category(object: &Value) -> Option<i16> {
+    let identifier = &object["category"]["identifier"];
+    let raw = identifier.as_str().map(str::to_string).or_else(|| identifier.as_i64().map(|id| id.to_string()))?;
+    crate::entities::video::parse_category(&raw)
+}
+
 /// The reverse, for notes of other servers: line breaks and paragraphs kept,
 /// other tags removed (links keep their text), entities decoded. Tison
 /// shows the result as plain text, escaped, so nothing here can inject HTML.
@@ -232,10 +295,16 @@ pub fn person(federation: &Federation, user: &User, public_key_pem: &str) -> Val
         "@context": [
             ACTIVITY_STREAMS,
             SECURITY,
-            { "manuallyApprovesFollowers": "as:manuallyApprovesFollowers" },
+            {
+                "manuallyApprovesFollowers": "as:manuallyApprovesFollowers",
+                "toot": "http://joinmastodon.org/ns#",
+                "suspended": "toot:suspended",
+            },
         ],
         "id": id,
         "type": "Person",
+        // Banned or suspended by the staff: Mastodon hides the account.
+        "suspended": user.is_suspended(),
         "preferredUsername": user.username,
         "name": user.display_name(),
         "summary": text_to_html(&user.bio),
@@ -367,8 +436,9 @@ pub fn post_note(federation: &Federation, post: &Post) -> Option<Value> {
                     true => format!("{}{}", federation.base_url, photo.url),
                     false => photo.url.clone(),
                 };
+                // Attached files (see `document`) as Documents, like Mastodon's.
                 let mut image = json!({
-                    "type": "Image",
+                    "type": if photo.is_image() { "Image" } else { "Document" },
                     "mediaType": photo.media_type,
                     "url": url,
                     "name": if photo.description.is_empty() { Value::Null } else { json!(photo.description) },
@@ -407,9 +477,21 @@ pub fn post_note(federation: &Federation, post: &Post) -> Option<Value> {
         note["source"] = json!({ "content": post.body, "mediaType": "text/markdown" });
         note["wordCount"] = json!(post.body.split_whitespace().count());
         note["tag"] = json!([]);
+        // Its card's picture, the logo for the team's (see `Post::article_picture`).
+        if let Some(picture) = post.article_picture_url() {
+            note["image"] = json!({ "type": "Image", "url": picture });
+        }
     }
     if post.kind != Kind::Post {
         media_object(federation, post, &mut note);
+    }
+    // PeerTube writes a video's tags without `#`, the others with.
+    let is_video = note["type"] == "Video";
+    add_hashtags(&federation.base_url, &mut note, &post.hashtags(), !is_video);
+    if is_video
+        && let (Some(id), Some(name)) = (post.category, post.category_name())
+    {
+        note["category"] = json!({ "identifier": id.to_string(), "name": name });
     }
     note["cc"] = json!(cc);
     Some(note)
@@ -758,6 +840,7 @@ pub fn comment_note(federation: &Federation, comment: &Comment, post: &Post, in_
     if let Some(edited_at) = &comment.edited_at {
         note["updated"] = json!(iso(edited_at));
     }
+    add_hashtags(&federation.base_url, &mut note, &crate::hashtag::find(&[&comment.body]), true);
     // On a followers-only post of another server: only its author is told,
     // like a reply on Mastodon to such a post.
     if post.is_followers_only() {
@@ -799,12 +882,14 @@ pub fn create(note: &Value) -> Value {
 /// A private message of `sender` to an account of another server: a direct
 /// Note mentioning it (Mastodon, Hubzilla, Misskey, Pleroma...), or a
 /// ChatMessage for a Pleroma chat (`chat`). The Create wraps it.
+#[allow(clippy::too_many_arguments)]
 pub fn direct_message(
     federation: &Federation,
     sender: &User,
     to: &RemoteAuthor,
     message_id: i64,
     body: &str,
+    attachments: &[crate::entities::media::NewAttachment],
     sent_at: &DateTime<Utc>,
     chat: bool,
 ) -> Value {
@@ -840,6 +925,28 @@ pub fn direct_message(
             "tag": [{ "type": "Mention", "href": to.actor_id, "name": handle }],
         })
     };
+    // Its photos and files, as Mastodon sends those of direct messages.
+    let mut object = object;
+    if !attachments.is_empty() {
+        let items: Vec<Value> = attachments
+            .iter()
+            .map(|attachment| {
+                let mut item = json!({
+                    "type": if attachment.media_type.starts_with("image/") { "Image" } else { "Document" },
+                    "mediaType": attachment.media_type,
+                    "url": federation.absolute_url(&attachment.url),
+                    "name": if attachment.description.is_empty() { Value::Null } else { json!(attachment.description) },
+                });
+                if let (Some(width), Some(height)) = (attachment.width, attachment.height) {
+                    item["width"] = json!(width);
+                    item["height"] = json!(height);
+                }
+                item
+            })
+            .collect();
+        // Pleroma's chats carry one.
+        object["attachment"] = if chat { items[0].clone() } else { json!(items) };
+    }
     with_context(json!({
         "id": format!("{id}/activity"),
         "type": "Create",
@@ -925,6 +1032,18 @@ pub fn reject_follow(actor: &str, follower: &str, follow_id: &str) -> Value {
 /// Deletes a local community's Group, for servers to forget it.
 pub fn delete_group(federation: &Federation, community: &Community) -> Value {
     let actor = federation.community_url(community.public_id);
+    with_context(json!({
+        "id": format!("{actor}#delete"),
+        "type": "Delete",
+        "actor": actor,
+        "to": [PUBLIC],
+        "object": actor,
+    }))
+}
+
+/// A local account deleted: other servers remove it and what it posted.
+pub fn delete_person(federation: &Federation, user: &User) -> Value {
+    let actor = federation.actor_url(user.public_id);
     with_context(json!({
         "id": format!("{actor}#delete"),
         "type": "Delete",
@@ -1622,7 +1741,9 @@ pub async fn receive(
                     return Ok(());
                 }
                 let sensitive = note["sensitive"].as_bool().unwrap_or(false);
-                post::update_remote(pool, &object, title.as_deref(), &text, sensitive)
+                let tags = remote_tags(note, &[title.as_deref().unwrap_or_default(), &text]);
+                let category = remote_category(note).filter(|_| media.as_ref().is_some_and(|media| media.kind == Kind::Video));
+                post::update_remote(pool, &object, title.as_deref(), &text, sensitive, &tags, category)
                     .await
                     .map_err(|err| format!("failed to update note: {err}"))?;
                 let owner = match object {
@@ -1834,6 +1955,8 @@ async fn store_post(
         visibility,
         sensitive: note["sensitive"].as_bool().unwrap_or(false),
         published: published(note),
+        tags: remote_tags(note, &[title.as_deref().unwrap_or_default(), &text]),
+        category: remote_category(note).filter(|_| media.as_ref().is_some_and(|media| media.kind == Kind::Video)),
     };
     let created = post::create_remote(pool, author.id, community.map(|(community, _)| community.id), &remote)
         .await
@@ -2161,7 +2284,8 @@ async fn receive_message(federation: &Federation, pool: &PgPool, sender: &Remote
     for user in local_recipients(federation, pool, object).await {
         // "@alice@example.com Hello": the mention of the reader goes.
         let text = strip_mention(&note_text(object, None), &user.username, &federation.domain);
-        if text.is_empty() {
+        let files = attachments(object);
+        if text.is_empty() && files.is_empty() {
             continue;
         }
         let conversation_id = message::with_remote(pool, user.id, sender.id)
@@ -2174,6 +2298,10 @@ async fn receive_message(federation: &Federation, pool: &PgPool, sender: &Remote
             .await
             .map_err(|err| format!("failed to save message: {err}"))?;
         if let Some(message_id) = added {
+            // Shown through the media proxy, like the photos of posts.
+            media::save_attachments(pool, media::Owner::Message(message_id), &files)
+                .await
+                .map_err(|err| format!("failed to save the files of a message: {err}"))?;
             signal_conversation(pool, conversation_id).await;
             if let Err(err) = notification::signal_new_message(pool, &[user.id], message_id).await {
                 tracing::warn!("failed to signal message {}: {}", message_id, err);
@@ -2239,6 +2367,31 @@ async fn receive_reply(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hashtags_and_categories_of_other_servers() {
+        // PeerTube: tags apart from the description, and a category.
+        let video = json!({
+            "type": "Video",
+            "tag": [{ "type": "Hashtag", "name": "Minecraft" }, { "type": "Hashtag", "name": "#speedrun" }, { "type": "Mention", "name": "@a" }],
+            "category": { "identifier": "7", "name": "Gaming" },
+        });
+        assert_eq!(remote_tags(&video, &["A run of #speedrun"]), "minecraft");
+        assert_eq!(remote_category(&video), Some(7));
+        assert_eq!(remote_category(&json!({ "category": { "identifier": 99 } })), None);
+    }
+
+    #[test]
+    fn hashtags_are_sent_with_absolute_links() {
+        let base = "https://tison.example";
+        let mut note = json!({ "content": text_to_html("Hi #Rust"), "tag": [{ "type": "Mention", "name": "@a" }] });
+        add_hashtags(base, &mut note, &["rust".to_string()], true);
+        assert!(note["content"].as_str().unwrap().contains("href=\"https://tison.example/tags/rust\""));
+        assert_eq!(note["tag"][1], json!({ "type": "Hashtag", "href": "https://tison.example/tags/rust", "name": "#rust" }));
+        let mut video = json!({});
+        add_hashtags(base, &mut video, &["rust".to_string()], false);
+        assert_eq!(video["tag"][0]["name"], "rust");
+    }
 
     #[test]
     fn html_becomes_text() {

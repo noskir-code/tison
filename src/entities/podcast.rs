@@ -17,6 +17,9 @@ pub const TABLE: Table = Table {
         Column::new("description", "TEXT").default("''"),
         // Square, at least 1400 pixels for Apple Podcasts.
         Column::new("cover_url", "TEXT").nullable(),
+        // The cover's original when it was cropped in the browser, to crop
+        // it again: never shown nor sent.
+        Column::new("cover_original_url", "TEXT").nullable(),
         // One of `CATEGORIES`, read by podcast apps.
         Column::new("category", "TEXT").default("'Society & Culture'"),
         // Like `en` or `fr`.
@@ -61,6 +64,8 @@ pub struct Podcast {
     pub title: String,
     pub description: String,
     pub cover_url: Option<String>,
+    /// See the `cover_original_url` column.
+    pub cover_original_url: Option<String>,
     pub category: String,
     pub language: String,
     pub explicit: bool,
@@ -81,6 +86,7 @@ impl Podcast {
             title: row.try_get("title")?,
             description: row.try_get("description")?,
             cover_url: row.try_get("cover_url")?,
+            cover_original_url: row.try_get("cover_original_url")?,
             category: row.try_get("category")?,
             language: row.try_get("language")?,
             explicit: row.try_get("explicit")?,
@@ -96,7 +102,7 @@ impl Podcast {
 macro_rules! podcast_select {
     () => {
         "SELECT pc.id, pc.user_id, u.username, u.displayname, pc.title, pc.description,
-                pc.cover_url, pc.category, pc.language, pc.explicit, pc.created_at,
+                pc.cover_url, pc.cover_original_url, pc.category, pc.language, pc.explicit, pc.created_at,
                 (SELECT COUNT(*) FROM posts e WHERE e.podcast_id = pc.id AND e.visibility = 'public'
                    AND e.media_status = 'ready') AS episode_count
          FROM podcasts pc
@@ -134,6 +140,7 @@ pub struct NewPodcast<'a> {
     pub title: &'a str,
     pub description: &'a str,
     pub cover_url: Option<&'a str>,
+    pub cover_original_url: Option<&'a str>,
     pub category: &'a str,
     pub language: &'a str,
     pub explicit: bool,
@@ -141,8 +148,8 @@ pub struct NewPodcast<'a> {
 
 pub async fn create(pool: &PgPool, user_id: i32, podcast: &NewPodcast<'_>) -> Result<i64, sqlx::Error> {
     sqlx::query_scalar(
-        "INSERT INTO podcasts (user_id, title, description, cover_url, category, language, explicit)
-         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id",
+        "INSERT INTO podcasts (user_id, title, description, cover_url, category, language, explicit, cover_original_url)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id",
     )
     .bind(user_id)
     .bind(podcast.title)
@@ -151,6 +158,7 @@ pub async fn create(pool: &PgPool, user_id: i32, podcast: &NewPodcast<'_>) -> Re
     .bind(podcast.category)
     .bind(podcast.language)
     .bind(podcast.explicit)
+    .bind(podcast.cover_original_url)
     .fetch_one(pool)
     .await
 }
@@ -161,6 +169,17 @@ pub async fn episode_ids(pool: &PgPool, podcast_id: i64) -> Result<Vec<i64>, sql
         .bind(podcast_id)
         .fetch_all(pool)
         .await
+}
+
+/// A new cover, with the original it was cropped from (`None`: its own).
+pub async fn set_cover(pool: &PgPool, podcast_id: i64, cover_url: &str, original_url: Option<&str>) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE podcasts SET cover_url = $2, cover_original_url = $3 WHERE id = $1")
+        .bind(podcast_id)
+        .bind(cover_url)
+        .bind(original_url)
+        .execute(pool)
+        .await?;
+    Ok(())
 }
 
 pub async fn delete(pool: &PgPool, podcast_id: i64) -> Result<(), sqlx::Error> {

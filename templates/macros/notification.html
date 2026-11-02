@@ -23,6 +23,11 @@
             <time class="post-meta" datetime="{{ notification.created_at_iso() }}" data-relative>{{ notification.created_at_label() }}</time>
         </span>
     </a>
+    {% if notification.unread %}
+    <form action="/notifications/{{ notification.id }}/read" method="post" class="notification-delete notification-read" data-notification-action>
+        <button type="submit" class="action" aria-label="{{ "Mark this notification as read"|t }}">{{ "Mark as read"|t }}</button>
+    </form>
+    {% endif %}
     <form action="/notifications/{{ notification.id }}/delete" method="post" class="notification-delete" data-notification-action>
         <button type="submit" class="action" aria-label="{{ "Delete this notification"|t }}">{{ "Delete"|t }}</button>
     </form>

@@ -36,7 +36,14 @@
     {% call posts_ui::video_grid(live_now, "") %}{% endcall %}
     {% endif %}
     {% if crate::settings::services().video %}
-    <h2>{{ "Newest videos"|t }}</h2>
+    {# PeerTube's categories, see entities/video.rs. #}
+    <nav class="video-categories" aria-label="{{ "Categories"|t }}">
+        <a href="/videos"{% if category.is_none() %} class="active" aria-current="page"{% endif %}>{{ "All"|t }}</a>
+        {% for (id, name) in categories %}
+        <a href="/videos?category={{ id }}"{% if category.as_ref() == Some(*id) %} class="active" aria-current="page"{% endif %}>{{ name|t }}</a>
+        {% endfor %}
+    </nav>
+    <h2>{% if let Some(id) = category %}{% if let Some(name) = crate::entities::video::category_name(**id) %}{{ name|t }}{% endif %}{% else %}{{ "Newest videos"|t }}{% endif %}</h2>
     {% call posts_ui::video_grid(videos, "No video yet."|t) %}{% endcall %}
     {% else if live_now.is_empty() %}
     <p class="empty">{{ "Nobody is live right now."|t }}</p>
