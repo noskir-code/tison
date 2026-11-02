@@ -1,0 +1,7 @@
+{{ "Hello,"|t }}
+
+{% if enabled %}{{ "Two-factor authentication is now on for your Tison account: logging in asks for a code from your authenticator app after your password."|t }}{% else %}{{ "Two-factor authentication was turned off on your Tison account: your password alone is now enough to log in."|t }}
+
+{{ "If it wasn't you, change your password now and turn it back on:"|t }}{% endif %}
+
+{{ settings_link }}

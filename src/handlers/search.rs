@@ -33,6 +33,8 @@ use crate::{
         user::signed_in_user,
     },
 };
+/// `|t` and `|tf` in the templates, see `i18n`.
+use crate::i18n::filters;
 
 /// A remote account with what the viewer does with it.
 pub(crate) struct Account {
@@ -122,7 +124,7 @@ pub async fn search_page(
     layout.search = search.clone();
     let query_for_return = search.clone();
     render_template(&SearchTemplate {
-        title: if search.is_empty() { "Search".to_string() } else { format!("Search: {search}") },
+        title: if search.is_empty() { "Search".to_string() } else { crate::i18n::tf("Search: {}", &search) },
         layout,
         query: search,
         found,
@@ -245,7 +247,7 @@ pub(crate) async fn find_account(state: &AppState, pool: &sqlx::PgPool, me: &Use
         }
         linker::webfinger(federation, account).await.map_err(|err| {
             tracing::info!("failed to find {}: {}", search, err);
-            format!("No account found for {search}.")
+            crate::i18n::tf("No account found for {}.", search)
         })?
     };
     if url.starts_with(&federation.base_url) {
@@ -259,7 +261,7 @@ pub(crate) async fn find_account(state: &AppState, pool: &sqlx::PgPool, me: &Use
         })?;
     let actor = linker::fetch_actor(federation, pool, &url, &key).await.map_err(|err| {
         tracing::info!("failed to fetch {}: {}", url, err);
-        format!("No account found for {search}.")
+        crate::i18n::tf("No account found for {}.", search)
     })?;
     account(pool, actor.id, me.id)
         .await
@@ -268,7 +270,7 @@ pub(crate) async fn find_account(state: &AppState, pool: &sqlx::PgPool, me: &Use
             "Something went wrong, try again later.".to_string()
         })?
         .map(Found::Remote)
-        .ok_or_else(|| format!("No account found for {search}."))
+        .ok_or_else(|| crate::i18n::tf("No account found for {}.", search))
 }
 
 /// `@name@this-domain`: the page of the user or community.
@@ -285,7 +287,7 @@ async fn local_page(pool: &sqlx::PgPool, name: &str) -> Result<Found, String> {
     {
         return Ok(Found::Local(format!("/community/{}", found.slug)));
     }
-    Err(format!("Nobody is called {name} here."))
+    Err(crate::i18n::tf("Nobody is called {} here.", name))
 }
 
 async fn account(pool: &sqlx::PgPool, actor_id: i64, viewer_id: i32) -> Result<Option<Account>, sqlx::Error> {

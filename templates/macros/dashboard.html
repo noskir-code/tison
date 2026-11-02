@@ -1,0 +1,72 @@
+{# The creator dashboard, see handlers/dashboard.rs. #}
+
+{# The period, above everything it scopes. #}
+{% macro periods(periods) %}
+{# A group, not a <nav>: style.css gives the links of every nav the menu's look. #}
+<div class="dashboard-periods" role="group" aria-label="{{ "Period"|t }}">
+    {% for period in periods %}
+    <a href="{{ period.url }}" class="button{% if period.active %} active{% endif %}"{% if period.active %} aria-current="true"{% endif %}>{{ period.label|t }}</a>
+    {% endfor %}
+</div>
+{% endmacro %}
+
+{# Numbers of the chosen period. #}
+{% macro tiles(tiles) %}
+<dl class="stat-tiles">
+    {% for tile in tiles %}
+    <div class="stat-tile">
+        <dt>{{ tile.label|t }}</dt>
+        <dd><span class="stat-value">{{ tile.value_label() }}</span></dd>
+    </div>
+    {% endfor %}
+</dl>
+{% endmacro %}
+
+{# One line chart per measure, drawn by `setupCharts` in system.js from
+   `data-chart`. Its table gives every value without hovering, and without
+   JavaScript. #}
+{% macro charts(charts) %}
+<div class="chart-grid">
+    {% for chart in charts %}
+    <figure class="chart" data-chart="{{ chart.data() }}" aria-labelledby="chart-{{ chart.id }}">
+        <figcaption id="chart-{{ chart.id }}" class="chart-title">{{ chart.title|t }} <span class="chart-unit">{{ chart.per()|t }}</span></figcaption>
+        <div class="chart-plot" data-chart-plot tabindex="0" role="img" aria-label="{{ chart.title|t }} {{ chart.per()|t }}{{ "; use the arrow keys to read each point"|t }}"></div>
+        <details class="chart-table">
+            <summary>{{ "Table"|t }}</summary>
+            <table>
+                <thead><tr><th scope="col">{{ chart.period_name()|t }}</th><th scope="col" class="number">{{ chart.title|t }}</th></tr></thead>
+                <tbody>
+                    {% for point in chart.points %}
+                    <tr><td>{{ chart.day_label(loop.index0) }}</td><td class="number">{{ point.1 }}</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </details>
+    </figure>
+    {% endfor %}
+</div>
+{% endmacro %}
+
+{# What a post looks like, small in the list (`large` false) or at the top of
+   its page: a video's thumbnail and length, the first photo (and how many
+   more), or the start of the text. Decoration next to its title, hidden
+   from screen readers. #}
+{% macro preview(row, large) %}
+<span class="content-preview{% if large %} large{% endif %}{% if row.picture.is_none() && !row.is_video %} text{% endif %}" aria-hidden="true">
+    {% if let Some(picture) = row.picture %}
+    <img src="{{ picture }}" alt="" loading="lazy" />
+    {% else if row.is_video %}
+    <span class="preview-mark">▶</span>
+    {% else %}
+    <span class="preview-text">{% if row.is_article %}<strong>{{ row.label }}</strong> {% endif %}{% if large %}{{ row.excerpt_of(320) }}{% else %}{{ row.excerpt_of(70) }}{% endif %}</span>
+    {% endif %}
+    {% if row.is_video %}
+    {% if row.picture.is_some() %}<span class="preview-play">▶</span>{% endif %}
+    {% if let Some(duration) = row.duration_label() %}<span class="preview-badge">{{ duration }}</span>{% endif %}
+    {% else if !row.more_photos().is_empty() %}
+    <span class="preview-badge">{{ row.more_photos() }}</span>
+    {% else if row.is_article && row.picture.is_some() %}
+    <span class="preview-badge">{{ "Article"|t }}</span>
+    {% endif %}
+</span>
+{% endmacro %}

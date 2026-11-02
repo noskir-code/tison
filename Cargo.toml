@@ -18,6 +18,9 @@ lettre = { version = "0.11.19", default-features = false, features = [
 # Requests to other Fediverse servers. TLS comes from rustls with ring (below),
 # the default provider (aws-lc) needs a C toolchain.
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls-no-provider"] }
+# Browser notifications (Web Push): P-256 keys, ES256, HKDF and AES-128-GCM.
+# Already built for rustls, see `push`.
+ring = "0.17.14"
 # Fediverse signatures (HTTP Signatures, RSA-SHA256). `sha2` is re-exported as `rsa::sha2`.
 rsa = { version = "0.9.10", features = ["sha2", "getrandom"] }
 # Only to pick ring as the TLS provider of reqwest, see `main`.

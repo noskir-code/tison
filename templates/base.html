@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{ crate::i18n::current().code() }}">
     <head>
         <meta charset="UTF-8"/>
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>{% block title %}{{ title }} - Tison{% endblock %}</title>
+        <title>{% block title %}{{ title|t }} - Tison{% endblock %}</title>
         <link rel="shortcut icon" href="/public/favicon.ico" type="image/x-icon">
         {# The theme chosen with the menu's button (see system.js), applied
            before the page is drawn so it never flashes in the other one. #}
@@ -21,6 +21,8 @@
         <link rel="stylesheet" href="/assets/style.css?v={{ crate::handlers::system::assets_version() }}"/>
         {% endblock %}
         {% block scripts %}
+        {# The texts of system.js in the page's language, see `i18n::js_texts`. #}
+        <script type="application/json" id="i18n">{{ crate::i18n::js_texts()|safe }}</script>
         <script src="/assets/system.js?v={{ crate::handlers::system::assets_version() }}" defer></script>
         {% endblock %}
         {# Pages with a Fediverse version link it: pasting the page's address in
@@ -31,7 +33,7 @@
         <div class="grid horizontal page end fixed full-width">
             {# On phones only (see style.css): opens the menu, which slides in
                from the left. Shown by the `js` class: it needs JavaScript. #}
-            <button type="button" class="menu-toggle" aria-controls="site-menu" aria-expanded="false" aria-label="Open the menu" data-menu-toggle>
+            <button type="button" class="menu-toggle" aria-controls="site-menu" aria-expanded="false" aria-label="{{ "Open the menu"|t }}" data-menu-toggle>
                 <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false">
                     <path d="M4 6.5h16M4 12h16M4 17.5h16" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
                 </svg>
@@ -39,7 +41,7 @@
             <a href="/" class="mobile-brand"><img src="/public/logo.png" alt="" class="logo"><span>Tison</span></a>
             <div class="menu-backdrop" data-menu-close></div>
             <div class="flex full height center side infos vertical" id="site-menu">
-                <header><img src="/public/logo.png" alt="Logo" class="logo"><div>Tison</div></header>
+                <header><img src="/public/logo.png" alt="{{ "Logo"|t }}" class="logo"><div>Tison</div></header>
                 <nav>
                     {% if let Some(viewer) = layout.viewer %}
                     <a href="/user/{{ viewer.username }}" class="flex center">
@@ -48,44 +50,45 @@
                         {% else %}
                         <span class="nav-avatar placeholder" aria-hidden="true">{{ viewer.initial() }}</span>
                         {% endif %}
-                        You
+                        {{ "You"|t }}
                     </a>
                     {% endif %}
-                    <a href="/">Home</a>
-                    <a href="/your-feed">Feed</a>
+                    <a href="/">{{ "Home"|t }}</a>
+                    <a href="/your-feed">{{ "Feed"|t }}</a>
                     {# Services of configs/services.conf: CONTENT-AGGREGATOR and DFRN. #}
-                    {% if crate::settings::services().content_aggregator %}<a href="/communities">Communities</a>{% endif %}
+                    {% if crate::settings::services().content_aggregator %}<a href="/communities">{{ "Communities"|t }}</a>{% endif %}
                     {# VIDEO and LIVE-STREAMING, AUDIOSTREAMING. #}
-                    {% if crate::settings::services().video || crate::settings::services().live_streaming %}<a href="/videos">Videos</a>{% endif %}
-                    {% if crate::settings::services().podcasts %}<a href="/podcasts">Podcasts</a>{% endif %}
-                    {% if crate::settings::services().events %}<a href="/events">Events</a>{% endif %}
+                    {% if crate::settings::services().video || crate::settings::services().live_streaming %}<a href="/videos">{{ "Videos"|t }}</a>{% endif %}
+                    {% if crate::settings::services().podcasts %}<a href="/podcasts">{{ "Podcasts"|t }}</a>{% endif %}
+                    {% if crate::settings::services().events %}<a href="/events">{{ "Events"|t }}</a>{% endif %}
                     {% if crate::settings::services().dfrn %}
                     <a href="/messenger" class="flex center" data-messenger>
-                        Messenger
+                        {{ "Messenger"|t }}
                         {# Conversations with unread messages, updated live by assets/system.js. #}
                         {% if layout.viewer.is_some() %}
                         <span class="badge" data-unread-messages{% if layout.unread_messages == 0 %} hidden{% endif %}>
-                            {{ layout.unread_messages_label() }}<span class="visually-hidden"> unread</span>
+                            {{ layout.unread_messages_label() }}<span class="visually-hidden"> {{ "unread"|t }}</span>
                         </span>
                         {% endif %}
                     </a>
                     {% endif %}
                     <a href="/notifications" class="flex center" data-notifications>
-                        Notifications
+                        {{ "Notifications"|t }}
                         {# Signed in only, updated live by assets/system.js, hidden at 0. #}
                         {% if layout.viewer.is_some() %}
                         <span class="badge" data-unread{% if layout.unread_notifications == 0 %} hidden{% endif %}>
-                            {{ layout.unread_label() }}<span class="visually-hidden"> unread</span>
+                            {{ layout.unread_label() }}<span class="visually-hidden"> {{ "unread"|t }}</span>
                         </span>
                         {% endif %}
                     </a>
                     {% if let Some(viewer) = layout.viewer %}{% if viewer.is_staff() %}
                     <a href="/moderation" class="flex center">
-                        Moderation
-                        {% if layout.open_reports > 0 %}<span class="badge">{{ layout.open_reports }}<span class="visually-hidden"> open reports</span></span>{% endif %}
+                        {{ "Moderation"|t }}
+                        {% if layout.open_reports > 0 %}<span class="badge">{{ layout.open_reports }}<span class="visually-hidden"> {{ "open reports"|t }}</span></span>{% endif %}
                     </a>
                     {% endif %}{% endif %}
-                    <a href="/settings">Settings</a>
+                    {% if layout.viewer.is_some() %}<a href="/dashboard">{{ "Dashboard"|t }}</a>{% endif %}
+                    <a href="/settings">{{ "Settings"|t }}</a>
                     {# Shown by system.js: switching needs JavaScript. #}
                     <button type="button" class="theme-toggle" data-theme-toggle hidden>
                         <svg class="moon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
@@ -95,17 +98,29 @@
                             <circle cx="12" cy="12" r="4.5" fill="none" stroke="currentColor" stroke-width="2" />
                             <path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
                         </svg>
-                        <span data-theme-label>Dark mode</span>
+                        <span data-theme-label>{{ "Dark mode"|t }}</span>
                     </button>
                 </nav>
+                {# The language of the interface, kept in a cookie, see i18n.rs.
+                   Chosen at once with JavaScript, with the button without. #}
+                <form action="/language" method="post" class="language-picker" data-language-picker>
+                    <label for="language" class="visually-hidden">{{ "Language"|t }}</label>
+                    <select id="language" name="lang">
+                        {% for lang in crate::i18n::Lang::ALL %}
+                        <option value="{{ lang.code() }}" lang="{{ lang.code() }}"{% if lang == crate::i18n::current() %} selected{% endif %}>{{ lang.name() }}</option>
+                        {% endfor %}
+                    </select>
+                    <button type="submit" class="button" data-language-submit>OK</button>
+                </form>
                 <div class="flex bottom center vertical">
                     <!-- Versions -->
-                    <div>Tison Protocol <br> v.0.11.63-beta</div>
+                    <div>Tison Protocol <br> v.0.18.78-beta</div>
                     <div class="flex wrap space-around infos">
-                        <a href="/terms-of-use">&bull;Terms of Use</a>
-                        <a href="/privacy-policy">&bull;Privacy Policy</a>
-                        <a href="/cookies">&bull;Cookies</a>
-                        <a href="/rules">&bull;Server rules</a>
+                        <a href="/terms-of-use">&bull;{{ "Terms of Use"|t }}</a>
+                        <a href="/privacy-policy">&bull;{{ "Privacy Policy"|t }}</a>
+                        <a href="/cookies">&bull;{{ "Cookies"|t }}</a>
+                        <a href="/rules">&bull;{{ "Server rules"|t }}</a>
+                        <a href="https://github.com/noskir-code/tison">{{ "Source Code"|t }}</a>
                     </div>
                 </div>
             </div>
@@ -120,11 +135,11 @@
                     <span>{{ viewer.username }}</span>
                 </a>
                 <form action="/logout" method="post">
-                    <button type="submit" class="button">Logout</button>
+                    <button type="submit" class="button">{{ "Logout"|t }}</button>
                 </form>
                 {% else %}
-                <a href="/login" class="button">Login</a>
-                <a href="/register" class="button primary">Register</a>
+                <a href="/login" class="button">{{ "Login"|t }}</a>
+                <a href="/register" class="button primary">{{ "Register"|t }}</a>
                 {% endif %}
             </div>
         </div>
@@ -132,15 +147,36 @@
             {# People and communities here, or @name@server for the Fediverse,
                see handlers/search.rs. #}
             <form action="/search" method="get" class="search-field site-search" role="search">
-                <label for="site-search" class="visually-hidden">Search</label>
-                <input id="site-search" type="search" name="q" value="{{ layout.search }}" placeholder="Search people, {% if crate::settings::services().content_aggregator %}communities, {% endif %}or @name@server" required />
-                <button type="submit" class="button" aria-label="Search">
+                <label for="site-search" class="visually-hidden">{{ "Search"|t }}</label>
+                <input id="site-search" type="search" name="q" value="{{ layout.search }}" placeholder="{% if crate::settings::services().content_aggregator %}{{ "Search people, communities, or @name@server"|t }}{% else %}{{ "Search people, or @name@server"|t }}{% endif %}" required />
+                <button type="submit" class="button" aria-label="{{ "Search"|t }}">
                     <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
                         <circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2.2" />
                         <line x1="15.5" y1="15.5" x2="21" y2="21" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
                     </svg>
                 </button>
             </form>
+            {% if layout.email_unverified %}
+            {# Until the link sent at signup is opened, see handlers/verify_email.rs. #}
+            <div class="box verify-ask">
+                <p><strong>{{ "Verify your email."|t }}</strong> {{ "We sent you a link when you signed up: open it to confirm your address."|t }}</p>
+                <form action="/settings/verify-email" method="post">
+                    <input type="hidden" name="return" value="/settings#email" />
+                    <button type="submit" class="button">{{ "Send it again"|t }}</button>
+                </form>
+            </div>
+            {% endif %}
+            {% if layout.viewer.is_some() %}
+            {# Shown by assets/system.js while this browser hasn't been asked:
+               browsers only show their own question after a click. #}
+            <div class="box push-ask" data-push-ask hidden>
+                <p data-push-ask-text><strong>{{ "Turn on notifications?"|t }}</strong> {{ "Get likes, comments"|t }}{% if crate::settings::services().dfrn %}{{ ", messages"|t }}{% endif %} {{ "and reminders even when Tison is closed."|t }}</p>
+                <div class="push-ask-actions">
+                    <button type="button" class="button primary" data-push-ask-yes>{{ "Turn on"|t }}</button>
+                    <button type="button" class="button" data-push-ask-later>{{ "Not now"|t }}</button>
+                </div>
+            </div>
+            {% endif %}
             {% block content %}
             {% endblock %}
         </div>

@@ -1,0 +1,3317 @@
+# Tison interface, es. The English text is the key, see src/i18n.rs.
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Language: es\n"
+
+msgid "(new)"
+msgstr "(nuevo)"
+
+msgid "(no text)"
+msgstr "(sin texto)"
+
+msgid "(optional)"
+msgstr "(opcional)"
+
+msgid "(unread)"
+msgstr "(no leído)"
+
+msgid ") instead of the code: each works once."
+msgstr ") en lugar del código: cada uno sirve una sola vez."
+
+msgid "); changes apply when Tison restarts. An environment variable with the same name wins over the file."
+msgstr "); los cambios se aplican cuando Tison se reinicia. Una variable de entorno con el mismo nombre tiene prioridad sobre el archivo."
+
+msgid ", and @"
+msgstr ", y @"
+
+msgid ", mention it to post."
+msgstr ", menciónala para publicar."
+
+msgid ", messages"
+msgstr ", los mensajes"
+
+msgid ", or paste the link of their profile."
+msgstr ", o pega el enlace de su perfil."
+
+msgid ", then paste these two values."
+msgstr ", luego pega estos dos valores."
+
+msgid ", which wins over the file."
+msgstr ", que tiene prioridad sobre el archivo."
+
+msgid "1. Scan this code with your app"
+msgstr "1. Escanea este código con tu aplicación"
+
+msgid "12 Main Street, Springfield"
+msgstr "Calle Mayor 12, Springfield"
+
+msgid "2. Type the code it shows"
+msgstr "2. Escribe el código que muestra"
+
+msgid "6-digit code"
+msgstr "Código de 6 dígitos"
+
+msgid ": their posts and notifications only reach the people following their accounts."
+msgstr ": sus publicaciones y notificaciones solo llegan a quienes siguen sus cuentas."
+
+msgid ": this changes this date only. The next dates are copied from the last one."
+msgstr ": esto cambia solo esta fecha. Las siguientes se copian de la última."
+
+msgid ": what came from them is deleted, nothing goes to them, what they send is ignored."
+msgstr ": lo que vino de ellos se borra, no se les envía nada y lo que envían se ignora."
+
+msgid "; to add your own, use ⤒ or paste or drop it in the text"
+msgstr "; para añadir la tuya, usa ⤒ o pégala o suéltala en el texto"
+
+msgid "; use the arrow keys to read each point"
+msgstr "; usa las flechas para leer cada punto"
+
+msgid "@name@mastodon.social"
+msgstr ""
+
+msgid "A code like en, fr or pt-BR."
+msgstr "Un código como en, fr o pt-BR."
+
+msgid "A community's events are on its page, and its moderators can manage them, like Mobilizon's groups."
+msgstr "Los eventos de una comunidad están en su página y sus moderadores pueden gestionarlos, como los grupos de Mobilizon."
+
+msgid "A few words about you, shown in “About me”."
+msgstr "Unas palabras sobre ti, mostradas en «Sobre mí»."
+
+msgid "A link was sent less than two minutes ago: check your inbox, or wait a moment."
+msgstr "Se envió un enlace hace menos de dos minutos: revisa tu bandeja de entrada o espera un momento."
+
+msgid "A link; addresses written as they are work too"
+msgstr "Un enlace; las direcciones escritas tal cual también funcionan"
+
+msgid "A new link was sent: check your inbox, and your spam folder."
+msgstr "Se envió un nuevo enlace: revisa tu bandeja de entrada y la carpeta de spam."
+
+msgid "A picture from the web"
+msgstr "Una imagen de la web"
+
+msgid "A picture shown before the video plays and in lists, cropped to 1280×720 (16:9) from its middle. Without one, a frame of the video is used."
+msgstr "Una imagen que se muestra antes de reproducir y en las listas, recortada a 1280×720 (16:9) desde el centro. Sin ella, se usa un fotograma del vídeo."
+
+msgid "A place, an address, a link to join online, or several. With an address, a map is shown."
+msgstr "Un lugar, una dirección, un enlace para unirse en línea, o varios. Con una dirección, se muestra un mapa."
+
+msgid "A quote"
+msgstr "Una cita"
+
+msgid "A separating line"
+msgstr "Una línea separadora"
+
+msgid "ALT"
+msgstr ""
+
+msgid "About"
+msgstr "Acerca de"
+
+msgid "About me"
+msgstr "Sobre mí"
+
+msgid "Accept"
+msgstr "Aceptar"
+
+msgid "Accept friend"
+msgstr "Aceptar como amigo"
+
+msgid "Account:"
+msgstr "Cuenta:"
+
+msgid "Accounts"
+msgstr "Cuentas"
+
+msgid "Accounts discovered"
+msgstr "Cuentas descubiertas"
+
+msgid "Accounts following people here"
+msgstr "Cuentas que siguen a personas de aquí"
+
+msgid "Accounts of the staff can't be suspended here."
+msgstr "Las cuentas del equipo no se pueden suspender aquí."
+
+msgid "Accounts of this server known here"
+msgstr "Cuentas de este servidor conocidas aquí"
+
+msgid "Accounts people here follow"
+msgstr "Cuentas que siguen las personas de aquí"
+
+msgid "Actions"
+msgstr "Acciones"
+
+msgid "Activities queued for other servers"
+msgstr "Actividades en espera de envío a otros servidores"
+
+msgid "Add"
+msgstr "Añadir"
+
+msgid "Add a moderator"
+msgstr "Añadir un moderador"
+
+msgid "Add a moderator (a member's username)"
+msgstr "Añadir un moderador (el nombre de usuario de un miembro)"
+
+msgid "Add friend"
+msgstr "Añadir como amigo"
+
+msgid "Add moderator"
+msgstr "Añadir moderador"
+
+msgid "Add photos"
+msgstr "Añadir fotos"
+
+msgid "Add rule"
+msgstr "Añadir regla"
+
+msgid "Add to calendar"
+msgstr "Añadir al calendario"
+
+msgid "Address"
+msgstr "Dirección"
+
+msgid "Aegis, 2FAS, Google Authenticator, Microsoft Authenticator, Bitwarden, 1Password, KeePassXC… any authenticator app works."
+msgstr "Aegis, 2FAS, Google Authenticator, Microsoft Authenticator, Bitwarden, 1Password, KeePassXC… cualquier aplicación de autenticación sirve."
+
+msgid "All communities"
+msgstr "Todas las comunidades"
+
+msgid "All dates"
+msgstr "Todas las fechas"
+
+msgid "All results for “{}”"
+msgstr "Todos los resultados para «{}»"
+
+msgid "All time"
+msgstr "Desde el principio"
+
+msgid "Already have an account?"
+msgstr "¿Ya tienes una cuenta?"
+
+msgid "Already live with this key."
+msgstr "Ya está en directo con esta clave."
+
+msgid "Also one this site hasn't met yet: it will be treated so from its first contact."
+msgstr "También uno que este sitio aún no conoce: se tratará así desde su primer contacto."
+
+msgid "Also with people on Mastodon, Pleroma, Hubzilla, Misskey and other Fediverse servers."
+msgstr "También con personas en Mastodon, Pleroma, Hubzilla, Misskey y otros servidores del Fediverso."
+
+msgid "An account already uses this email."
+msgstr "Ya hay una cuenta con este correo."
+
+msgid "An account of"
+msgstr "Una cuenta de"
+
+msgid "An article can be at most {} characters."
+msgstr "Un artículo puede tener como máximo {} caracteres."
+
+msgid "An empty line starts a new paragraph. Articles are shared with the Fediverse like on WriteFreely: Mastodon shows their title and a link."
+msgstr "Una línea vacía empieza un párrafo nuevo. Los artículos se comparten con el Fediverso como en WriteFreely: Mastodon muestra su título y un enlace."
+
+msgid "An environment variable sets it to"
+msgstr "Una variable de entorno lo define como"
+
+msgid "Anything the moderators should know? (optional)"
+msgstr "¿Algo que deban saber los moderadores? (opcional)"
+
+msgid "Apply"
+msgstr "Aplicar"
+
+msgid "Article"
+msgstr "Artículo"
+
+msgid "Article pictures"
+msgstr "Imágenes de artículos"
+
+msgid "Article, in Markdown"
+msgstr "Artículo, en Markdown"
+
+msgid "Articles"
+msgstr "Artículos"
+
+msgid "Arts"
+msgstr "Arte"
+
+msgid "Ask to join"
+msgstr "Pedir unirse"
+
+msgid "Asked"
+msgstr "Solicitado"
+
+msgid "At most {} characters, without control characters."
+msgstr "Como máximo {} caracteres, sin caracteres de control."
+
+msgid "At most {} photos: choose again."
+msgstr "Como máximo {} fotos: vuelve a elegir."
+
+msgid "Attached file"
+msgstr "Archivo adjunto"
+
+msgid "Auto"
+msgstr "Auto"
+
+msgid "Auto, {}"
+msgstr "Auto, {}"
+
+msgid "Back"
+msgstr "Volver"
+
+msgid "Back to home"
+msgstr "Volver al inicio"
+
+msgid "Back to login"
+msgstr "Volver al inicio de sesión"
+
+msgid "Back to the community"
+msgstr "Volver a la comunidad"
+
+msgid "Back to the conversations"
+msgstr "Volver a las conversaciones"
+
+msgid "Background"
+msgstr "Fondo"
+
+msgid "Background of @{}"
+msgstr "Fondo de @{}"
+
+msgid "Ban"
+msgstr "Bloquear"
+
+msgid "Ban {}? What came from it is deleted, and it can't be brought back."
+msgstr "¿Bloquear {}? Lo que vino de él se borra y no se puede recuperar."
+
+msgid "Banned"
+msgstr "Bloqueado"
+
+msgid "Banned: what came from it is deleted, and nothing goes to it anymore."
+msgstr "Bloqueado: lo que vino de él se borra y ya no se le envía nada."
+
+msgid "Banner (optional)"
+msgstr "Banner (opcional)"
+
+msgid "Bio"
+msgstr "Biografía"
+
+msgid "Birthday"
+msgstr "Fecha de nacimiento"
+
+msgid "Block"
+msgstr "Bloquear"
+
+msgid "Block account"
+msgstr "Bloquear la cuenta"
+
+msgid "Block {}? What it posted here is deleted, and what it sends is ignored."
+msgstr "¿Bloquear {}? Lo que publicó aquí se borra y lo que envía se ignora."
+
+msgid "Blocked: allow notifications for this site in the browser's settings."
+msgstr "Bloqueadas: permite las notificaciones de este sitio en la configuración del navegador."
+
+msgid "Bold"
+msgstr "Negrita"
+
+msgid "Bold (Ctrl+B)"
+msgstr "Negrita (Ctrl+B)"
+
+msgid "Book clubs"
+msgstr "Clubes de lectura"
+
+msgid "Both are optional: your username is enough. Unless they're public, posts, comments, search and other servers (Mastodon, Hubzilla...) show your display name, or your username."
+msgstr "Ambos son opcionales: tu nombre de usuario basta. Si no son públicos, las publicaciones, los comentarios, la búsqueda y otros servidores (Mastodon, Hubzilla...) muestran tu nombre visible, o tu nombre de usuario."
+
+msgid "Brave's push service is off: turn on \"Use Google services for push messaging\" in brave://settings/privacy, relaunch Brave, then try again."
+msgstr "El servicio de notificaciones de Brave está desactivado: activa «Usar los servicios de Google para la mensajería push» en brave://settings/privacy, reinicia Brave y vuelve a intentarlo."
+
+msgid "Browser notifications"
+msgstr "Notificaciones del navegador"
+
+msgid "Browser notifications work in this browser."
+msgstr "Las notificaciones del navegador funcionan en este navegador."
+
+msgid "Business"
+msgstr "Negocios"
+
+msgid "By"
+msgstr "Por"
+
+msgid "By users here"
+msgstr "Por los usuarios de aquí"
+
+msgid "Cancel"
+msgstr "Cancelar"
+
+msgid "Cancel request"
+msgstr "Cancelar la solicitud"
+
+msgid "Cancel the event"
+msgstr "Cancelar el evento"
+
+msgid "Cancel the request"
+msgstr "Cancelar la solicitud"
+
+msgid "Cancelled"
+msgstr "Cancelado"
+
+msgid "Category"
+msgstr "Categoría"
+
+msgid "Causes"
+msgstr "Causas"
+
+msgid "Change password"
+msgstr "Cambiar la contraseña"
+
+msgid "Changes saved."
+msgstr "Cambios guardados."
+
+msgid "Choose a file to upload."
+msgstr "Elige un archivo para subir."
+
+msgid "Choose a new password"
+msgstr "Elige una nueva contraseña"
+
+msgid "Choose a reason, and write at most {} characters."
+msgstr "Elige un motivo y escribe como máximo {} caracteres."
+
+msgid "Choose an image to upload."
+msgstr "Elige una imagen para subir."
+
+msgid "Choose when it starts."
+msgstr "Elige cuándo empieza."
+
+msgid "Choose who can read the posts."
+msgstr "Elige quién puede leer las publicaciones."
+
+msgid "Choose who can see it."
+msgstr "Elige quién puede verlo."
+
+msgid "Choose who can see the post."
+msgstr "Elige quién puede ver la publicación."
+
+msgid "Click to show"
+msgstr "Haz clic para mostrar"
+
+msgid "Close"
+msgstr "Cerrar"
+
+msgid "Close (ban)"
+msgstr "Cerrar (bloquear)"
+
+msgid "Code"
+msgstr "Código"
+
+msgid "Code from your app"
+msgstr "Código de tu aplicación"
+
+msgid "Code from your app, or a recovery code"
+msgstr "Código de tu aplicación o un código de recuperación"
+
+msgid "Code, in a line or as a block"
+msgstr "Código, en una línea o en bloque"
+
+msgid "Code: in the line, or as a block over several lines"
+msgstr "Código: en la línea, o en bloque en varias líneas"
+
+msgid "Comedy"
+msgstr "Humor"
+
+msgid "Coming up"
+msgstr "Próximamente"
+
+msgid "Comment"
+msgstr "Comentar"
+
+msgid "Comment by {}"
+msgstr "Comentario de {}"
+
+msgid "Comments"
+msgstr "Comentarios"
+
+msgid "Comments ·"
+msgstr "Comentarios ·"
+
+msgid "Communities"
+msgstr "Comunidades"
+
+msgid "Community"
+msgstr "Comunidad"
+
+msgid "Configuration"
+msgstr "Configuración"
+
+msgid "Confirm"
+msgstr "Confirmar"
+
+msgid "Confirm it again"
+msgstr "Confírmalo de nuevo"
+
+msgid "Confirm new password"
+msgstr "Confirmar la nueva contraseña"
+
+msgid "Confirm password"
+msgstr "Confirmar la contraseña"
+
+msgid "Connect OBS"
+msgstr "Conectar OBS"
+
+msgid "Conversations"
+msgstr "Conversaciones"
+
+msgid "Converting now"
+msgstr "Convirtiéndose ahora"
+
+msgid "Converting with ffmpeg… It appears in feeds when it's ready; only you see it until then. Reload the page to check."
+msgstr "Convirtiendo con ffmpeg… Aparece en los muros cuando está listo; solo tú lo ves hasta entonces. Recarga la página para comprobarlo."
+
+msgid "Converting…"
+msgstr "Convirtiendo…"
+
+msgid "Converting… {}%"
+msgstr "Convirtiendo… {} %"
+
+msgid "Cookies"
+msgstr "Cookies"
+
+msgid "Copied"
+msgstr "Copiado"
+
+msgid "Copy"
+msgstr "Copiar"
+
+msgid "Copy link"
+msgstr "Copiar el enlace"
+
+msgid "Copy the codes"
+msgstr "Copiar los códigos"
+
+msgid "Cover"
+msgstr "Portada"
+
+msgid "Cover of {}"
+msgstr "Portada de {}"
+
+msgid "Crafts"
+msgstr "Manualidades"
+
+msgid "Create"
+msgstr "Crear"
+
+msgid "Create a community"
+msgstr "Crear una comunidad"
+
+msgid "Create a post"
+msgstr "Crear una publicación"
+
+msgid "Create account"
+msgstr "Crear la cuenta"
+
+msgid "Create community"
+msgstr "Crear la comunidad"
+
+msgid "Create podcast"
+msgstr "Crear el pódcast"
+
+msgid "Created this site"
+msgstr "Creó este sitio"
+
+msgid "Creator"
+msgstr "Creador"
+
+msgid "Current password"
+msgstr "Contraseña actual"
+
+msgid "Custom…"
+msgstr "Personalizado…"
+
+msgid "Dark mode"
+msgstr "Modo oscuro"
+
+msgid "Dashboard"
+msgstr "Panel"
+
+msgid "Dashboard sections"
+msgstr "Secciones del panel"
+
+msgid "Dates"
+msgstr "Fechas"
+
+msgid "Dates of {}"
+msgstr "Fechas de {}"
+
+msgid "Day"
+msgstr "Día"
+
+msgid "Decline"
+msgstr "Rechazar"
+
+msgid "Delete"
+msgstr "Eliminar"
+
+msgid "Delete all"
+msgstr "Eliminar todo"
+
+msgid "Delete community"
+msgstr "Eliminar la comunidad"
+
+msgid "Delete rule"
+msgstr "Eliminar la regla"
+
+msgid "Delete the community"
+msgstr "Eliminar la comunidad"
+
+msgid "Delete the podcast"
+msgstr "Eliminar el pódcast"
+
+msgid "Delete this comment and its replies?"
+msgstr "¿Eliminar este comentario y sus respuestas?"
+
+msgid "Delete this message for both of you?"
+msgstr "¿Eliminar este mensaje para los dos?"
+
+msgid "Delete this notification"
+msgstr "Eliminar esta notificación"
+
+msgid "Delete this post?"
+msgstr "¿Eliminar esta publicación?"
+
+msgid "Deleted, and the report resolved."
+msgstr "Eliminado y el reporte resuelto."
+
+msgid "Deletes the community with all its posts, rules and members. This can't be undone."
+msgstr "Elimina la comunidad con todas sus publicaciones, reglas y miembros. No se puede deshacer."
+
+msgid "Describe it for people who can't see it (alt text)"
+msgstr "Descríbela para las personas que no pueden verla (texto alternativo)"
+
+msgid "Description"
+msgstr "Descripción"
+
+msgid "Description of photo {}"
+msgstr "Descripción de la foto {}"
+
+msgid "Details"
+msgstr "Detalles"
+
+msgid "Details (optional)"
+msgstr "Detalles (opcional)"
+
+msgid "Dismiss"
+msgstr "Descartar"
+
+msgid "Dismissed"
+msgstr "Descartado"
+
+msgid "Display name"
+msgstr "Nombre visible"
+
+msgid "Domain"
+msgstr "Dominio"
+
+msgid "Domain, like spam.example"
+msgstr "Dominio, como spam.example"
+
+msgid "Download"
+msgstr "Descargar"
+
+msgid "Each date is an event of its own, with its participants: the next ones appear two at a time."
+msgstr "Cada fecha es un evento propio, con sus participantes: las siguientes aparecen de dos en dos."
+
+msgid "Each date of a recurring event counts"
+msgstr "Cada fecha de un evento recurrente cuenta"
+
+msgid "Each one"
+msgstr "Cada uno"
+
+msgid "Edit"
+msgstr "Editar"
+
+msgid "Edit profile"
+msgstr "Editar el perfil"
+
+msgid "Edit the article"
+msgstr "Editar el artículo"
+
+msgid "Edit the comment"
+msgstr "Editar el comentario"
+
+msgid "Edit the event"
+msgstr "Editar el evento"
+
+msgid "Edit the post"
+msgstr "Editar la publicación"
+
+msgid "Edit the video"
+msgstr "Editar el vídeo"
+
+msgid "Education"
+msgstr "Educación"
+
+msgid "Email"
+msgstr "Correo"
+
+msgid "Email verified"
+msgstr "Correo verificado"
+
+msgid "Emphasis"
+msgstr "Énfasis"
+
+msgid "Ends (optional)"
+msgstr "Fin (opcional)"
+
+msgid "Enter a valid email address."
+msgstr "Escribe un correo válido."
+
+msgid "Enter the email of your account, we will send you a link to choose a new password."
+msgstr "Escribe el correo de tu cuenta y te enviaremos un enlace para elegir una nueva contraseña."
+
+msgid "Enter your birthday."
+msgstr "Escribe tu fecha de nacimiento."
+
+msgid "Enter your password."
+msgstr "Escribe tu contraseña."
+
+msgid "Enter your username or email."
+msgstr "Escribe tu nombre de usuario o tu correo."
+
+msgid "Episode"
+msgstr "Episodio"
+
+msgid "Episodes"
+msgstr "Episodios"
+
+msgid "Error"
+msgstr "Error"
+
+msgid "Events"
+msgstr "Eventos"
+
+msgid "Every 2 weeks"
+msgstr "Cada 2 semanas"
+
+msgid "Every device signed in to your account will be signed out."
+msgstr "Todos los dispositivos conectados a tu cuenta cerrarán sesión."
+
+msgid "Every month"
+msgstr "Cada mes"
+
+msgid "Every week"
+msgstr "Cada semana"
+
+msgid "Everyone, here and on the Fediverse"
+msgstr "Todo el mundo, aquí y en el Fediverso"
+
+msgid "Explicit content"
+msgstr "Contenido explícito"
+
+msgid "Failed"
+msgstr "Fallido"
+
+msgid "Failed to load the reports."
+msgstr "No se pudieron cargar los reportes."
+
+msgid "Failed to load these statistics, try again later."
+msgstr "No se pudieron cargar estas estadísticas, inténtalo más tarde."
+
+msgid "Failed to load this account."
+msgstr "No se pudo cargar esta cuenta."
+
+msgid "Failed to load this community."
+msgstr "No se pudo cargar esta comunidad."
+
+msgid "Failed to load this conversation."
+msgstr "No se pudo cargar esta conversación."
+
+msgid "Failed to load this event."
+msgstr "No se pudo cargar este evento."
+
+msgid "Failed to load this podcast."
+msgstr "No se pudo cargar este pódcast."
+
+msgid "Failed to load this post."
+msgstr "No se pudo cargar esta publicación."
+
+msgid "Failed to load this user."
+msgstr "No se pudo cargar este usuario."
+
+msgid "Failed to load your dashboard, try again later."
+msgstr "No se pudo cargar tu panel, inténtalo más tarde."
+
+msgid "Failed to load your live settings."
+msgstr "No se pudieron cargar tus ajustes de directo."
+
+msgid "Failed to load your notifications."
+msgstr "No se pudieron cargar tus notificaciones."
+
+msgid "Failed to load your profile."
+msgstr "No se pudo cargar tu perfil."
+
+msgid "Failed to save the picture, try again later."
+msgstr "No se pudo guardar la imagen, inténtalo más tarde."
+
+msgid "Failed to send the test."
+msgstr "No se pudo enviar la prueba."
+
+msgid "Failed to write the file: {}"
+msgstr "No se pudo escribir el archivo: {}"
+
+msgid "Family & education"
+msgstr "Familia y educación"
+
+msgid "Federation"
+msgstr "Federación"
+
+msgid "Feed"
+msgstr "Muro"
+
+msgid "Fiction"
+msgstr "Ficción"
+
+msgid "Film & media"
+msgstr "Cine y medios"
+
+msgid "Find"
+msgstr "Buscar"
+
+msgid "Find a server"
+msgstr "Buscar un servidor"
+
+msgid "First name"
+msgstr "Nombre"
+
+msgid "Follow"
+msgstr "Seguir"
+
+msgid "Follow in a podcast app (RSS)"
+msgstr "Seguir en una aplicación de pódcasts (RSS)"
+
+msgid "Followed"
+msgstr "Seguido"
+
+msgid "Followed from here"
+msgstr "Seguidos desde aquí"
+
+msgid "Followers"
+msgstr "Seguidores"
+
+msgid "Followers here"
+msgstr "Seguidores aquí"
+
+msgid "Followers only"
+msgstr "Solo seguidores"
+
+msgid "Followers who left aren't kept: the line shows your followers of today, by the day they followed you."
+msgstr "Los seguidores que se fueron no se guardan: la línea muestra tus seguidores de hoy, según el día en que te siguieron."
+
+msgid "Following"
+msgstr "Siguiendo"
+
+msgid "Following failed, try again later."
+msgstr "No se pudo seguir, inténtalo más tarde."
+
+msgid "Following here"
+msgstr "Que siguen aquí"
+
+msgid "Food & drink"
+msgstr "Comida y bebida"
+
+msgid "Forgot password"
+msgstr "Contraseña olvidada"
+
+msgid "Forgot your password?"
+msgstr "¿Olvidaste tu contraseña?"
+
+msgid "Formatting"
+msgstr "Formato"
+
+msgid "Friend"
+msgstr "Amigo"
+
+msgid "Friend requests"
+msgstr "Solicitudes de amistad"
+
+msgid "Friends"
+msgstr "Amigos"
+
+msgid "Friends and messenger"
+msgstr "Amigos y mensajería"
+
+msgid "Friends ✓"
+msgstr "Amigos ✓"
+
+msgid "Friendships"
+msgstr "Amistades"
+
+msgid "From Funkwhale, Castopod..."
+msgstr "De Funkwhale, Castopod..."
+
+msgid "From Mobilizon..."
+msgstr "De Mobilizon..."
+
+msgid "From PeerTube..."
+msgstr "De PeerTube..."
+
+msgid "From WriteFreely, Plume..."
+msgstr "De WriteFreely, Plume..."
+
+msgid "From the Fediverse"
+msgstr "Del Fediverso"
+
+msgid "Full"
+msgstr "Completo"
+
+msgid "Full screen"
+msgstr "Pantalla completa"
+
+msgid "Games"
+msgstr "Juegos"
+
+msgid "Gender"
+msgstr "Género"
+
+msgid "Get likes, comments"
+msgstr "Recibe los me gusta, comentarios"
+
+msgid "Give it a title."
+msgstr "Dale un título."
+
+msgid "Give the article a title."
+msgstr "Dale un título al artículo."
+
+msgid "Give the event a title."
+msgstr "Dale un título al evento."
+
+msgid "Go live"
+msgstr "Emitir en directo"
+
+msgid "Going"
+msgstr "Asiste"
+
+msgid "Government"
+msgstr "Gobierno"
+
+msgid "HD"
+msgstr ""
+
+msgid "Harassment or bullying"
+msgstr "Acoso o intimidación"
+
+msgid "Hate speech"
+msgstr "Discurso de odio"
+
+msgid "Heading"
+msgstr "Encabezado"
+
+msgid "Heading: again for a smaller one, a third time to remove it"
+msgstr "Encabezado: otra vez para uno más pequeño, una tercera vez para quitarlo"
+
+msgid "Headings, at the start of a line"
+msgstr "Encabezados, al principio de una línea"
+
+msgid "Health"
+msgstr "Salud"
+
+msgid "Health & Fitness"
+msgstr "Salud y forma física"
+
+msgid "Here"
+msgstr "Aquí"
+
+msgid "Hidden: leave empty to keep it"
+msgstr "Oculto: déjalo vacío para conservarlo"
+
+msgid "Hide"
+msgstr "Ocultar"
+
+msgid "Hide from home"
+msgstr "Ocultar del inicio"
+
+msgid "History"
+msgstr "Historia"
+
+msgid "Home"
+msgstr "Inicio"
+
+msgid "Hot"
+msgstr "Populares"
+
+msgid "Hours of video"
+msgstr "Horas de vídeo"
+
+msgid "How the server runs: its address, the database, emails, the Fediverse, videos..."
+msgstr "Cómo funciona el servidor: su dirección, la base de datos, los correos, el Fediverso, los vídeos..."
+
+msgid "How to format"
+msgstr "Cómo dar formato"
+
+msgid "I accept each participant myself"
+msgstr "Acepto a cada participante yo mismo"
+
+msgid "I understand, delete"
+msgstr "Entiendo, eliminar"
+
+msgid "If an account uses this email, a link to choose a new password was sent to it. It works for {} minutes."
+msgstr "Si una cuenta usa este correo, se le envió un enlace para elegir una nueva contraseña. Funciona durante {} minutos."
+
+msgid "If you keep replays, it becomes a video here in a moment."
+msgstr "Si guardas las repeticiones, se convierte en un vídeo aquí en un momento."
+
+msgid "Illegal content"
+msgstr "Contenido ilegal"
+
+msgid "Images"
+msgstr "Imágenes"
+
+msgid "In OBS: Settings → Stream → Service:"
+msgstr "En OBS: Ajustes → Emisión → Servicio:"
+
+msgid "In effect now"
+msgstr "En vigor ahora"
+
+msgid "Internal server error"
+msgstr "Error interno del servidor"
+
+msgid "It must end after it starts."
+msgstr "Debe terminar después de empezar."
+
+msgid "Italic"
+msgstr "Cursiva"
+
+msgid "Italic (Ctrl+I)"
+msgstr "Cursiva (Ctrl+I)"
+
+msgid "Its accounts followed by people here"
+msgstr "Sus cuentas que siguen personas de aquí"
+
+msgid "Its accounts following people or communities here"
+msgstr "Sus cuentas que siguen a personas o comunidades de aquí"
+
+msgid "Join"
+msgstr "Unirse"
+
+msgid "Joined"
+msgstr "Se unió"
+
+msgid "Keep the key secret: anyone who has it can stream as you."
+msgstr "Mantén la clave en secreto: quien la tenga puede emitir en tu nombre."
+
+msgid "Keep the replay: the stream becomes a video when it ends"
+msgstr "Guardar la repetición: el directo se convierte en un vídeo cuando termina"
+
+msgid "Keep them somewhere safe, like a password manager or on paper. Each one lets you log in once without your phone."
+msgstr "Guárdalos en un lugar seguro, como un gestor de contraseñas o en papel. Cada uno permite iniciar sesión una vez sin tu teléfono."
+
+msgid "Key to type in the app"
+msgstr "Clave para escribir en la aplicación"
+
+msgid "Kids & Family"
+msgstr "Niños y familia"
+
+msgid "Language"
+msgstr "Idioma"
+
+msgid "Language & culture"
+msgstr "Idioma y cultura"
+
+msgid "Last name"
+msgstr "Apellido"
+
+msgid "Last seen"
+msgstr "Visto por última vez"
+
+msgid "Learning"
+msgstr "Aprendizaje"
+
+msgid "Leave"
+msgstr "Salir"
+
+msgid "Leave the event"
+msgstr "Salir del evento"
+
+msgid "Leisure"
+msgstr "Ocio"
+
+msgid "Like"
+msgstr "Me gusta"
+
+msgid "Like Mastodon's"
+msgstr "Como en Mastodon"
+
+msgid "Like ·"
+msgstr "Me gusta ·"
+
+msgid "Liked"
+msgstr "Te gusta"
+
+msgid "Likes"
+msgstr "Me gusta"
+
+msgid "Likes and shares"
+msgstr "Me gusta y compartidos"
+
+msgid "Likes and shares from other servers count in the totals only: they don't say when they came."
+msgstr "Los me gusta y compartidos de otros servidores solo cuentan en los totales: no dicen cuándo llegaron."
+
+msgid "Limit"
+msgstr "Limitar"
+
+msgid "Limit or ban a server"
+msgstr "Limitar o bloquear un servidor"
+
+msgid "Limited"
+msgstr "Limitado"
+
+msgid "Limited: its posts and notifications only reach the people following its accounts."
+msgstr "Limitado: sus publicaciones y notificaciones solo llegan a quienes siguen sus cuentas."
+
+msgid "Link"
+msgstr "Enlace"
+
+msgid "Link (Ctrl+K)"
+msgstr "Enlace (Ctrl+K)"
+
+msgid "Link copied"
+msgstr "Enlace copiado"
+
+msgid "List"
+msgstr "Lista"
+
+msgid "Listen"
+msgstr "Escuchar"
+
+msgid "Lists"
+msgstr "Listas"
+
+msgid "Live"
+msgstr "En directo"
+
+msgid "Live now"
+msgstr "En directo ahora"
+
+msgid "Live replay"
+msgstr "Repetición del directo"
+
+msgid "Live streams"
+msgstr "Directos"
+
+msgid "Live streams are off on this server."
+msgstr "Los directos están desactivados en este servidor."
+
+msgid "Log in"
+msgstr "Iniciar sesión"
+
+msgid "Log in to join"
+msgstr "Inicia sesión para unirte"
+
+msgid "Login"
+msgstr "Iniciar sesión"
+
+msgid "Login to"
+msgstr "Inicia sesión para"
+
+msgid "Login to find accounts of other servers."
+msgstr "Inicia sesión para encontrar cuentas de otros servidores."
+
+msgid "Logo"
+msgstr "Logo"
+
+msgid "Logout"
+msgstr "Cerrar sesión"
+
+msgid "Lost your phone?"
+msgstr "¿Perdiste el teléfono?"
+
+msgid "Lowercase letters, digits and _, can't be changed later: /community/"
+msgstr "Letras minúsculas, dígitos y _, no se puede cambiar después: /community/"
+
+msgid "Make new codes"
+msgstr "Crear códigos nuevos"
+
+msgid "Making it private removes its followers on other servers, and stops sharing its posts with them."
+msgstr "Hacerla privada elimina sus seguidores en otros servidores y deja de compartir sus publicaciones con ellos."
+
+msgid "Manage"
+msgstr "Gestionar"
+
+msgid "Map of {}"
+msgstr "Mapa de {}"
+
+msgid "Mark all as read"
+msgstr "Marcar todo como leído"
+
+msgid "Meeting"
+msgstr "Reunión"
+
+msgid "Members"
+msgstr "Miembros"
+
+msgid "Members only"
+msgstr "Solo miembros"
+
+msgid "Memberships"
+msgstr "Membresías"
+
+msgid "Message"
+msgstr "Mensaje"
+
+msgid "Messages"
+msgstr "Mensajes"
+
+msgid "Messages sent"
+msgstr "Mensajes enviados"
+
+msgid "Messages with {}"
+msgstr "Mensajes con {}"
+
+msgid "Messenger"
+msgstr "Mensajería"
+
+msgid "Moderates this site"
+msgstr "Modera este sitio"
+
+msgid "Moderation"
+msgstr "Moderación"
+
+msgid "Moderator"
+msgstr "Moderador"
+
+msgid "Moderators"
+msgstr "Moderadores"
+
+msgid "Month"
+msgstr "Mes"
+
+msgid "Music"
+msgstr "Música"
+
+msgid "Mute"
+msgstr "Silenciar"
+
+msgid "Name"
+msgstr "Nombre"
+
+msgid "Names must be at most {} characters, without control characters."
+msgstr "Los nombres pueden tener como máximo {} caracteres, sin caracteres de control."
+
+msgid "New"
+msgstr "Nuevos"
+
+msgid "New episode"
+msgstr "Nuevo episodio"
+
+msgid "New event"
+msgstr "Nuevo evento"
+
+msgid "New followers"
+msgstr "Nuevos seguidores"
+
+msgid "New password"
+msgstr "Nueva contraseña"
+
+msgid "New photo"
+msgstr "Nueva foto"
+
+msgid "New podcast"
+msgstr "Nuevo pódcast"
+
+msgid "New recovery codes"
+msgstr "Nuevos códigos de recuperación"
+
+msgid "New rule"
+msgstr "Nueva regla"
+
+msgid "New thumbnail"
+msgstr "Nueva miniatura"
+
+msgid "New, last 30 days"
+msgstr "Nuevos, últimos 30 días"
+
+msgid "Newest episodes"
+msgstr "Últimos episodios"
+
+msgid "Newest videos"
+msgstr "Últimos vídeos"
+
+msgid "News"
+msgstr "Noticias"
+
+msgid "Next photo"
+msgstr "Foto siguiente"
+
+msgid "No"
+msgstr "No"
+
+msgid "No account found for {}."
+msgstr "No se encontró ninguna cuenta para {}."
+
+msgid "No account yet?"
+msgstr "¿Aún no tienes cuenta?"
+
+msgid "No camera? Type this key in the app instead (time-based, 6 digits):"
+msgstr "¿Sin cámara? Escribe esta clave en la aplicación (basada en el tiempo, 6 dígitos):"
+
+msgid "No comments yet."
+msgstr "Aún no hay comentarios."
+
+msgid "No community found."
+msgstr "No se encontró ninguna comunidad."
+
+msgid "No community matches."
+msgstr "Ninguna comunidad coincide."
+
+msgid "No community yet: create the first one below."
+msgstr "Aún no hay comunidades: crea la primera abajo."
+
+msgid "No conversation yet. Write to someone above, or use \"Message\" on a profile. Your friends appear here too."
+msgstr "Aún no hay conversaciones. Escribe a alguien arriba o usa «Mensaje» en un perfil. Tus amigos también aparecen aquí."
+
+msgid "No description."
+msgstr "Sin descripción."
+
+msgid "No episode yet."
+msgstr "Aún no hay episodios."
+
+msgid "No event planned."
+msgstr "No hay eventos previstos."
+
+msgid "No limit"
+msgstr "Sin límite"
+
+msgid "No message yet: say hello!"
+msgstr "Aún no hay mensajes: ¡saluda!"
+
+msgid "No messages yet, say hello"
+msgstr "Aún no hay mensajes, saluda"
+
+msgid "No moderators."
+msgstr "Sin moderadores."
+
+msgid "No new dates after those already planned."
+msgstr "No habrá fechas nuevas después de las ya previstas."
+
+msgid "No notifications. Likes, comments, replies and shares of your posts will appear here."
+msgstr "No hay notificaciones. Los me gusta, comentarios, respuestas y compartidos de tus publicaciones aparecerán aquí."
+
+msgid "No open report. All quiet."
+msgstr "No hay reportes abiertos. Todo tranquilo."
+
+msgid "No past event."
+msgstr "No hay eventos pasados."
+
+msgid "No pending request."
+msgstr "No hay solicitudes pendientes."
+
+msgid "No picture was sent."
+msgstr "No se envió ninguna imagen."
+
+msgid "No places left."
+msgstr "No quedan plazas."
+
+msgid "No podcast yet."
+msgstr "Aún no hay pódcasts."
+
+msgid "No rules yet."
+msgstr "Aún no hay reglas."
+
+msgid "No server matches."
+msgstr "Ningún servidor coincide."
+
+msgid "No server met yet."
+msgstr "Aún no se ha encontrado ningún servidor."
+
+msgid "No stream key."
+msgstr "No hay clave de emisión."
+
+msgid "Nobody follows @{} yet."
+msgstr "Nadie sigue a @{} todavía."
+
+msgid "Nobody follows you yet."
+msgstr "Nadie te sigue todavía."
+
+msgid "Nobody found with this name or address."
+msgstr "No se encontró a nadie con este nombre o dirección."
+
+msgid "Nobody found."
+msgstr "No se encontró a nadie."
+
+msgid "Nobody has this username."
+msgstr "Nadie tiene este nombre de usuario."
+
+msgid "Nobody is called {} here."
+msgstr "Nadie se llama {} aquí."
+
+msgid "Nobody is live right now."
+msgstr "Nadie está en directo ahora."
+
+msgid "Nobody yet."
+msgstr "Nadie todavía."
+
+msgid "Normal"
+msgstr "Normal"
+
+msgid "Not now"
+msgstr "Ahora no"
+
+msgid "Not read by this version of Tison yet."
+msgstr "Esta versión de Tison aún no lo lee."
+
+msgid "Not set"
+msgstr "Sin definir"
+
+msgid "Not set (default)"
+msgstr "Sin definir (por defecto)"
+
+msgid "Not set (default), e.g. {}"
+msgstr "Sin definir (por defecto), p. ej. {}"
+
+msgid "Not verified yet: open the link we sent you."
+msgstr "Aún sin verificar: abre el enlace que te enviamos."
+
+msgid "Not written yet in this version"
+msgstr "Aún no está hecho en esta versión"
+
+msgid "Nothing here yet: what you publish appears here with its numbers."
+msgstr "Aún no hay nada: lo que publiques aparece aquí con sus cifras."
+
+msgid "Nothing here."
+msgstr "Nada aquí."
+
+msgid "Nothing planned yet."
+msgstr "Nada previsto todavía."
+
+msgid "Nothing received? Check your spam folder, or try again in a few minutes."
+msgstr "¿No recibiste nada? Revisa la carpeta de spam o inténtalo de nuevo en unos minutos."
+
+msgid "Nothing to report."
+msgstr "Nada que reportar."
+
+msgid "Notifications"
+msgstr "Notificaciones"
+
+msgid "Numbered list"
+msgstr "Lista numerada"
+
+msgid "OBS Studio"
+msgstr ""
+
+msgid "OBS stops working with the old key until you paste the new one."
+msgstr "OBS deja de funcionar con la clave antigua hasta que pegues la nueva."
+
+msgid "Of posts and comments"
+msgstr "De publicaciones y comentarios"
+
+msgid "Of posts and comments here"
+msgstr "De publicaciones y comentarios de aquí"
+
+msgid "Of posts and comments, by users here"
+msgstr "De publicaciones y comentarios, por los usuarios de aquí"
+
+msgid "Off in this browser."
+msgstr "Desactivadas en este navegador."
+
+msgid "Older notifications"
+msgstr "Notificaciones anteriores"
+
+msgid "Older reports"
+msgstr "Reportes anteriores"
+
+msgid "On"
+msgstr "Activada"
+
+msgid "On Misskey, Mastodon...: follow"
+msgstr "En Misskey, Mastodon...: sigue"
+
+msgid "On another server: they receive your messages as private messages. Their server can read them, like any email provider."
+msgstr "En otro servidor: reciben tus mensajes como mensajes privados. Su servidor puede leerlos, como cualquier proveedor de correo."
+
+msgid "On in this browser."
+msgstr "Activadas en este navegador."
+
+msgid "One account for every kind of service: posts, images, videos, music, communities and more, all federated over ActivityPub."
+msgstr "Una cuenta para todo tipo de servicios: publicaciones, imágenes, vídeos, música, comunidades y más, todo federado con ActivityPub."
+
+msgid "Online"
+msgstr "En línea"
+
+msgid "Online link"
+msgstr "Enlace en línea"
+
+msgid "Only JPEG, PNG, GIF and WebP pictures can be added."
+msgstr "Solo se pueden añadir imágenes JPEG, PNG, GIF y WebP."
+
+msgid "Only me"
+msgstr "Solo yo"
+
+msgid "Only members can be moderators: they must join first."
+msgstr "Solo los miembros pueden ser moderadores: primero deben unirse."
+
+msgid "Only the creator of the site can do this."
+msgstr "Solo el creador del sitio puede hacer esto."
+
+msgid "Only the owner can remove a moderator."
+msgstr "Solo el propietario puede quitar a un moderador."
+
+msgid "Only the site's moderators can see this page."
+msgstr "Solo los moderadores del sitio pueden ver esta página."
+
+msgid "Only you"
+msgstr "Solo tú"
+
+msgid "Open"
+msgstr "Abrir"
+
+msgid "Open in OpenStreetMap"
+msgstr "Abrir en OpenStreetMap"
+
+msgid "Open it"
+msgstr "Abrirlo"
+
+msgid "Open reports"
+msgstr "Reportes abiertos"
+
+msgid "Open the menu"
+msgstr "Abrir el menú"
+
+msgid "Open your stream"
+msgstr "Abrir tu directo"
+
+msgid "Organize the first one."
+msgstr "Organiza el primero."
+
+msgid "Organized by"
+msgstr "Organizado por"
+
+msgid "Organizer"
+msgstr "Organizador"
+
+msgid "Original"
+msgstr "Original"
+
+msgid "Outdoors & adventure"
+msgstr "Aire libre y aventura"
+
+msgid "Output: video encoder x264 or any H.264 encoder, keyframe interval 2 s, bitrate up to 6000 kbps; audio AAC. Video: 1280×720 or 1920×1080, 30 or 60 fps. Tison converts the stream for browsers at most in 1080p."
+msgstr "Salida: codificador de vídeo x264 o cualquier codificador H.264, intervalo de fotogramas clave 2 s, tasa de bits hasta 6000 kbps; audio AAC. Vídeo: 1280×720 o 1920×1080, 30 o 60 fps. Tison convierte el directo para los navegadores como máximo en 1080p."
+
+msgid "Over"
+msgstr "Terminado"
+
+msgid "Participants"
+msgstr "Participantes"
+
+msgid "Participants are told the event is cancelled."
+msgstr "Se avisa a los participantes de que el evento se cancela."
+
+msgid "Participants of {}"
+msgstr "Participantes de {}"
+
+msgid "Party"
+msgstr "Fiesta"
+
+msgid "Password"
+msgstr "Contraseña"
+
+msgid "Password reset by email is not available on this server. Contact its administrator."
+msgstr "El restablecimiento de contraseña por correo no está disponible en este servidor. Contacta con su administrador."
+
+msgid "Past events"
+msgstr "Eventos pasados"
+
+msgid "Pause"
+msgstr "Pausa"
+
+msgid "People"
+msgstr "Personas"
+
+msgid "People, communities and groups of other servers"
+msgstr "Personas, comunidades y grupos de otros servidores"
+
+msgid "Per day"
+msgstr "Por día"
+
+msgid "Period"
+msgstr "Periodo"
+
+msgid "Photo"
+msgstr "Foto"
+
+msgid "Photo of @{}"
+msgstr "Foto de @{}"
+
+msgid "Photo {} of {}"
+msgstr "Foto {} de {}"
+
+msgid "Photos"
+msgstr "Fotos"
+
+msgid "Photos must be JPEG, PNG, GIF or WebP."
+msgstr "Las fotos deben ser JPEG, PNG, GIF o WebP."
+
+msgid "Photos of posts and comments"
+msgstr "Fotos de publicaciones y comentarios"
+
+msgid "Photos of the post"
+msgstr "Fotos de la publicación"
+
+msgid "Picture from the web"
+msgstr "Imagen de la web"
+
+msgid "Picture posts"
+msgstr "Publicaciones con fotos"
+
+msgid "Pictures"
+msgstr "Imágenes"
+
+msgid "Pictures are turned off on this server."
+msgstr "Las imágenes están desactivadas en este servidor."
+
+msgid "Place"
+msgstr "Lugar"
+
+msgid "Places (optional)"
+msgstr "Plazas (opcional)"
+
+msgid "Play"
+msgstr "Reproducir"
+
+msgid "Play with sound"
+msgstr "Reproducir con sonido"
+
+msgid "Podcast episodes"
+msgstr "Episodios de pódcast"
+
+msgid "Podcasts"
+msgstr "Pódcasts"
+
+msgid "Position"
+msgstr "Posición"
+
+msgid "Position in the video"
+msgstr "Posición en el vídeo"
+
+msgid "Post"
+msgstr "Publicación"
+
+msgid "Post by {}"
+msgstr "Publicación de {}"
+
+msgid "Post in"
+msgstr "Publicar en"
+
+msgid "Posts"
+msgstr "Publicaciones"
+
+msgid "Posts with a video"
+msgstr "Publicaciones con un vídeo"
+
+msgid "Posts with images"
+msgstr "Publicaciones con imágenes"
+
+msgid "Preview"
+msgstr "Vista previa"
+
+msgid "Previous photo"
+msgstr "Foto anterior"
+
+msgid "Privacy Policy"
+msgstr "Política de privacidad"
+
+msgid "Private: only approved members can read"
+msgstr "Privada: solo los miembros aprobados pueden leer"
+
+msgid "Profile sections"
+msgstr "Secciones del perfil"
+
+msgid "Protect your account with a second step at login: after your password, a 6-digit code from an app on your phone, which changes every 30 seconds. Someone who learns your password still can't log in."
+msgstr "Protege tu cuenta con un segundo paso al iniciar sesión: después de tu contraseña, un código de 6 dígitos de una aplicación en tu teléfono, que cambia cada 30 segundos. Alguien que conozca tu contraseña aun así no podrá entrar."
+
+msgid "Public"
+msgstr "Público"
+
+msgid "Public: everyone can read, also on the Fediverse"
+msgstr "Pública: todo el mundo puede leer, también en el Fediverso"
+
+msgid "Publish"
+msgstr "Publicar"
+
+msgid "Publish the article"
+msgstr "Publicar el artículo"
+
+msgid "Publish the event"
+msgstr "Publicar el evento"
+
+msgid "Published"
+msgstr "Publicado"
+
+msgid "QR code to scan with an authenticator app"
+msgstr "Código QR para escanear con una aplicación de autenticación"
+
+msgid "Quality"
+msgstr "Calidad"
+
+msgid "Quality: {}"
+msgstr "Calidad: {}"
+
+msgid "Quote"
+msgstr "Cita"
+
+msgid "Reason (optional, for the staff)"
+msgstr "Motivo (opcional, para el equipo)"
+
+msgid "Recommended OBS settings"
+msgstr "Ajustes de OBS recomendados"
+
+msgid "Refuse"
+msgstr "Rechazar"
+
+msgid "Register"
+msgstr "Registrarse"
+
+msgid "Reinstate"
+msgstr "Restablecer"
+
+msgid "Religion & Spirituality"
+msgstr "Religión y espiritualidad"
+
+msgid "Remove"
+msgstr "Quitar"
+
+msgid "Remove @{} from the community?"
+msgstr "¿Quitar a @{} de la comunidad?"
+
+msgid "Remove @{} from the moderators?"
+msgstr "¿Quitar a @{} de los moderadores?"
+
+msgid "Remove @{} from your friends?"
+msgstr "¿Quitar a @{} de tus amigos?"
+
+msgid "Remove background"
+msgstr "Quitar el fondo"
+
+msgid "Remove friend"
+msgstr "Quitar de amigos"
+
+msgid "Remove photo"
+msgstr "Quitar la foto"
+
+msgid "Remove this comment and its replies?"
+msgstr "¿Quitar este comentario y sus respuestas?"
+
+msgid "Remove this post from the community?"
+msgstr "¿Quitar esta publicación de la comunidad?"
+
+msgid "Reopen"
+msgstr "Reabrir"
+
+msgid "Repeats"
+msgstr "Se repite"
+
+msgid "Reply"
+msgstr "Responder"
+
+msgid "Replying to"
+msgstr "Respondiendo a"
+
+msgid "Replying to @{}"
+msgstr "Respondiendo a @{}"
+
+msgid "Report"
+msgstr "Reportar"
+
+msgid "Report @{} to the moderators"
+msgstr "Reportar a @{} a los moderadores"
+
+msgid "Report this account to the moderators"
+msgstr "Reportar esta cuenta a los moderadores"
+
+msgid "Reports"
+msgstr "Reportes"
+
+msgid "Request sent, waiting for a moderator."
+msgstr "Solicitud enviada, esperando a un moderador."
+
+msgid "Requests to join"
+msgstr "Solicitudes para unirse"
+
+msgid "Requests you sent"
+msgstr "Solicitudes enviadas"
+
+msgid "Reset password"
+msgstr "Restablecer la contraseña"
+
+msgid "Reset the key"
+msgstr "Restablecer la clave"
+
+msgid "Reset the stream key"
+msgstr "Restablecer la clave de emisión"
+
+msgid "Reset your Tison password"
+msgstr "Restablece tu contraseña de Tison"
+
+msgid "Resolve"
+msgstr "Resolver"
+
+msgid "Resolved"
+msgstr "Resuelto"
+
+msgid "Results for “"
+msgstr "Resultados para «"
+
+msgid "Rule"
+msgstr "Regla"
+
+msgid "Rules"
+msgstr "Reglas"
+
+msgid "Save"
+msgstr "Guardar"
+
+msgid "Save bio"
+msgstr "Guardar la biografía"
+
+msgid "Save details"
+msgstr "Guardar los detalles"
+
+msgid "Save names"
+msgstr "Guardar los nombres"
+
+msgid "Save rule"
+msgstr "Guardar la regla"
+
+msgid "Save the new password"
+msgstr "Guardar la nueva contraseña"
+
+msgid "Save username"
+msgstr "Guardar el nombre de usuario"
+
+msgid "Saved."
+msgstr "Guardado."
+
+msgid "Saving"
+msgstr "Guardando"
+
+msgid "Say where it takes place: a place, an address, or a link to join online."
+msgstr "Indica dónde se celebra: un lugar, una dirección o un enlace para unirse en línea."
+
+msgid "Science"
+msgstr "Ciencia"
+
+msgid "Science & tech"
+msgstr "Ciencia y tecnología"
+
+msgid "Search"
+msgstr "Buscar"
+
+msgid "Search communities"
+msgstr "Buscar comunidades"
+
+msgid "Search communities by name..."
+msgstr "Buscar comunidades por nombre..."
+
+msgid "Search people, communities, or @name@server"
+msgstr "Buscar personas, comunidades o @nombre@servidor"
+
+msgid "Search people, or @name@server"
+msgstr "Buscar personas o @nombre@servidor"
+
+msgid "Search: {}"
+msgstr "Búsqueda: {}"
+
+msgid "See"
+msgstr "Ver"
+
+msgid "See it on its server"
+msgstr "Ver en su servidor"
+
+msgid "See your profile"
+msgstr "Ver tu perfil"
+
+msgid "Send"
+msgstr "Enviar"
+
+msgid "Send a test"
+msgstr "Enviar una prueba"
+
+msgid "Send it again"
+msgstr "Volver a enviarlo"
+
+msgid "Send the link"
+msgstr "Enviar el enlace"
+
+msgid "Send the link again"
+msgstr "Volver a enviar el enlace"
+
+msgid "Send the report"
+msgstr "Enviar el reporte"
+
+msgid "Sending"
+msgstr "Envío"
+
+msgid "Sensitive"
+msgstr "Sensible"
+
+msgid "Sensitive content"
+msgstr "Contenido sensible"
+
+msgid "Sensitive content not marked"
+msgstr "Contenido sensible sin marcar"
+
+msgid "Sensitive: blur it until clicked"
+msgstr "Sensible: difuminar hasta hacer clic"
+
+msgid "Sensitive: blur the photos until clicked"
+msgstr "Sensible: difuminar las fotos hasta hacer clic"
+
+msgid "Sent to {} of {} browsers: the others turned them off (removed now) or their push service refused it (see the server's log)."
+msgstr "Enviado a {} de {} navegadores: los demás las desactivaron (eliminados ahora) o su servicio de notificaciones lo rechazó (mira el registro del servidor)."
+
+msgid "Separating line"
+msgstr "Línea separadora"
+
+msgid "Server"
+msgstr "Servidor"
+
+msgid "Server rules"
+msgstr "Reglas del servidor"
+
+msgid "Server unreachable"
+msgstr "Servidor inaccesible"
+
+msgid "Servers"
+msgstr "Servidores"
+
+msgid "Servers and accounts"
+msgstr "Servidores y cuentas"
+
+msgid "Servers of the Fediverse that have it are sent the new text."
+msgstr "Los servidores del Fediverso que lo tienen reciben el nuevo texto."
+
+msgid "Servers of the accounts known here"
+msgstr "Servidores de las cuentas conocidas aquí"
+
+msgid "Set up two-factor authentication"
+msgstr "Configurar la autenticación en dos pasos"
+
+msgid "Settings"
+msgstr "Ajustes"
+
+msgid "Settings of"
+msgstr "Ajustes de"
+
+msgid "Settings of {}"
+msgstr "Ajustes de {}"
+
+msgid "Share"
+msgstr "Compartir"
+
+msgid "Share link"
+msgstr "Compartir el enlace"
+
+msgid "Shared"
+msgstr "Compartido"
+
+msgid "Shared by"
+msgstr "Compartido por"
+
+msgid "Shares"
+msgstr "Compartidos"
+
+msgid "Shares ·"
+msgstr "Compartidos ·"
+
+msgid "Show"
+msgstr "Mostrar"
+
+msgid "Show less"
+msgstr "Mostrar menos"
+
+msgid "Show more"
+msgstr "Mostrar más"
+
+msgid "Show notes"
+msgstr "Mostrar las notas"
+
+msgid "Show on home"
+msgstr "Mostrar en el inicio"
+
+msgid "Show the online link to everyone (otherwise only to participants)"
+msgstr "Mostrar el enlace en línea a todo el mundo (si no, solo a los participantes)"
+
+msgid "Shown before the video plays and in lists. Cropped to"
+msgstr "Se muestra antes de reproducir y en las listas. Recortada a"
+
+msgid "Since it was published"
+msgstr "Desde su publicación"
+
+msgid "Since it was published. Choose one to see its days."
+msgstr "Desde su publicación. Elige uno para ver sus días."
+
+msgid "Since {}. When you log in, your password is followed by a code from your app."
+msgstr "Desde el {}. Al iniciar sesión, tu contraseña va seguida de un código de tu aplicación."
+
+msgid "Society & Culture"
+msgstr "Sociedad y cultura"
+
+msgid "Someone"
+msgstr "Alguien"
+
+msgid "Something else"
+msgstr "Otra cosa"
+
+msgid "Something went wrong, try again later."
+msgstr "Algo salió mal, inténtalo más tarde."
+
+msgid "Sort posts"
+msgstr "Ordenar las publicaciones"
+
+msgid "Sound"
+msgstr "Sonido"
+
+msgid "Spam or scam"
+msgstr "Spam o estafa"
+
+msgid "Sports"
+msgstr "Deportes"
+
+msgid "Square, JPEG or PNG, at least 1400×1400 pixels for Apple Podcasts."
+msgstr "Cuadrada, JPEG o PNG, al menos 1400×1400 píxeles para Apple Podcasts."
+
+msgid "Staff"
+msgstr "Equipo"
+
+msgid "Start over"
+msgstr "Empezar de nuevo"
+
+msgid "Start the first one."
+msgstr "Empieza el primero."
+
+msgid "Starting the stream…"
+msgstr "Iniciando el directo…"
+
+msgid "Starting the upload…"
+msgstr "Iniciando la subida…"
+
+msgid "Starts"
+msgstr "Comienza"
+
+msgid "Statistics"
+msgstr "Estadísticas"
+
+msgid "Statistics: {}"
+msgstr "Estadísticas: {}"
+
+msgid "Status"
+msgstr "Estado"
+
+msgid "Stay signed in"
+msgstr "Mantener la sesión"
+
+msgid "Stop repeating"
+msgstr "Dejar de repetir"
+
+msgid "Stream from"
+msgstr "Emitir desde"
+
+msgid "Stream key"
+msgstr "Clave de emisión"
+
+msgid "Strikethrough"
+msgstr "Tachado"
+
+msgid "Supported formats are JPEG, PNG, GIF, WebP and AVIF."
+msgstr "Los formatos admitidos son JPEG, PNG, GIF, WebP y AVIF."
+
+msgid "Suspend"
+msgstr "Suspender"
+
+msgid "Suspend account"
+msgstr "Suspender la cuenta"
+
+msgid "Suspend {}? They are signed out, can't sign in, and their posts and profile are hidden."
+msgstr "¿Suspender a {}? Se cierra su sesión, no puede volver a entrar y sus publicaciones y su perfil quedan ocultos."
+
+msgid "Suspended"
+msgstr "Suspendidos"
+
+msgid "Switch to the dark theme"
+msgstr "Cambiar al tema oscuro"
+
+msgid "Light mode"
+msgstr "Modo claro"
+
+msgid "Switch to the light theme"
+msgstr "Cambiar al tema claro"
+
+msgid "Table"
+msgstr "Tabla"
+
+msgid "Technology"
+msgstr "Tecnología"
+
+msgid "Terms of Use"
+msgstr "Condiciones de uso"
+
+msgid "Text"
+msgstr "Texto"
+
+msgid "Text of rule"
+msgstr "Texto de la regla"
+
+msgid "Text of the new rule"
+msgstr "Texto de la nueva regla"
+
+msgid "Thank you, @{}: your email is confirmed."
+msgstr "Gracias, @{}: tu correo está confirmado."
+
+msgid "Thanks. The site's moderators will look at your report. The person you reported isn't told who reported them."
+msgstr "Gracias. Los moderadores del sitio revisarán tu reporte. La persona reportada no sabe quién la reportó."
+
+msgid "The"
+msgstr "El"
+
+msgid "The Fediverse is turned off on this server."
+msgstr "El Fediverso está desactivado en este servidor."
+
+msgid "The Fediverse is turned off on this site: no other server is reached."
+msgstr "El Fediverso está desactivado en este sitio: no se contacta con ningún otro servidor."
+
+msgid "The Green Café"
+msgstr "El Café Verde"
+
+msgid "The account is blocked, and the report resolved."
+msgstr "La cuenta está bloqueada y el reporte resuelto."
+
+msgid "The account is reinstated."
+msgstr "La cuenta se ha restablecido."
+
+msgid "The account is suspended, and the report resolved."
+msgstr "La cuenta está suspendida y el reporte resuelto."
+
+msgid "The account is unblocked."
+msgstr "La cuenta está desbloqueada."
+
+msgid "The address must be {} to {} lowercase letters, digits or _."
+msgstr "La dirección debe tener de {} a {} letras minúsculas, dígitos o _."
+
+msgid "The author marked"
+msgstr "El autor marcó"
+
+msgid "The bio must be at most {} characters, without control characters."
+msgstr "La biografía puede tener como máximo {} caracteres, sin caracteres de control."
+
+msgid "The chosen thumbnail"
+msgstr "La miniatura elegida"
+
+msgid "The comment contains characters that are not allowed."
+msgstr "El comentario contiene caracteres no permitidos."
+
+msgid "The comment you reply to doesn't exist anymore."
+msgstr "El comentario al que respondes ya no existe."
+
+msgid "The configuration files of the server. Passwords and keys are hidden: leave them empty to keep them. Saving rewrites the file (the previous one is kept as"
+msgstr "Los archivos de configuración del servidor. Las contraseñas y claves están ocultas: déjalas vacías para conservarlas. Guardar reescribe el archivo (el anterior se guarda como"
+
+msgid "The conversion failed"
+msgstr "La conversión falló"
+
+msgid "The conversion failed."
+msgstr "La conversión falló."
+
+msgid "The creator and the moderators"
+msgstr "El creador y los moderadores"
+
+msgid "The database is not configured."
+msgstr "La base de datos no está configurada."
+
+msgid "The date is still to be confirmed."
+msgstr "La fecha está por confirmar."
+
+msgid "The description can be at most {} characters."
+msgstr "La descripción puede tener como máximo {} caracteres."
+
+msgid "The description is too long."
+msgstr "La descripción es demasiado larga."
+
+msgid "The email couldn't be sent. Try again later."
+msgstr "No se pudo enviar el correo. Inténtalo más tarde."
+
+msgid "The event's banner"
+msgstr "El banner del evento"
+
+msgid "The file can be at most {} MB."
+msgstr "El archivo puede tener como máximo {} MB."
+
+msgid "The file changed on the server since this page was opened: nothing was saved. Look again, then save."
+msgstr "El archivo cambió en el servidor desde que se abrió esta página: no se guardó nada. Vuelve a mirarlo y guarda."
+
+msgid "The image can be at most {} MB."
+msgstr "La imagen puede tener como máximo {} MB."
+
+msgid "The image must be at most {} MB."
+msgstr "La imagen debe tener como máximo {} MB."
+
+msgid "The link is shown to participants."
+msgstr "El enlace se muestra a los participantes."
+
+msgid "The message contains characters that are not allowed."
+msgstr "El mensaje contiene caracteres no permitidos."
+
+msgid "The name must be 1 to {} characters."
+msgstr "El nombre debe tener de 1 a {} caracteres."
+
+msgid "The new password must be {} to {} characters, with an uppercase letter, a lowercase letter, a digit and a symbol. Spaces are allowed only one at a time, between words."
+msgstr "La nueva contraseña debe tener de {} a {} caracteres, con una mayúscula, una minúscula, un dígito y un símbolo. Los espacios se permiten de uno en uno, entre palabras."
+
+msgid "The old ones stop working."
+msgstr "Los anteriores dejan de funcionar."
+
+msgid "The online link must start with https:"
+msgstr "El enlace en línea debe empezar por https:"
+
+msgid "The organizer declined your request."
+msgstr "El organizador rechazó tu solicitud."
+
+msgid "The picture can be at most {} MB."
+msgstr "La imagen puede tener como máximo {} MB."
+
+msgid "The podcast and all its episodes will be deleted."
+msgstr "Se eliminarán el pódcast y todos sus episodios."
+
+msgid "The post contains characters that are not allowed."
+msgstr "La publicación contiene caracteres no permitidos."
+
+msgid "The server is treated normally again."
+msgstr "El servidor vuelve a tratarse con normalidad."
+
+msgid "The servers of the Fediverse this site has met, from the accounts it knows."
+msgstr "Los servidores del Fediverso que este sitio ha encontrado, según las cuentas que conoce."
+
+msgid "The setup took too long: start again."
+msgstr "La configuración tardó demasiado: empieza de nuevo."
+
+msgid "The text contains characters that are not allowed."
+msgstr "El texto contiene caracteres no permitidos."
+
+msgid "The thumbnail can be at most {} MB."
+msgstr "La miniatura puede tener como máximo {} MB."
+
+msgid "The thumbnail must be a JPEG, PNG, GIF or WebP picture."
+msgstr "La miniatura debe ser una imagen JPEG, PNG, GIF o WebP."
+
+msgid "The two new passwords are different."
+msgstr "Las dos nuevas contraseñas son diferentes."
+
+msgid "The two passwords are different."
+msgstr "Las dos contraseñas son diferentes."
+
+msgid "The upload failed: check your connection, or the size of the file, and try again."
+msgstr "La subida falló: revisa tu conexión o el tamaño del archivo e inténtalo de nuevo."
+
+msgid "The username must be {} to {} characters, using only letters, digits and _."
+msgstr "El nombre de usuario debe tener de {} a {} caracteres, solo con letras, dígitos y _."
+
+msgid "The video's thumbnail"
+msgstr "La miniatura del vídeo"
+
+msgid "There, you are"
+msgstr "Aquí estás"
+
+msgid "They are shown only now."
+msgstr "Solo se muestran ahora."
+
+msgid "This account is suspended by the site's moderators."
+msgstr "Esta cuenta está suspendida por los moderadores del sitio."
+
+msgid "This account is suspended."
+msgstr "Esta cuenta está suspendida."
+
+msgid "This account is suspended: reinstate it first."
+msgstr "Esta cuenta está suspendida: restablécela primero."
+
+msgid "This account is unknown here."
+msgstr "Esta cuenta es desconocida aquí."
+
+msgid "This address is already used by a community or a user."
+msgstr "Esta dirección ya la usa una comunidad o un usuario."
+
+msgid "This browser couldn't turn them on: its push service may be off."
+msgstr "Este navegador no pudo activarlas: puede que su servicio de notificaciones esté desactivado."
+
+msgid "This comment does not exist or isn't yours."
+msgstr "Este comentario no existe o no es tuyo."
+
+msgid "This comment does not exist."
+msgstr "Este comentario no existe."
+
+msgid "This community does not exist."
+msgstr "Esta comunidad no existe."
+
+msgid "This community is closed by the site's moderators. Only they can see it."
+msgstr "Esta comunidad está cerrada por los moderadores del sitio. Solo ellos pueden verla."
+
+msgid "This community is private: only members approved by its moderators can read its posts."
+msgstr "Esta comunidad es privada: solo los miembros aprobados por sus moderadores pueden leer sus publicaciones."
+
+msgid "This community was closed by the site's moderators."
+msgstr "Esta comunidad fue cerrada por los moderadores del sitio."
+
+msgid "This conversation does not exist."
+msgstr "Esta conversación no existe."
+
+msgid "This event does not exist or isn't yours."
+msgstr "Este evento no existe o no es tuyo."
+
+msgid "This event does not exist."
+msgstr "Este evento no existe."
+
+msgid "This event is cancelled."
+msgstr "Este evento está cancelado."
+
+msgid "This event is over."
+msgstr "Este evento ha terminado."
+
+msgid "This file can't be changed here."
+msgstr "Este archivo no se puede cambiar aquí."
+
+msgid "This file couldn't be converted: it may not be a"
+msgstr "No se pudo convertir este archivo: puede que no sea un"
+
+msgid "This file doesn't exist: every setting has its default value."
+msgstr "Este archivo no existe: cada ajuste tiene su valor por defecto."
+
+msgid "This is an address of this server."
+msgstr "Es una dirección de este servidor."
+
+msgid "This is the domain of this site."
+msgstr "Es el dominio de este sitio."
+
+msgid "This link is not valid anymore: it expired, was already used, or a newer one was sent. Ask for a new one from the login page."
+msgstr "Este enlace ya no es válido: caducó, ya se usó o se envió uno más reciente. Pide uno nuevo desde la página de inicio de sesión."
+
+msgid "This link is not valid anymore: it expired, was already used, or a newer one was sent. Ask for a new one from your settings."
+msgstr "Este enlace ya no es válido: caducó, ya se usó o se envió uno más reciente. Pide uno nuevo desde tus ajustes."
+
+msgid "This live stream has ended."
+msgstr "Este directo ha terminado."
+
+msgid "This picture is too big: 10 MB at most."
+msgstr "Esta imagen es demasiado grande: 10 MB como máximo."
+
+msgid "This podcast does not exist or isn't yours."
+msgstr "Este pódcast no existe o no es tuyo."
+
+msgid "This podcast does not exist."
+msgstr "Este pódcast no existe."
+
+msgid "This post does not exist or can't be shared."
+msgstr "Esta publicación no existe o no se puede compartir."
+
+msgid "This post does not exist or isn't yours."
+msgstr "Esta publicación no existe o no es tuya."
+
+msgid "This post does not exist."
+msgstr "Esta publicación no existe."
+
+msgid "This report does not exist."
+msgstr "Este reporte no existe."
+
+msgid "This user does not exist."
+msgstr "Este usuario no existe."
+
+msgid "This username is already taken."
+msgstr "Este nombre de usuario ya está ocupado."
+
+msgid "This video does not exist or isn't yours."
+msgstr "Este vídeo no existe o no es tuyo."
+
+msgid "Thumbnail"
+msgstr "Miniatura"
+
+msgid "Thumbnail (optional)"
+msgstr "Miniatura (opcional)"
+
+msgid "Thumbnail saved."
+msgstr "Miniatura guardada."
+
+msgid "Times are in UTC."
+msgstr "Las horas están en UTC."
+
+msgid "Times are in your time zone ({}); everyone sees them in theirs."
+msgstr "Las horas están en tu zona horaria ({}); cada persona las ve en la suya."
+
+msgid "Title"
+msgstr "Título"
+
+msgid "To be confirmed"
+msgstr "Por confirmar"
+
+msgid "To follow someone on Mastodon, Misskey, Pixelfed and other servers, search their address, like"
+msgstr "Para seguir a alguien en Mastodon, Misskey, Pixelfed y otros servidores, busca su dirección, como"
+
+msgid "Too many wrong codes. Log in again."
+msgstr "Demasiados códigos erróneos. Vuelve a iniciar sesión."
+
+msgid "Top"
+msgstr "Mejores"
+
+msgid "True Crime"
+msgstr "Crímenes reales"
+
+msgid "Turn it off"
+msgstr "Desactivarla"
+
+msgid "Turn off"
+msgstr "Desactivar"
+
+msgid "Turn off browser notifications"
+msgstr "Desactivar las notificaciones del navegador"
+
+msgid "Turn off two-factor authentication"
+msgstr "Desactivar la autenticación en dos pasos"
+
+msgid "Turn on"
+msgstr "Activar"
+
+msgid "Turn on browser notifications"
+msgstr "Activar las notificaciones del navegador"
+
+msgid "Turn on notifications?"
+msgstr "¿Activar las notificaciones?"
+
+msgid "Two-factor authentication"
+msgstr "Autenticación en dos pasos"
+
+msgid "Two-factor authentication is off."
+msgstr "La autenticación en dos pasos está desactivada."
+
+msgid "Two-factor authentication is on"
+msgstr "La autenticación en dos pasos está activada"
+
+msgid "Two-factor authentication was turned off"
+msgstr "Se desactivó la autenticación en dos pasos"
+
+msgid "Type one of your recovery codes (like"
+msgstr "Escribe uno de tus códigos de recuperación (como"
+
+msgid "Type the 6-digit code your authenticator app shows for this site."
+msgstr "Escribe el código de 6 dígitos que tu aplicación de autenticación muestra para este sitio."
+
+msgid "Unban"
+msgstr "Desbloquear"
+
+msgid "Unblock"
+msgstr "Desbloquear"
+
+msgid "Underline"
+msgstr "Subrayado"
+
+msgid "Underline (Ctrl+U)"
+msgstr "Subrayado (Ctrl+U)"
+
+msgid "Unfollow"
+msgstr "Dejar de seguir"
+
+msgid "Unknown stream key."
+msgstr "Clave de emisión desconocida."
+
+msgid "Unlimit"
+msgstr "Quitar el límite"
+
+msgid "Until"
+msgstr "Hasta"
+
+msgid "Up to {} MB, MP3, WAV, FLAC, M4A, Ogg…: it's converted to MP3 for every podcast app."
+msgstr "Hasta {} MB, MP3, WAV, FLAC, M4A, Ogg…: se convierte a MP3 para todas las aplicaciones de pódcasts."
+
+msgid "Up to {} MB, in any format: it's converted for every browser in every quality from its own size down to 144p. Its location and camera details are removed."
+msgstr "Hasta {} MB, en cualquier formato: se convierte para todos los navegadores en todas las calidades, desde su propio tamaño hasta 144p. Se eliminan su ubicación y los datos de la cámara."
+
+msgid "Up to {} photos: JPEG, PNG, GIF or WebP. Their location and camera details are removed."
+msgstr "Hasta {} fotos: JPEG, PNG, GIF o WebP. Se eliminan su ubicación y los datos de la cámara."
+
+msgid "Upcoming"
+msgstr "Próximos"
+
+msgid "Upload a picture"
+msgstr "Subir una imagen"
+
+msgid "Upload a picture (or paste or drop it in the text)"
+msgstr "Subir una imagen (o pegarla o soltarla en el texto)"
+
+msgid "Upload a video"
+msgstr "Subir un vídeo"
+
+msgid "Upload background"
+msgstr "Subir el fondo"
+
+msgid "Upload photo"
+msgstr "Subir la foto"
+
+msgid "Upload the thumbnail"
+msgstr "Subir la miniatura"
+
+msgid "Uploaded into articles"
+msgstr "Subidas en artículos"
+
+msgid "Uploaded, saving…"
+msgstr "Subido, guardando…"
+
+msgid "Uploading"
+msgstr "Subiendo"
+
+msgid "Uploading {}: {}%"
+msgstr "Subiendo {}: {} %"
+
+msgid "Use a JPEG, PNG, GIF, WebP or AVIF image."
+msgstr "Usa una imagen JPEG, PNG, GIF, WebP o AVIF."
+
+msgid "Use a frame of the video instead"
+msgstr "Usar en su lugar un fotograma del vídeo"
+
+msgid "Username"
+msgstr "Nombre de usuario"
+
+msgid "Username or email"
+msgstr "Nombre de usuario o correo"
+
+msgid "Users"
+msgstr "Usuarios"
+
+msgid "Users receiving notifications in at least one browser"
+msgstr "Usuarios que reciben notificaciones en al menos un navegador"
+
+msgid "Users who turned on two-factor authentication"
+msgstr "Usuarios que activaron la autenticación en dos pasos"
+
+msgid "Verified"
+msgstr "Verificado"
+
+msgid "Verify your Tison email"
+msgstr "Verifica tu correo de Tison"
+
+msgid "Verify your email."
+msgstr "Verifica tu correo."
+
+msgid "Video"
+msgstr "Vídeo"
+
+msgid "Videos"
+msgstr "Vídeos"
+
+msgid "Videos and live"
+msgstr "Vídeos y directos"
+
+msgid "Views"
+msgstr "Visualizaciones"
+
+msgid "Volume"
+msgstr "Volumen"
+
+msgid "Waiting"
+msgstr "En espera"
+
+msgid "Waiting for @{} to accept"
+msgstr "Esperando a que @{} acepte"
+
+msgid "Waiting for a free converter…"
+msgstr "Esperando un conversor libre…"
+
+msgid "Waiting for a moderator"
+msgstr "Esperando a un moderador"
+
+msgid "Waiting for the organizer's answer…"
+msgstr "Esperando la respuesta del organizador…"
+
+msgid "Waiting for their server"
+msgstr "Esperando a su servidor"
+
+msgid "Waiting for their server to accept."
+msgstr "Esperando a que su servidor acepte."
+
+msgid "Waiting for your other upload…"
+msgstr "Esperando tu otra subida…"
+
+msgid "Waiting for {} to confirm…"
+msgstr "Esperando la confirmación de {}…"
+
+msgid "Waiting to be sent"
+msgstr "En espera de envío"
+
+msgid "Watch"
+msgstr "Ver"
+
+msgid "We sent you a link when you signed up: open it to confirm your address."
+msgstr "Te enviamos un enlace al registrarte: ábrelo para confirmar tu dirección."
+
+msgid "Week"
+msgstr "Semana"
+
+msgid "Week of {}"
+msgstr "Semana del {}"
+
+msgid "Welcome to Tison"
+msgstr "Bienvenido a Tison"
+
+msgid "What do you want to share with the community?"
+msgstr "¿Qué quieres compartir con la comunidad?"
+
+msgid "What do you want to share?"
+msgstr "¿Qué quieres compartir?"
+
+msgid "What the site offers."
+msgstr "Lo que ofrece el sitio."
+
+msgid "What they sent"
+msgstr "Lo que enviaron"
+
+msgid "What was made on this site, counted now. What came from other servers is on the"
+msgstr "Lo que se creó en este sitio, contado ahora. Lo que vino de otros servidores está en la pestaña"
+
+msgid "What's wrong?"
+msgstr "¿Qué pasa?"
+
+msgid "When"
+msgstr "Cuándo"
+
+msgid "Where"
+msgstr "Dónde"
+
+msgid "Who can read the posts"
+msgstr "Quién puede leer las publicaciones"
+
+msgid "Who can see it"
+msgstr "Quién puede verlo"
+
+msgid "Who sees your first and last name"
+msgstr "Quién ve tu nombre y apellido"
+
+msgid "Wide pictures look best, like 1920×1080. Their location and camera details are removed."
+msgstr "Las imágenes anchas quedan mejor, como 1920×1080. Se eliminan su ubicación y los datos de la cámara."
+
+msgid "With browser notifications"
+msgstr "Con notificaciones del navegador"
+
+msgid "With their replays"
+msgstr "Con sus repeticiones"
+
+msgid "With two-factor"
+msgstr "Con dos pasos"
+
+msgid "Without the articles, videos, episodes and events"
+msgstr "Sin los artículos, vídeos, episodios y eventos"
+
+msgid "Without the articles, videos, episodes, live streams and events"
+msgstr "Sin los artículos, vídeos, episodios, directos y eventos"
+
+msgid "Write"
+msgstr "Escribir"
+
+msgid "Write a comment..."
+msgstr "Escribe un comentario..."
+
+msgid "Write a domain, like mastodon.social."
+msgstr "Escribe un dominio, como mastodon.social."
+
+msgid "Write a message..."
+msgstr "Escribe un mensaje..."
+
+msgid "Write something before commenting."
+msgstr "Escribe algo antes de comentar."
+
+msgid "Write something before publishing."
+msgstr "Escribe algo antes de publicar."
+
+msgid "Write something before sending."
+msgstr "Escribe algo antes de enviar."
+
+msgid "Write something or add a photo before publishing."
+msgstr "Escribe algo o añade una foto antes de publicar."
+
+msgid "Write to"
+msgstr "Escribir a"
+
+msgid "Write to a username"
+msgstr "Escribe a un nombre de usuario"
+
+msgid "Write to a username, or @name@server"
+msgstr "Escribe a un nombre de usuario o @nombre@servidor"
+
+msgid "Write your article. Markdown works: **bold**, *italic*, ## Heading, [link](https://...)"
+msgstr "Escribe tu artículo. Markdown funciona: **negrita**, *cursiva*, ## Encabezado, [enlace](https://...)"
+
+msgid "Writing"
+msgstr "Escritura"
+
+msgid "Wrong code. Type the 6 digits your app shows now, or a recovery code."
+msgstr "Código erróneo. Escribe los 6 dígitos que muestra ahora tu aplicación, o un código de recuperación."
+
+msgid "Wrong code: check the 6 digits of your app (they change every 30 seconds)."
+msgstr "Código erróneo: revisa los 6 dígitos de tu aplicación (cambian cada 30 segundos)."
+
+msgid "Wrong password."
+msgstr "Contraseña incorrecta."
+
+msgid "Wrong username, email or password."
+msgstr "Nombre de usuario, correo o contraseña incorrectos."
+
+msgid "You"
+msgstr "Tú"
+
+msgid "You can't do this in this community."
+msgstr "No puedes hacer esto en esta comunidad."
+
+msgid "You can't report your own comment."
+msgstr "No puedes reportar tu propio comentario."
+
+msgid "You can't report your own post."
+msgstr "No puedes reportar tu propia publicación."
+
+msgid "You can't report yourself."
+msgstr "No puedes reportarte a ti mismo."
+
+msgid "You can't write to yourself."
+msgstr "No puedes escribirte a ti mismo."
+
+msgid "You don't follow anyone yet."
+msgstr "Aún no sigues a nadie."
+
+msgid "You don't have friends yet."
+msgstr "Aún no tienes amigos."
+
+msgid "You haven't posted anything yet."
+msgstr "Aún no has publicado nada."
+
+msgid "You haven't written an article yet. Write one from the Article tab of the post form on the home page."
+msgstr "Aún no has escrito ningún artículo. Escribe uno desde la pestaña Artículo del formulario de publicación en el inicio."
+
+msgid "You haven't written anything about yourself yet."
+msgstr "Aún no has escrito nada sobre ti."
+
+msgid "You must be at least {} years old to register."
+msgstr "Debes tener al menos {} años para registrarte."
+
+msgid "You need to be signed in."
+msgstr "Necesitas iniciar sesión."
+
+msgid "You organize this event."
+msgstr "Organizas este evento."
+
+msgid "You won't be on the list anymore."
+msgstr "Ya no estarás en la lista."
+
+msgid "You're going ✓"
+msgstr "Asistes ✓"
+
+msgid "You're live."
+msgstr "Estás en directo."
+
+msgid "You:"
+msgstr "Tú:"
+
+msgid "Your account isn't on the Fediverse, so it can't follow accounts of other servers."
+msgstr "Tu cuenta no está en el Fediverso, así que no puede seguir cuentas de otros servidores."
+
+msgid "Your account isn't on the Fediverse: it can only write to people of this server."
+msgstr "Tu cuenta no está en el Fediverso: solo puede escribir a personas de este servidor."
+
+msgid "Your account will be protected by your password only."
+msgstr "Tu cuenta quedará protegida solo por tu contraseña."
+
+msgid "Your article shows here as you write it."
+msgstr "Tu artículo se muestra aquí mientras lo escribes."
+
+msgid "Your communities"
+msgstr "Tus comunidades"
+
+msgid "Your current password is wrong."
+msgstr "Tu contraseña actual es incorrecta."
+
+msgid "Your email is already verified."
+msgstr "Tu correo ya está verificado."
+
+msgid "Your events"
+msgstr "Tus eventos"
+
+msgid "Your followers and friends here"
+msgstr "Tus seguidores y amigos aquí"
+
+msgid "Your friends here"
+msgstr "Tus amigos aquí"
+
+msgid "Your next stream"
+msgstr "Tu próximo directo"
+
+msgid "Your password"
+msgstr "Tu contraseña"
+
+msgid "Your password was changed. You can log in with the new one."
+msgstr "Tu contraseña se cambió. Puedes iniciar sesión con la nueva."
+
+msgid "Your recovery codes"
+msgstr "Tus códigos de recuperación"
+
+msgid "accepted you at the event"
+msgstr "te aceptó en el evento"
+
+msgid "accepted you in"
+msgstr "te aceptó en"
+
+msgid "accepted your friend request"
+msgstr "aceptó tu solicitud de amistad"
+
+msgid "account"
+msgstr "cuenta"
+
+msgid "add as friend or"
+msgstr "añadirlo como amigo o"
+
+msgid "address"
+msgstr "dirección"
+
+msgid "and reminders even when Tison is closed."
+msgstr "y recordatorios incluso con Tison cerrado."
+
+msgid "as sensitive."
+msgstr "como sensible."
+
+msgid "ask to join"
+msgstr "pedir unirse"
+
+msgid "asked to come to your event"
+msgstr "pide asistir a tu evento"
+
+msgid "asked to join"
+msgstr "pide unirse a"
+
+msgid "blocked"
+msgstr "bloqueado"
+
+msgid "by"
+msgstr "por"
+
+msgid "by @"
+msgstr "por @"
+
+msgid "by a deleted account"
+msgstr "por una cuenta eliminada"
+
+msgid "cancelled the event"
+msgstr "canceló el evento"
+
+msgid "comment"
+msgstr "comentario"
+
+msgid "commented on your post"
+msgstr "comentó tu publicación"
+
+msgid "deleted"
+msgstr "eliminado"
+
+msgid "edited"
+msgstr "editado"
+
+msgid "episode"
+msgstr "episodio"
+
+msgid "episodes"
+msgstr "episodios"
+
+msgid "ffmpeg reads. Delete it and try another file."
+msgstr "que ffmpeg pueda leer. Elimínalo y prueba otro archivo."
+
+msgid "follow"
+msgstr "seguir"
+
+msgid "followed you"
+msgstr "te sigue"
+
+msgid "followed you from the Fediverse"
+msgstr "te sigue desde el Fediverso"
+
+msgid "follower"
+msgstr "seguidor"
+
+msgid "followers"
+msgstr "seguidores"
+
+msgid "followers and friends"
+msgstr "seguidores y amigos"
+
+msgid "following"
+msgstr "siguiendo"
+
+msgid "friend"
+msgstr "amigo"
+
+msgid "friends"
+msgstr "amigos"
+
+msgid "handle reports: they delete what breaks the rules, suspend and block accounts."
+msgstr "gestionan los reportes: eliminan lo que incumple las reglas, suspenden y bloquean cuentas."
+
+msgid "https://meet.example.org/our-meetup"
+msgstr "https://meet.example.org/nuestro-encuentro"
+
+msgid "in"
+msgstr "en"
+
+msgid "is going to your event"
+msgstr "asiste a tu evento"
+
+msgid "join"
+msgstr "unirse"
+
+msgid "liked your comment"
+msgstr "le gustó tu comentario"
+
+msgid "liked your post"
+msgstr "le gustó tu publicación"
+
+msgid "made this site and names the moderators."
+msgstr "creó este sitio y nombra a los moderadores."
+
+msgid "member"
+msgstr "miembro"
+
+msgid "members"
+msgstr "miembros"
+
+msgid "never"
+msgstr "nunca"
+
+msgid "not read"
+msgstr "no leído"
+
+msgid "not used yet"
+msgstr "aún sin usar"
+
+msgid "of {} places"
+msgstr "de {} plazas"
+
+msgid "off"
+msgstr "desactivado"
+
+msgid "on"
+msgstr "activado"
+
+msgid "on its own line"
+msgstr "en su propia línea"
+
+msgid "only you"
+msgstr "solo tú"
+
+msgid "open reports"
+msgstr "reportes abiertos"
+
+msgid "or"
+msgstr "o"
+
+msgid "or any app that streams over RTMP. Your followers see a post when you go live, and everyone can watch at"
+msgstr "o cualquier aplicación que emita por RTMP. Tus seguidores ven una publicación cuando empiezas el directo, y todo el mundo puede verlo en"
+
+msgid "per day"
+msgstr "por día"
+
+msgid "per month"
+msgstr "por mes"
+
+msgid "per week"
+msgstr "por semana"
+
+msgid "photo"
+msgstr "foto"
+
+msgid "photos"
+msgstr "fotos"
+
+msgid "post"
+msgstr "publicación"
+
+msgid "register"
+msgstr "regístrate"
+
+msgid "replied to your comment"
+msgstr "respondió a tu comentario"
+
+msgid "sent by the server"
+msgstr "enviado por el servidor"
+
+msgid "shared your post"
+msgstr "compartió tu publicación"
+
+msgid "sound"
+msgstr "audio"
+
+msgid "suspended"
+msgstr "suspendido"
+
+msgid "tab."
+msgstr "."
+
+msgid "these photos"
+msgstr "estas fotos"
+
+msgid "this photo"
+msgstr "esta foto"
+
+msgid "to comment."
+msgstr "para comentar."
+
+msgid "to create a community."
+msgstr "para crear una comunidad."
+
+msgid "to post."
+msgstr "para publicar."
+
+msgid "unread"
+msgstr "no leídos"
+
+msgid "video"
+msgstr "vídeo"
+
+msgid "wants to be your friend"
+msgstr "quiere ser tu amigo"
+
+msgid "{} (16:9) from its middle; its location and camera details are removed."
+msgstr "{} (16:9) desde el centro; se eliminan su ubicación y los datos de la cámara."
+
+msgid "{} comment"
+msgstr "{} comentario"
+
+msgid "{} comments"
+msgstr "{} comentarios"
+
+msgid "{} days"
+msgstr "{} días"
+
+msgid "{} doesn't follow anyone yet."
+msgstr "{} aún no sigue a nadie."
+
+msgid "{} doesn't have friends yet."
+msgstr "{} aún no tiene amigos."
+
+msgid "{} going"
+msgstr "{} asistentes"
+
+msgid "{} hasn't posted anything yet."
+msgstr "{} aún no ha publicado nada."
+
+msgid "{} hasn't written an article yet."
+msgstr "{} aún no ha escrito ningún artículo."
+
+msgid "{} is live"
+msgstr "{} está en directo"
+
+msgid "{} left"
+msgstr "{} restantes"
+
+msgid "{} like"
+msgstr "{} me gusta"
+
+msgid "{} likes"
+msgstr "{} me gusta"
+
+msgid "{} min read"
+msgstr "{} min de lectura"
+
+msgid "{} on Misskey, Mastodon and the rest of the Fediverse"
+msgstr "{} en Misskey, Mastodon y el resto del Fediverso"
+
+msgid "{} on the Fediverse"
+msgstr "{} en el Fediverso"
+
+msgid "{} open reports"
+msgstr "{} reportes abiertos"
+
+msgid "{} photos"
+msgstr "{} fotos"
+
+msgid "{} places left"
+msgstr "{} plazas libres"
+
+msgid "{} recovery code left."
+msgstr "Queda {} código de recuperación."
+
+msgid "{} recovery codes left."
+msgstr "Quedan {} códigos de recuperación."
+
+msgid "{} until {}"
+msgstr "{} hasta el {}"
+
+msgid "{} view"
+msgstr "{} visualización"
+
+msgid "{} views"
+msgstr "{} visualizaciones"
+
+msgid "{} won't be on the list anymore."
+msgstr "{} ya no estará en la lista."
+
+msgid "· Article · {} min read"
+msgstr "· Artículo · {} min de lectura"
+
+msgid "· Explicit"
+msgstr "· Explícito"
+
+msgid "· Private"
+msgstr "· Privada"
+
+msgid "· edited"
+msgstr "· editado"
+
+msgid "· only participants see it"
+msgstr "· solo lo ven los participantes"
+
+msgid "· owner"
+msgstr "· propietario"
+
+msgid "· reminder: the event starts within a day"
+msgstr "· recordatorio: el evento empieza en menos de un día"
+
+msgid "· reminder: the event starts within the hour"
+msgstr "· recordatorio: el evento empieza en menos de una hora"
+
+msgid "· the organizer accepts participants"
+msgstr "· el organizador acepta a los participantes"
+
+msgid "← Dashboard"
+msgstr "← Panel"
+
+msgid "← Newest notifications"
+msgstr "← Notificaciones más recientes"
+
+msgid "← Settings"
+msgstr "← Ajustes"
+
+msgid "Choose a sound"
+msgstr "Elegir un audio"
+
+msgid "Choose a video"
+msgstr "Elegir un vídeo"
+
+msgid "No photo here yet."
+msgstr "Aún no hay fotos aquí."
+
+msgid "No post of this account is stored here yet. Follow it to get its new posts."
+msgstr "Aún no hay publicaciones de esta cuenta guardadas aquí. Síguela para recibir sus nuevas publicaciones."
+
+msgid "No post yet."
+msgstr "Aún no hay publicaciones."
+
+msgid "No video here yet."
+msgstr "Aún no hay vídeos aquí."
+
+msgid "No video yet."
+msgstr "Aún no hay vídeos."
+
+msgid "Nobody has posted yet."
+msgstr "Nadie ha publicado todavía."
+
+msgid "Publish the episode"
+msgstr "Publicar el episodio"
+
+msgid "Upload the video"
+msgstr "Subir el vídeo"
+
+msgid "You haven't posted photos yet. Add some from the post form on the home page."
+msgstr "Aún no has publicado fotos. Añade algunas desde el formulario de publicación del inicio."
+
+msgid "You haven't uploaded a video yet."
+msgstr "Aún no has subido ningún vídeo."
+
+msgid "Your feed is empty, write your first post above."
+msgstr "Tu muro está vacío, escribe tu primera publicación arriba."
+
+msgid "or drop it here"
+msgstr "o suéltalo aquí"
+
+msgid "This page does not exist."
+msgstr "Esta página no existe."
+
+msgid "Not Found"
+msgstr "No encontrado"
+
+msgid "Bad Request"
+msgstr "Solicitud no válida"
+
+msgid "Unauthorized"
+msgstr "No autorizado"
+
+msgid "Forbidden"
+msgstr "Prohibido"
+
+msgid "Conflict"
+msgstr "Conflicto"
+
+msgid "Payload Too Large"
+msgstr "Archivo demasiado grande"
+
+msgid "Unsupported Media Type"
+msgstr "Formato no admitido"
+
+msgid "Too Many Requests"
+msgstr "Demasiadas solicitudes"
+
+msgid "Internal Server Error"
+msgstr "Error interno del servidor"
+
+msgid "Service Unavailable"
+msgstr "Servicio no disponible"
+
+# Emails (templates/emails/)
+
+msgid "Choose a new password within {} minutes."
+msgstr "Elige una nueva contraseña en los próximos {} minutos."
+
+msgid "Reset your password"
+msgstr "Restablece tu contraseña"
+
+msgid "Someone asked to reset the password of your Tison account."
+msgstr "Alguien pidió restablecer la contraseña de tu cuenta de Tison."
+
+msgid "This link is valid for {} minutes:"
+msgstr "Este enlace es válido durante {} minutos:"
+
+msgid "If the button doesn't work, paste this link into your browser:"
+msgstr "Si el botón no funciona, pega este enlace en tu navegador:"
+
+msgid "If it wasn't you, ignore this email."
+msgstr "Si no fuiste tú, ignora este correo."
+
+msgid "Hello,"
+msgstr "Hola:"
+
+msgid "Open this link within {} minutes to choose a new password:"
+msgstr "Abre este enlace en los próximos {} minutos para elegir una nueva contraseña:"
+
+msgid "If it wasn't you, ignore this email: your password stays the same."
+msgstr "Si no fuiste tú, ignora este correo: tu contraseña no cambia."
+
+msgid "Two-factor authentication is on."
+msgstr "La autenticación en dos pasos está activada."
+
+msgid "Two-factor authentication was turned off."
+msgstr "La autenticación en dos pasos se desactivó."
+
+msgid "Logging in to your Tison account now asks for a code from your authenticator app after your password."
+msgstr "Iniciar sesión en tu cuenta de Tison ahora pide un código de tu aplicación de autenticación después de tu contraseña."
+
+msgid "Your password alone is now enough to log in to your Tison account."
+msgstr "Ahora basta con tu contraseña para iniciar sesión en tu cuenta de Tison."
+
+msgid "If it wasn't you, change your password now and turn it back on."
+msgstr "Si no fuiste tú, cambia tu contraseña ahora y vuelve a activarla."
+
+msgid "If it wasn't you, change your password now and turn it back on:"
+msgstr "Si no fuiste tú, cambia tu contraseña ahora y vuelve a activarla:"
+
+msgid "Your two-factor settings"
+msgstr "Tus ajustes de autenticación en dos pasos"
+
+msgid "Two-factor authentication is now on for your Tison account: logging in asks for a code from your authenticator app after your password."
+msgstr "La autenticación en dos pasos ya está activada en tu cuenta de Tison: al iniciar sesión se pide un código de tu aplicación de autenticación después de tu contraseña."
+
+msgid "Two-factor authentication was turned off on your Tison account: your password alone is now enough to log in."
+msgstr "La autenticación en dos pasos se desactivó en tu cuenta de Tison: ahora basta con tu contraseña para iniciar sesión."
+
+msgid "Confirm this address within {} hours."
+msgstr "Confirma esta dirección en las próximas {} horas."
+
+msgid "Verify your email"
+msgstr "Verifica tu correo"
+
+msgid "Welcome to Tison, @{}!"
+msgstr "¡Te damos la bienvenida a Tison, @{}!"
+
+msgid "Confirm that this address is yours, so it can be used to reset your password and send you important messages."
+msgstr "Confirma que esta dirección es tuya, para que sirva para restablecer tu contraseña y enviarte mensajes importantes."
+
+msgid "This link is valid for {} hours:"
+msgstr "Este enlace es válido durante {} horas:"
+
+msgid "If you didn't create this account, ignore this email: the address stays unverified."
+msgstr "Si no creaste esta cuenta, ignora este correo: la dirección seguirá sin verificar."
+
+msgid "Hello @{},"
+msgstr "Hola, @{}:"
+
+msgid "Welcome to Tison!"
+msgstr "¡Te damos la bienvenida a Tison!"
+
+msgid "Open this link within {} hours:"
+msgstr "Abre este enlace en las próximas {} horas:"
+
+msgid "You receive this email because of an action on your Tison account."
+msgstr "Recibes este correo por una acción en tu cuenta de Tison."
+
+# Pages of the site (entities/site_page.rs)
+
+msgid "The agreement between the site and the people who use it: who may sign up, what they agree to, what happens to their account."
+msgstr "El acuerdo entre el sitio y las personas que lo usan: quién puede registrarse, qué aceptan y qué pasa con su cuenta."
+
+msgid "What personal data the site keeps (email, posts, IP addresses in the logs...), why, for how long, and how to have it deleted."
+msgstr "Qué datos personales guarda el sitio (correo, publicaciones, direcciones IP en los registros...), por qué, durante cuánto tiempo y cómo pedir que se borren."
+
+msgid "The cookies of the site: the session cookie that keeps people signed in, and the one that remembers the chosen language."
+msgstr "Las cookies del sitio: la cookie de sesión que mantiene a las personas conectadas y la que recuerda el idioma elegido."
+
+msgid "What is allowed and what isn't on this server: the moderators act on reports with these rules."
+msgstr "Lo que está permitido y lo que no en este servidor: los moderadores gestionan los reportes según estas reglas."
+
+msgid "Last updated: {}"
+msgstr "Última actualización: {}"
+
+msgid "The creator of this site hasn't written this page yet."
+msgstr "El creador de este sitio aún no ha escrito esta página."
+
+msgid "Edit this page"
+msgstr "Editar esta página"
+
+msgid "“{}” saved."
+msgstr "«{}» guardado."
+
+msgid "The page is too long: at most {} characters."
+msgstr "La página es demasiado larga: {} caracteres como máximo."
+
+msgid "← Configuration"
+msgstr "← Configuración"
+
+
+msgid "Page, in Markdown"
+msgstr "Página, en Markdown"
+
+msgid "See the page"
+msgstr "Ver la página"
+
+msgid "Pages of the site"
+msgstr "Páginas del sitio"
+
+
+msgid "not written yet"
+msgstr "aún sin escribir"
+
+msgid "This page doesn't exist."
+msgstr "Esta página no existe."
+
+msgid "Saved in this file, which can also be changed in any editor. Written in Markdown, like articles, with tables. Visitors don't see the <!-- comments -->, and these are filled in for them: {}."
+msgstr "Se guarda en este archivo, que también puede modificarse en cualquier editor. Escrita en Markdown, como los artículos, con tablas. Los visitantes no ven los <!-- comentarios -->, y estos se rellenan para ellos: {}."
+
+msgid "Leave it empty to show that it isn't written yet."
+msgstr "Déjala vacía para indicar que aún no está escrita."
+
+msgid "Linked under the menu of every page. Each is a Markdown file of the folder"
+msgstr "Enlazadas bajo el menú de cada página. Cada una es un archivo Markdown de la carpeta"
+
+msgid ", which can also be changed in any editor."
+msgstr ", que también puede modificarse en cualquier editor."
+
+msgid "{} changed since you opened it (in an editor, or another tab): nothing was saved. Your text is below: save again to replace the file with it."
+msgstr "{} cambió desde que lo abriste (en un editor u otra pestaña): no se guardó nada. Tu texto está abajo: guarda de nuevo para reemplazar el archivo con él."
+
+msgid "{} couldn't be written: check that Tison may write in this folder."
+msgstr "No se pudo escribir {}: comprueba que Tison puede escribir en esta carpeta."
+
+msgid "The page shows here as you write it."
+msgstr "La página se muestra aquí mientras la escribes."

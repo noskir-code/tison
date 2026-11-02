@@ -1,0 +1,11 @@
+{% extends "base.html" %} {% block content %}
+<section class="box content">
+    <h1>{{ "Email verified"|t }}</h1>
+    <p>{{ "Thank you, @{}: your email is confirmed."|tf(username) }}</p>
+    {% if layout.viewer.is_some() %}
+    <a href="/" class="button">{{ "Back to home"|t }}</a>
+    {% else %}
+    <a href="/login" class="button">{{ "Log in"|t }}</a>
+    {% endif %}
+</section>
+{% endblock %}

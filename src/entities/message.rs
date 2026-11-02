@@ -71,6 +71,8 @@ pub const MESSAGES_TABLE: Table = Table {
         Column::new("ap_id", "TEXT").nullable(),
         Column::new("created_at", "TIMESTAMPTZ").default("NOW()"),
         Column::new("edited_at", "TIMESTAMPTZ").nullable(),
+        // Sent to the recipient's browsers (see `push`), once even with several servers.
+        Column::new("pushed_at", "TIMESTAMPTZ").nullable(),
     ],
     indexes: &[
         Index::new("messages_conversation_idx", "conversation_id, id"),
@@ -390,6 +392,46 @@ pub async fn add_remote(
             .await?;
     }
     Ok(added)
+}
+
+/// Takes a new message to send to the browsers of `recipient_id`: its
+/// conversation, `None` when already sent by another server, read meanwhile,
+/// or not theirs.
+pub async fn claim_push(pool: &PgPool, message_id: i64, recipient_id: i32) -> Result<Option<i64>, sqlx::Error> {
+    sqlx::query_scalar(
+        "UPDATE messages m SET pushed_at = NOW() FROM conversations c
+         WHERE m.id = $1 AND m.pushed_at IS NULL AND c.id = m.conversation_id
+           AND (c.user_id = $2 OR c.other_user_id = $2)
+           AND m.sender_user_id IS DISTINCT FROM $2
+           AND COALESCE(CASE WHEN c.user_id = $2 THEN c.user_read_at ELSE c.other_read_at END < m.created_at, TRUE)
+         RETURNING m.conversation_id",
+    )
+    .bind(message_id)
+    .bind(recipient_id)
+    .fetch_optional(pool)
+    .await
+}
+
+/// One message with its author, seen by `$1`.
+pub async fn find_one(pool: &PgPool, message_id: i64, viewer_id: i32) -> Result<Option<Message>, sqlx::Error> {
+    sqlx::query(concat!(
+        "SELECT m.id AS message_id, m.body, m.created_at AS sent_at, m.edited_at,
+                COALESCE(m.sender_user_id = $1, FALSE) AS is_mine, ",
+        user_columns!("u."),
+        ", ",
+        remote_author_columns!(),
+        " FROM messages m
+          LEFT JOIN users u ON u.id = m.sender_user_id
+          LEFT JOIN federation_actors ra ON ra.id = m.sender_actor_id
+         WHERE m.id = $2"
+    ))
+    .bind(viewer_id)
+    .bind(message_id)
+    .fetch_optional(pool)
+    .await?
+    .as_ref()
+    .map(Message::from_row)
+    .transpose()
 }
 
 /// Deletes the user's own message. Returns its conversation when it was theirs.

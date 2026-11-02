@@ -1,12 +1,12 @@
 {% extends "base.html" %} {% import "macros/account.html" as accounts %} {% block content %}
 <section class="box content search-results">
     {% if query.is_empty() %}
-    <h1>Search</h1>
+    <h1>{{ "Search"|t }}</h1>
     {% else %}
-    <h1>Results for “{{ query }}”</h1>
+    <h1>{{ "Results for “"|t }}{{ query }}”</h1>
     {% endif %}
     {% if let Some(message) = error %}
-    <p class="error">{{ message }}</p>
+    <p class="error">{{ message|t }}</p>
     {% endif %}
 
     {% if let Some(account) = found %}
@@ -16,17 +16,17 @@
         {% call accounts::follow_button(account, return_to) %}{% endcall %}
     </div>
     {% else if !query.is_empty() && error.is_none() %}
-    <h2>People</h2>
+    <h2>{{ "People"|t }}</h2>
     <ul class="account-list">
         {% for user in users %}
         <li>{% call accounts::user_identity(user) %}{% endcall %}</li>
         {% else %}
-        <li class="empty">Nobody found.</li>
+        <li class="empty">{{ "Nobody found."|t }}</li>
         {% endfor %}
     </ul>
 
     {% if crate::settings::services().content_aggregator %}
-    <h2>Communities</h2>
+    <h2>{{ "Communities"|t }}</h2>
     <ul class="account-list">
         {% for community in communities %}
         <li>
@@ -38,12 +38,12 @@
                 {% endif %}
                 <span>
                     <strong>{{ community.name }}</strong>
-                    <span class="post-username">{{ community.member_count }} member{% if community.member_count != 1 %}s{% endif %}{% if !community.is_public() %} · Private{% endif %}</span>
+                    <span class="post-username">{{ community.member_count }} {% if community.member_count == 1 %}{{ "member"|t }}{% else %}{{ "members"|t }}{% endif %}{% if !community.is_public() %} {{ "· Private"|t }}{% endif %}</span>
                 </span>
             </a>
         </li>
         {% else %}
-        <li class="empty">No community found.</li>
+        <li class="empty">{{ "No community found."|t }}</li>
         {% endfor %}
     </ul>
     {% endif %}
@@ -51,8 +51,8 @@
 
     {% if fediverse %}
     <p class="post-username search-hint">
-        To follow someone on Mastodon, Misskey, Pixelfed and other servers, search their address, like <strong>@name@mastodon.social</strong>, or paste the link of their profile.
-        {% if let Some(handle) = own_handle %}There, you are <strong>{{ handle }}</strong>.{% endif %}
+        {{ "To follow someone on Mastodon, Misskey, Pixelfed and other servers, search their address, like"|t }} <strong>{{ "@name@mastodon.social"|t }}</strong>{{ ", or paste the link of their profile."|t }}
+        {% if let Some(handle) = own_handle %}{{ "There, you are"|t }} <strong>{{ handle }}</strong>.{% endif %}
     </p>
     {% endif %}
 </section>

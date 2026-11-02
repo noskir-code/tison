@@ -864,6 +864,25 @@ pub fn update(note: &Value) -> Value {
     }))
 }
 
+/// A changed actor (its name, photo...), to the public: Mastodon and
+/// Hubzilla replace what they had.
+pub fn update_actor(actor: &Value) -> Value {
+    let id = actor["id"].as_str().unwrap_or_default();
+    let mut object = actor.clone();
+    // The activity carries the actor's context, with its key's vocabulary.
+    let context = object.as_object_mut().and_then(|fields| fields.remove("@context")).unwrap_or_else(|| json!(ACTIVITY_STREAMS));
+    json!({
+        "@context": context,
+        "id": format!("{id}#updates/{}", Utc::now().timestamp_micros()),
+        "type": "Update",
+        "actor": id,
+        "published": iso(&Utc::now()),
+        "to": [PUBLIC],
+        "cc": [actor["followers"]],
+        "object": object,
+    })
+}
+
 /// Deletes the Note `note_id` of `actor`, which other servers replace with a
 /// Tombstone.
 pub fn delete(actor: &str, note_id: &str, to: &Value, cc: &Value) -> Value {
@@ -2154,8 +2173,11 @@ async fn receive_message(federation: &Federation, pool: &PgPool, sender: &Remote
         let added = message::add_remote(pool, conversation_id, sender.id, ap_id, &text, published(object))
             .await
             .map_err(|err| format!("failed to save message: {err}"))?;
-        if added.is_some() {
+        if let Some(message_id) = added {
             signal_conversation(pool, conversation_id).await;
+            if let Err(err) = notification::signal_new_message(pool, &[user.id], message_id).await {
+                tracing::warn!("failed to signal message {}: {}", message_id, err);
+            }
             tracing::info!("message {} from {} to @{}", ap_id, sender.actor_id, user.username);
         }
     }

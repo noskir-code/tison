@@ -29,6 +29,8 @@ use crate::{
     },
     mail::Email,
 };
+/// `|t` and `|tf` in the templates, see `i18n`.
+use crate::i18n::filters;
 
 #[derive(Template)]
 #[template(path = "emails/reset_password.txt")]
@@ -120,7 +122,8 @@ pub async fn forgot(
 
     // In the background, and the same answer for every email: neither the
     // message nor the response time tells whether an account uses it.
-    tokio::spawn(send_reset_link(state.clone(), email));
+    // The email is written in the language of the browser that asked for it.
+    crate::i18n::spawn(send_reset_link(state.clone(), email));
     page.sent = true;
     render_template(&page)
 }
@@ -163,7 +166,7 @@ async fn send_reset_link(state: AppState, email: String) {
         return;
     };
     let email = Email::render(
-        "Reset your Tison password",
+        &crate::i18n::t("Reset your Tison password"),
         &ResetEmailText {
             link: &link,
             valid_minutes: VALID_MINUTES,

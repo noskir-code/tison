@@ -1,0 +1,21 @@
+{% extends "emails/layout.html" %}
+{% block title %}{{ "Two-factor authentication"|t }}{% endblock %}
+{% block preview %}{% if enabled %}{{ "Two-factor authentication is on."|t }}{% else %}{{ "Two-factor authentication was turned off."|t }}{% endif %}{% endblock %}
+{% block content %}
+<h1 class="title">{% if enabled %}{{ "Two-factor authentication is on"|t }}{% else %}{{ "Two-factor authentication was turned off"|t }}{% endif %}</h1>
+<p class="text">
+    {% if enabled %}
+    {{ "Logging in to your Tison account now asks for a code from your authenticator app after your password."|t }}
+    {% else %}
+    {{ "Your password alone is now enough to log in to your Tison account."|t }}
+    {{ "If it wasn't you, change your password now and turn it back on."|t }}
+    {% endif %}
+</p>
+<table role="presentation" cellpadding="0" cellspacing="0">
+    <tr>
+        <td class="button-cell">
+            <a href="{{ settings_link }}" class="button">{{ "Your two-factor settings"|t }}</a>
+        </td>
+    </tr>
+</table>
+{% endblock %}

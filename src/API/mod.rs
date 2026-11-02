@@ -19,7 +19,7 @@
 //! follower mentioning it is published in it.
 
 pub mod activities;
-mod base64;
+pub(crate) mod base64;
 pub mod federation;
 pub mod linker;
 

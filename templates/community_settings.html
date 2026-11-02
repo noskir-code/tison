@@ -1,112 +1,112 @@
 {% extends "base.html" %} {% block content %}
 <section class="box content profile-edit settings">
-    <h1>Settings of {{ community.name }}</h1>
+    <h1>{{ "Settings of"|t }} {{ community.name }}</h1>
     {% if let Some(message) = error %}
-    <p class="error">{{ message }}</p>
+    <p class="error">{{ message|t }}</p>
     {% else if saved %}
-    <p class="saved">Changes saved.</p>
+    <p class="saved">{{ "Changes saved."|t }}</p>
     {% endif %}
-    <p><a href="/community/{{ community.slug }}">Back to the community</a></p>
+    <p><a href="/community/{{ community.slug }}">{{ "Back to the community"|t }}</a></p>
 
-    <h2>Details</h2>
+    <h2>{{ "Details"|t }}</h2>
     <form action="/community/{{ community.slug }}/settings/details" method="post">
-        <label for="name">Name</label>
+        <label for="name">{{ "Name"|t }}</label>
         <input id="name" type="text" name="name" value="{{ community.name }}" maxlength="{{ name_max_chars }}" required />
-        <label for="description">Description</label>
+        <label for="description">{{ "Description"|t }}</label>
         <textarea id="description" name="description" rows="4" maxlength="{{ description_max_chars }}">{{ community.description }}</textarea>
         <fieldset class="choices">
-            <legend>Who can read the posts</legend>
+            <legend>{{ "Who can read the posts"|t }}</legend>
             {% if community.is_public() %}
-            <p class="post-username">Making it private removes its followers on other servers, and stops sharing its posts with them.</p>
+            <p class="post-username">{{ "Making it private removes its followers on other servers, and stops sharing its posts with them."|t }}</p>
             {% endif %}
             {% for visibility in visibilities %}
-            <label><input type="radio" name="visibility" value="{{ visibility.as_str() }}"{% if community.visibility == *visibility %} checked{% endif %} /> {{ visibility.label() }}</label>
+            <label><input type="radio" name="visibility" value="{{ visibility.as_str() }}"{% if community.visibility == *visibility %} checked{% endif %} /> {{ visibility.label()|t }}</label>
             {% endfor %}
         </fieldset>
-        <button type="submit" class="button">Save details</button>
+        <button type="submit" class="button">{{ "Save details"|t }}</button>
     </form>
 
-    <h2>Photo</h2>
+    <h2>{{ "Photo"|t }}</h2>
     <form action="/community/{{ community.slug }}/settings/photo" method="post" enctype="multipart/form-data">
-        <label for="photo">New photo</label>
+        <label for="photo">{{ "New photo"|t }}</label>
         <input id="photo" type="file" name="{{ image_field }}" accept="image/jpeg,image/png,image/gif,image/webp,image/avif" required />
-        <button type="submit" class="button">Upload photo</button>
+        <button type="submit" class="button">{{ "Upload photo"|t }}</button>
     </form>
     {% if community.photo_url.is_some() %}
     <form action="/community/{{ community.slug }}/settings/photo/remove" method="post">
-        <button type="submit" class="button">Remove photo</button>
+        <button type="submit" class="button">{{ "Remove photo"|t }}</button>
     </form>
     {% endif %}
 
-    <h2>Rules</h2>
+    <h2>{{ "Rules"|t }}</h2>
     {% for rule in rules %}
     <form action="/community/{{ community.slug }}/rules/{{ rule.id }}" method="post" class="community-rule-form">
-        <label for="rule-{{ rule.id }}-title">Rule {{ loop.index }}</label>
+        <label for="rule-{{ rule.id }}-title">{{ "Rule"|t }} {{ loop.index }}</label>
         <input id="rule-{{ rule.id }}-title" type="text" name="title" value="{{ rule.title }}" maxlength="{{ rule_title_max_chars }}" required />
-        <label for="rule-{{ rule.id }}-order" class="visually-hidden">Position</label>
-        <input id="rule-{{ rule.id }}-order" type="number" name="sort_order" value="{{ rule.sort_order }}" min="0" step="1" class="order" title="Position" />
-        <label for="rule-{{ rule.id }}-body" class="visually-hidden">Text of rule {{ loop.index }}</label>
+        <label for="rule-{{ rule.id }}-order" class="visually-hidden">{{ "Position"|t }}</label>
+        <input id="rule-{{ rule.id }}-order" type="number" name="sort_order" value="{{ rule.sort_order }}" min="0" step="1" class="order" title="{{ "Position"|t }}" />
+        <label for="rule-{{ rule.id }}-body" class="visually-hidden">{{ "Text of rule"|t }} {{ loop.index }}</label>
         <textarea id="rule-{{ rule.id }}-body" name="body" rows="2" maxlength="{{ rule_body_max_chars }}">{{ rule.body }}</textarea>
-        <button type="submit" class="button">Save rule</button>
-        <button type="submit" class="button danger" formaction="/community/{{ community.slug }}/rules/{{ rule.id }}/delete">Delete rule</button>
+        <button type="submit" class="button">{{ "Save rule"|t }}</button>
+        <button type="submit" class="button danger" formaction="/community/{{ community.slug }}/rules/{{ rule.id }}/delete">{{ "Delete rule"|t }}</button>
     </form>
     {% else %}
-    <p class="empty">No rules yet.</p>
+    <p class="empty">{{ "No rules yet."|t }}</p>
     {% endfor %}
     <form action="/community/{{ community.slug }}/rules" method="post">
-        <label for="new-rule-title">New rule</label>
-        <input id="new-rule-title" type="text" name="title" maxlength="{{ rule_title_max_chars }}" placeholder="Title" required />
-        <label for="new-rule-order" class="visually-hidden">Position</label>
-        <input id="new-rule-order" type="number" name="sort_order" min="0" step="1" class="order" placeholder="Position" />
-        <label for="new-rule-body" class="visually-hidden">Text of the new rule</label>
-        <textarea id="new-rule-body" name="body" rows="2" maxlength="{{ rule_body_max_chars }}" placeholder="Details (optional)"></textarea>
-        <button type="submit" class="button">Add rule</button>
+        <label for="new-rule-title">{{ "New rule"|t }}</label>
+        <input id="new-rule-title" type="text" name="title" maxlength="{{ rule_title_max_chars }}" placeholder="{{ "Title"|t }}" required />
+        <label for="new-rule-order" class="visually-hidden">{{ "Position"|t }}</label>
+        <input id="new-rule-order" type="number" name="sort_order" min="0" step="1" class="order" placeholder="{{ "Position"|t }}" />
+        <label for="new-rule-body" class="visually-hidden">{{ "Text of the new rule"|t }}</label>
+        <textarea id="new-rule-body" name="body" rows="2" maxlength="{{ rule_body_max_chars }}" placeholder="{{ "Details (optional)"|t }}"></textarea>
+        <button type="submit" class="button">{{ "Add rule"|t }}</button>
     </form>
 
     {% if !community.is_public() || !requests.is_empty() %}
-    <h2 id="requests">Requests to join</h2>
+    <h2 id="requests">{{ "Requests to join"|t }}</h2>
     <ul class="community-moderators">
         {% for user in requests %}
         <li>
             <a href="/user/{{ user.username }}">{{ user.display_name() }}</a>
             <span class="post-username">@{{ user.username }}</span>
             <form action="/community/{{ community.slug }}/requests/{{ user.id }}/approve" method="post" class="inline">
-                <button type="submit" class="action">Accept</button>
+                <button type="submit" class="action">{{ "Accept"|t }}</button>
             </form>
             <form action="/community/{{ community.slug }}/requests/{{ user.id }}/reject" method="post" class="inline">
-                <button type="submit" class="action danger">Refuse</button>
+                <button type="submit" class="action danger">{{ "Refuse"|t }}</button>
             </form>
         </li>
         {% else %}
-        <li class="empty">No pending request.</li>
+        <li class="empty">{{ "No pending request."|t }}</li>
         {% endfor %}
     </ul>
     {% endif %}
 
-    <h2 id="members">Members</h2>
+    <h2 id="members">{{ "Members"|t }}</h2>
     <ul class="community-moderators">
         {% for user in members %}
         <li>
             <a href="/user/{{ user.username }}">{{ user.display_name() }}</a>
-            <span class="post-username">@{{ user.username }}{% if community.owner_user_id == Some(*user.id) %} · owner{% endif %}</span>
+            <span class="post-username">@{{ user.username }}{% if community.owner_user_id == Some(*user.id) %} {{ "· owner"|t }}{% endif %}</span>
             {% if community.owner_user_id != Some(*user.id) %}
-            <form action="/community/{{ community.slug }}/members/{{ user.id }}/remove" method="post" class="inline" data-confirm="Remove @{{ user.username }} from the community?">
-                <button type="submit" class="action danger">Remove</button>
+            <form action="/community/{{ community.slug }}/members/{{ user.id }}/remove" method="post" class="inline" data-confirm="{{ "Remove @{} from the community?"|tf(user.username) }}">
+                <button type="submit" class="action danger">{{ "Remove"|t }}</button>
             </form>
             {% endif %}
         </li>
         {% endfor %}
     </ul>
 
-    <h2>Moderators</h2>
+    <h2>{{ "Moderators"|t }}</h2>
     <ul class="community-moderators">
         {% for moderator in moderators %}
         <li>
             <a href="/user/{{ moderator.user.username }}">{{ moderator.user.display_name() }}</a>
-            <span class="post-username">@{{ moderator.user.username }}{% if moderator.is_owner %} · owner{% endif %}</span>
+            <span class="post-username">@{{ moderator.user.username }}{% if moderator.is_owner %} {{ "· owner"|t }}{% endif %}</span>
             {% if !moderator.is_owner && (membership.is_owner || is_staff) %}
             <form action="/community/{{ community.slug }}/moderators/{{ moderator.user.id }}/remove" method="post" class="inline">
-                <button type="submit" class="action danger">Remove</button>
+                <button type="submit" class="action danger">{{ "Remove"|t }}</button>
             </form>
             {% endif %}
         </li>
@@ -114,16 +114,16 @@
     </ul>
     {% if membership.is_owner || is_staff %}
     <form action="/community/{{ community.slug }}/moderators" method="post">
-        <label for="moderator">Add a moderator (a member's username)</label>
+        <label for="moderator">{{ "Add a moderator (a member's username)"|t }}</label>
         <input id="moderator" type="text" name="username" pattern="@?[A-Za-z0-9_]+" required />
-        <button type="submit" class="button">Add moderator</button>
+        <button type="submit" class="button">{{ "Add moderator"|t }}</button>
     </form>
 
-    <h2>Delete the community</h2>
+    <h2>{{ "Delete the community"|t }}</h2>
     <form action="/community/{{ community.slug }}/delete" method="post" class="danger-zone">
-        <p>Deletes the community with all its posts, rules and members. This can't be undone.</p>
-        <label class="checkbox"><input type="checkbox" required /> I understand, delete {{ community.name }}</label>
-        <button type="submit" class="button danger">Delete community</button>
+        <p>{{ "Deletes the community with all its posts, rules and members. This can't be undone."|t }}</p>
+        <label class="checkbox"><input type="checkbox" required /> {{ "I understand, delete"|t }} {{ community.name }}</label>
+        <button type="submit" class="button danger">{{ "Delete community"|t }}</button>
     </form>
     {% endif %}
 </section>

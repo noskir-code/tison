@@ -2,23 +2,23 @@
 <section class="box content moderation staff">
     {% call moderation_ui::tabs(sections) %}{% endcall %}
     <p class="post-username">
-        The <strong>Creator</strong> made this site and names the moderators.
-        <strong>Moderators</strong> handle reports: they delete what breaks the rules, suspend and block accounts.
+        {{ "The"|t }} <strong>{{ "Creator"|t }}</strong> {{ "made this site and names the moderators."|t }}
+        <strong>{{ "Moderators"|t }}</strong> {{ "handle reports: they delete what breaks the rules, suspend and block accounts."|t }}
     </p>
     {% if let Some(message) = error %}
-    <p class="error">{{ message }}</p>
+    <p class="error">{{ message|t }}</p>
     {% else if saved %}
-    <p class="saved">Saved.</p>
+    <p class="saved">{{ "Saved."|t }}</p>
     {% endif %}
 
     <ul class="account-list">
         {% for member in staff %}
         <li>
             {% call accounts::user_identity(member) %}{% endcall %}
-            {% if let Some(badge) = member.role.badge() %}<span class="role-badge {{ member.role.as_str() }}">{{ badge }}</span>{% endif %}
+            {% if let Some(badge) = member.role.badge() %}<span class="role-badge {{ member.role.as_str() }}">{{ badge|t }}</span>{% endif %}
             {% if can_manage && member.role == Role::Moderator %}
-            <form action="/moderation/staff/{{ member.id }}/remove" method="post" class="inline" data-confirm="Remove @{{ member.username }} from the moderators?" data-confirm-label="Remove">
-                <button type="submit" class="action danger">Remove</button>
+            <form action="/moderation/staff/{{ member.id }}/remove" method="post" class="inline" data-confirm="{{ "Remove @{} from the moderators?"|tf(member.username) }}" data-confirm-label="{{ "Remove"|t }}">
+                <button type="submit" class="action danger">{{ "Remove"|t }}</button>
             </form>
             {% endif %}
         </li>
@@ -26,11 +26,11 @@
     </ul>
 
     {% if can_manage %}
-    <h2>Add a moderator</h2>
+    <h2>{{ "Add a moderator"|t }}</h2>
     <form action="/moderation/staff" method="post" class="search-field staff-add">
-        <label for="staff-username" class="visually-hidden">Username</label>
-        <input id="staff-username" type="text" name="username" placeholder="Username" required autocomplete="off" />
-        <button type="submit" class="button primary">Add</button>
+        <label for="staff-username" class="visually-hidden">{{ "Username"|t }}</label>
+        <input id="staff-username" type="text" name="username" placeholder="{{ "Username"|t }}" required autocomplete="off" />
+        <button type="submit" class="button primary">{{ "Add"|t }}</button>
     </form>
     {% endif %}
 </section>

@@ -30,7 +30,7 @@ It also add native bridges to other protocols like:
   - And by passion !
 
 
-### Used on my own instance (As October 2026, it uses old deprecated code that is used as a reference for this project)
+### Used on my own instance
 https://instavox.social/
 
 
@@ -39,7 +39,7 @@ https://instavox.social/
  - (Completed) v0.1 > the first fully operational function (Content-Aggregator)
  - (Completed) v0.2 > DFRN
  - (Completed) v0.3 > Moderator system
- - (Ready) v0.4 > Content Type system
+ - (Completed) v0.4 > Content Type system
  - (Completed) v0.5 > Image
  - (Completed) v0.6 > Publishing
  - (Completed) v0.7 > Audio podcast
@@ -47,20 +47,31 @@ https://instavox.social/
  - (Completed) v0.9 > Live Streaming
  - (Completed) v0.10 > Video compression system
  - (Completed) v0.11 > Event planning
- - (Current) v0.12 > 2FA system
- - v0.13 > Add Web browser systems, like notifications
- - v0.14 > Badges system
- - v0.15 > Enhancing the system, like the publishing
- - v0.16 > Add views and statistics
- - v0.17 > Add a dashboard for creators
- - v0.18 > Algorithm option for admin server and user when active on server
- - v0.19 > Wikipedia preview system to show information recognized in posts
- - v0.20 > Apply corrective to the federation system
+ - (Completed) v0.12 > 2FA system
+ - (Completed) v0.13 > Add Web browser systems, like notifications
+ - (Completed) v0.14 > Enhancing the systems, like the publishing and notifications
+ - (Completed) v0.15 > Add views and statistics
+ - (Completed) v0.16 > Add a dashboard for creators
+ - (Completed) v0.17 > Add translation system
+ - (Completed) v0.18 > Add the necessary pages for legal use and Fediverse norms
+ - (Current) v0.19 > Fix texts and menus
+ - v0.20 > Apply corrective to the federation system and enhancing even more functions
  - v0.21 > API to connect from other server and to connect to other servers
  - v0.22 > AT Protocol Bridge integration
  - v0.23 > Diaspora Bridge integration
  - v0.24 > ZOT Bridge integration
  - v0.25 > Matrix Bridge integration
  - v0.26 > Cross-posting
+ - v0.27 > Cleaning up the code and comments
+ - v0.28 > Badges system
+ - v0.29 > Preparation for the full release
  
  - v1.0 > Fully functional system and cleaned up that shows contents and users from other instances with multi-user links and notifier that notifies the publication of new content by users.
+
+ Possible new features to be added
+ - Algorithm option for admin server and for user when active on server
+ - Wikipedia preview system to show information recognized in posts
+
+ ## Legal pages
+ Modify the files in legal to your local laws.
+ The model given is not final and/or usable and is for an example only and mostly based on laws of the province of Québec, Canada.

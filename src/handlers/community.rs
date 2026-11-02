@@ -33,6 +33,8 @@ use crate::{
         user::signed_in_user,
     },
 };
+/// `|t` and `|tf` in the templates, see `i18n`.
+use crate::i18n::filters;
 
 /// Results sent back to the pages as `?error=<code>`.
 #[derive(Clone, Copy)]
@@ -99,12 +101,10 @@ impl CommunityError {
 
     fn message(self) -> String {
         match self {
-            Self::InvalidSlug => format!(
-                "The address must be {SLUG_MIN_LEN} to {SLUG_MAX_LEN} lowercase letters, digits or _."
-            ),
+            Self::InvalidSlug => crate::i18n::tf2("The address must be {} to {} lowercase letters, digits or _.", SLUG_MIN_LEN, SLUG_MAX_LEN),
             Self::SlugTaken => "This address is already used by a community or a user.".to_string(),
-            Self::InvalidName => format!("The name must be 1 to {NAME_MAX_CHARS} characters."),
-            Self::InvalidDescription => format!("The description can be at most {DESCRIPTION_MAX_CHARS} characters."),
+            Self::InvalidName => crate::i18n::tf("The name must be 1 to {} characters.", NAME_MAX_CHARS),
+            Self::InvalidDescription => crate::i18n::tf("The description can be at most {} characters.", DESCRIPTION_MAX_CHARS),
             Self::InvalidVisibility => "Choose who can read the posts.".to_string(),
             Self::InvalidRule => format!(
                 "A rule needs a title of at most {RULE_TITLE_MAX_CHARS} characters, and at most {RULE_BODY_MAX_CHARS} for its text."
@@ -115,7 +115,7 @@ impl CommunityError {
             Self::PostTooLong => format!("A post can be at most {BODY_MAX_CHARS} characters."),
             Self::PostInvalidCharacters => "The post contains characters that are not allowed.".to_string(),
             Self::ImageMissing => "Choose an image to upload.".to_string(),
-            Self::ImageTooLarge => format!("The image can be at most {} MB.", MAX_IMAGE_BYTES / (1024 * 1024)),
+            Self::ImageTooLarge => crate::i18n::tf("The image can be at most {} MB.", MAX_IMAGE_BYTES / (1024 * 1024)),
             Self::ImageFormat => "Use a JPEG, PNG, GIF, WebP or AVIF image.".to_string(),
             Self::Server => "Something went wrong, try again later.".to_string(),
         }
@@ -758,7 +758,7 @@ pub async fn settings_page(
     render_template(&SettingsTemplate {
         requests,
         members,
-        title: format!("Settings of {}", community.name),
+        title: crate::i18n::tf("Settings of {}", &community.name),
         layout,
         community,
         membership,

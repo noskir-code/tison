@@ -1,16 +1,16 @@
 {% extends "base.html" %} {% block content %}
 <section class="box content messenger">
-    <h1>Messenger</h1>
+    <h1>{{ "Messenger"|t }}</h1>
     <form action="/messenger/new" method="post" class="search-field messenger-new" id="new">
-        <label for="messenger-to" class="visually-hidden">Write to</label>
-        <input id="messenger-to" type="text" name="to" placeholder="{% if fediverse %}Write to a username, or @name@server{% else %}Write to a username{% endif %}" required autocomplete="off" />
-        <button type="submit" class="button primary">Write</button>
+        <label for="messenger-to" class="visually-hidden">{{ "Write to"|t }}</label>
+        <input id="messenger-to" type="text" name="to" placeholder="{% if fediverse %}{{ "Write to a username, or @name@server"|t }}{% else %}{{ "Write to a username"|t }}{% endif %}" required autocomplete="off" />
+        <button type="submit" class="button primary">{{ "Write"|t }}</button>
     </form>
     {% if let Some(message) = error %}
-    <p class="error">{{ message }}</p>
+    <p class="error">{{ message|t }}</p>
     {% endif %}
     {% if fediverse %}
-    <p class="post-username">Also with people on Mastodon, Pleroma, Hubzilla, Misskey and other Fediverse servers.</p>
+    <p class="post-username">{{ "Also with people on Mastodon, Pleroma, Hubzilla, Misskey and other Fediverse servers."|t }}</p>
     {% endif %}
 
     <ul class="conversation-list">
@@ -28,9 +28,9 @@
                         <span class="post-username">{{ conversation.other.handle() }}</span>
                         <time class="post-meta" datetime="{{ conversation.last_at_iso() }}" data-relative>{{ conversation.last_at_label() }}</time>
                     </span>
-                    <span class="conversation-excerpt">{% if conversation.last_is_mine %}You: {% endif %}{{ conversation.last_body }}</span>
+                    <span class="conversation-excerpt">{% if conversation.last_is_mine %}{{ "You:"|t }} {% endif %}{{ conversation.last_body }}</span>
                 </span>
-                {% if conversation.unread %}<span class="visually-hidden">(unread)</span>{% endif %}
+                {% if conversation.unread %}<span class="visually-hidden">{{ "(unread)"|t }}</span>{% endif %}
             </a>
         </li>
         {% endfor %}
@@ -47,15 +47,15 @@
                     <span class="conversation-top">
                         <strong>{{ friend.display_name() }}</strong>
                         <span class="post-username">@{{ friend.username }}</span>
-                        <span class="post-meta">Friend</span>
+                        <span class="post-meta">{{ "Friend"|t }}</span>
                     </span>
-                    <span class="conversation-excerpt">No messages yet, say hello</span>
+                    <span class="conversation-excerpt">{{ "No messages yet, say hello"|t }}</span>
                 </span>
             </a>
         </li>
         {% endfor %}
         {% if conversations.is_empty() && friends.is_empty() %}
-        <li class="empty">No conversation yet. Write to someone above, or use "Message" on a profile. Your friends appear here too.</li>
+        <li class="empty">{{ "No conversation yet. Write to someone above, or use \"Message\" on a profile. Your friends appear here too."|t }}</li>
         {% endif %}
     </ul>
 </section>

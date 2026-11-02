@@ -2,18 +2,21 @@
 <section class="box content" data-notifications-page>
     {# A div, not <header>: style.css enlarges every `header div` (the site logo). #}
     <div class="notifications-header">
-        <h1>Notifications</h1>
+        <h1>{{ "Notifications"|t }}</h1>
         <div class="notifications-actions">
+            <span data-push hidden>
+                <button type="button" class="action" data-push-toggle data-on="{{ "Turn off browser notifications"|t }}" data-off="{{ "Turn on browser notifications"|t }}">{{ "Turn on browser notifications"|t }}</button>
+            </span>
             <form action="/notifications/read-all" method="post" data-notification-action data-read-all{% if layout.unread_notifications == 0 %} hidden{% endif %}>
-                <button type="submit" class="action">Mark all as read</button>
+                <button type="submit" class="action">{{ "Mark all as read"|t }}</button>
             </form>
             <form action="/notifications/delete-all" method="post" data-notification-action data-delete-all{% if notifications.is_empty() %} hidden{% endif %}>
-                <button type="submit" class="action">Delete all</button>
+                <button type="submit" class="action">{{ "Delete all"|t }}</button>
             </form>
         </div>
     </div>
     {% if before.is_some() %}
-    <p><a href="/notifications" class="action">← Newest notifications</a></p>
+    <p><a href="/notifications" class="action">{{ "← Newest notifications"|t }}</a></p>
     {% endif %}
     {# New notifications are added at the top while the page is open (assets/system.js),
        only on the first page: older pages don't start with the newest. #}
@@ -23,11 +26,11 @@
         {% endfor %}
     </ul>
     <p class="empty" data-notifications-empty{% if !notifications.is_empty() %} hidden{% endif %}>
-        No notifications. Likes, comments, replies and shares of your posts will appear here.
+        {{ "No notifications. Likes, comments, replies and shares of your posts will appear here."|t }}
     </p>
     {% if let Some(oldest) = next_before %}
     {# Loads the next page; with JavaScript, older notifications load when it comes into view. #}
-    <a href="/notifications?before={{ oldest }}" class="action load-older" data-load-older="{{ oldest }}">Older notifications</a>
+    <a href="/notifications?before={{ oldest }}" class="action load-older" data-load-older="{{ oldest }}">{{ "Older notifications"|t }}</a>
     {% endif %}
 </section>
 {% endblock %}

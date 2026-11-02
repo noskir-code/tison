@@ -1,26 +1,26 @@
 {% extends "base.html" %} {% import "macros/moderation.html" as moderation_ui %} {% block content %}
 <section class="box content moderation">
     {% call moderation_ui::tabs(sections) %}{% endcall %}
-    <nav class="report-filters" aria-label="Reports">
+    <nav class="report-filters" aria-label="{{ "Reports"|t }}">
         {% for tab in tabs %}
-        <a href="{{ tab.url }}" class="action{% if tab.active %} active{% endif %}"{% if tab.active %} aria-current="page"{% endif %}>{{ tab.label }} · {{ tab.count }}</a>
+        <a href="{{ tab.url }}" class="action{% if tab.active %} active{% endif %}"{% if tab.active %} aria-current="page"{% endif %}>{{ tab.label|t }} · {{ tab.count }}</a>
         {% endfor %}
     </nav>
     {% if let Some(text) = message %}
-    <p class="saved">{{ text }}</p>
+    <p class="saved">{{ text|t }}</p>
     {% endif %}
 
     <ol class="report-list">
         {% for report in reports %}
         <li class="report-card" id="report-{{ report.id }}">
             <header class="report-header">
-                <span class="report-reason">{{ report.reason.label() }}</span>
+                <span class="report-reason">{{ report.reason.label()|t }}</span>
                 <span class="post-meta">
-                    {{ report.kind }} ·
+                    {{ report.kind|t }} ·
                     {% match report.reporter %}
-                    {% when report::Reporter::User(username) %}by <a href="/user/{{ username }}">@{{ username }}</a>
-                    {% when report::Reporter::Server(domain) %}sent by the server <strong>{{ domain }}</strong>
-                    {% when report::Reporter::Gone %}by a deleted account
+                    {% when report::Reporter::User(username) %}{{ "by"|t }} <a href="/user/{{ username }}">@{{ username }}</a>
+                    {% when report::Reporter::Server(domain) %}{{ "sent by the server"|t }} <strong>{{ domain }}</strong>
+                    {% when report::Reporter::Gone %}{{ "by a deleted account"|t }}
                     {% endmatch %}
                     · <time datetime="{{ report.created_at_iso() }}" data-relative>{{ report.created_at_label() }}</time>
                 </span>
@@ -28,9 +28,9 @@
 
             <div class="report-target">
                 <strong>{{ report.target_label }}</strong>
-                {% if report.content_deleted() %}<span class="only-you">deleted</span>{% endif %}
+                {% if report.content_deleted() %}<span class="only-you">{{ "deleted"|t }}</span>{% endif %}
                 {% if !report.text().is_empty() %}<p class="report-excerpt">{{ report.text() }}</p>{% endif %}
-                {% if let Some(link) = report.link() %}{% if !report.content_deleted() %}<a href="{{ link }}" class="action">Open</a>{% endif %}{% endif %}
+                {% if let Some(link) = report.link() %}{% if !report.content_deleted() %}<a href="{{ link }}" class="action">{{ "Open"|t }}</a>{% endif %}{% endif %}
             </div>
 
             {% if !report.comment.is_empty() %}
@@ -39,65 +39,65 @@
 
             {% if let Some(account) = report.account %}
             <p class="report-account">
-                Account: <a href="{{ account.author.profile_url() }}">{{ account.author.handle() }}</a>
-                {% if account.restricted %}<span class="only-you">{% if account.author.is_remote() %}blocked{% else %}suspended{% endif %}</span>{% endif %}
-                {% if account.open_reports > 1 %}· <strong>{{ account.open_reports }} open reports</strong>{% endif %}
+                {{ "Account:"|t }} <a href="{{ account.author.profile_url() }}">{{ account.author.handle() }}</a>
+                {% if account.restricted %}<span class="only-you">{% if account.author.is_remote() %}{{ "blocked"|t }}{% else %}{{ "suspended"|t }}{% endif %}</span>{% endif %}
+                {% if account.open_reports > 1 %}· <strong>{{ "{} open reports"|tf(account.open_reports) }}</strong>{% endif %}
             </p>
             {% endif %}
 
             <div class="report-actions">
                 {% if report.status == Status::Open %}
                 {% if !report.content_deleted() && report.kind != "account" %}
-                <form action="/moderation/reports/{{ report.id }}/delete" method="post" data-confirm="Delete this {{ report.kind }}? Other servers are told too.">
+                <form action="/moderation/reports/{{ report.id }}/delete" method="post" data-confirm="Delete this {{ report.kind|t }}? Other servers are told too.">
                     <input type="hidden" name="status" value="{{ status.as_str() }}" />
-                    <button type="submit" class="button danger">Delete {{ report.kind }}</button>
+                    <button type="submit" class="button danger">{{ "Delete"|t }} {{ report.kind|t }}</button>
                 </form>
                 {% endif %}
                 {% if let Some(account) = report.account %}
                 {% if account.author.is_remote() %}
-                <form action="/moderation/reports/{{ report.id }}/{% if account.restricted %}unblock{% else %}block{% endif %}" method="post"{% if !account.restricted %} data-confirm="Block {{ account.author.handle() }}? What it posted here is deleted, and what it sends is ignored." data-confirm-label="Block"{% endif %}>
+                <form action="/moderation/reports/{{ report.id }}/{% if account.restricted %}unblock{% else %}block{% endif %}" method="post"{% if !account.restricted %} data-confirm="{{ "Block {}? What it posted here is deleted, and what it sends is ignored."|tf(account.author.handle()) }}" data-confirm-label="{{ "Block"|t }}"{% endif %}>
                     <input type="hidden" name="status" value="{{ status.as_str() }}" />
-                    <button type="submit" class="button{% if !account.restricted %} danger{% endif %}">{% if account.restricted %}Unblock{% else %}Block account{% endif %}</button>
+                    <button type="submit" class="button{% if !account.restricted %} danger{% endif %}">{% if account.restricted %}{{ "Unblock"|t }}{% else %}{{ "Block account"|t }}{% endif %}</button>
                 </form>
                 {% else %}
-                <form action="/moderation/reports/{{ report.id }}/{% if account.restricted %}unsuspend{% else %}suspend{% endif %}" method="post"{% if !account.restricted %} data-confirm="Suspend {{ account.author.handle() }}? They are signed out, can't sign in, and their posts and profile are hidden." data-confirm-label="Suspend"{% endif %}>
+                <form action="/moderation/reports/{{ report.id }}/{% if account.restricted %}unsuspend{% else %}suspend{% endif %}" method="post"{% if !account.restricted %} data-confirm="{{ "Suspend {}? They are signed out, can't sign in, and their posts and profile are hidden."|tf(account.author.handle()) }}" data-confirm-label="{{ "Suspend"|t }}"{% endif %}>
                     <input type="hidden" name="status" value="{{ status.as_str() }}" />
-                    <button type="submit" class="button{% if !account.restricted %} danger{% endif %}">{% if account.restricted %}Reinstate{% else %}Suspend account{% endif %}</button>
+                    <button type="submit" class="button{% if !account.restricted %} danger{% endif %}">{% if account.restricted %}{{ "Reinstate"|t }}{% else %}{{ "Suspend account"|t }}{% endif %}</button>
                 </form>
                 {% endif %}
                 {% endif %}
                 <form action="/moderation/reports/{{ report.id }}/resolve" method="post">
                     <input type="hidden" name="status" value="{{ status.as_str() }}" />
-                    <button type="submit" class="button primary">Resolve</button>
+                    <button type="submit" class="button primary">{{ "Resolve"|t }}</button>
                 </form>
                 <form action="/moderation/reports/{{ report.id }}/dismiss" method="post">
                     <input type="hidden" name="status" value="{{ status.as_str() }}" />
-                    <button type="submit" class="button">Dismiss</button>
+                    <button type="submit" class="button">{{ "Dismiss"|t }}</button>
                 </form>
                 {% else %}
                 <span class="post-meta">
-                    {{ report.status.label() }}{% if let Some(handler) = report.handled_by %} by @{{ handler }}{% endif %}
-                    {% if let Some(iso) = report.handled_at_iso() %}{% if let Some(label) = report.handled_at_label() %} · <time datetime="{{ iso }}" data-relative>{{ label }}</time>{% endif %}{% endif %}
+                    {{ report.status.label()|t }}{% if let Some(handler) = report.handled_by %} {{ "by @"|t }}{{ handler }}{% endif %}
+                    {% if let Some(iso) = report.handled_at_iso() %}{% if let Some(label) = report.handled_at_label() %} · <time datetime="{{ iso }}" data-relative>{{ label|t }}</time>{% endif %}{% endif %}
                 </span>
                 {% if let Some(account) = report.account %}{% if account.restricted %}
                 <form action="/moderation/reports/{{ report.id }}/{% if account.author.is_remote() %}unblock{% else %}unsuspend{% endif %}" method="post">
                     <input type="hidden" name="status" value="{{ status.as_str() }}" />
-                    <button type="submit" class="button">{% if account.author.is_remote() %}Unblock{% else %}Reinstate{% endif %}</button>
+                    <button type="submit" class="button">{% if account.author.is_remote() %}{{ "Unblock"|t }}{% else %}{{ "Reinstate"|t }}{% endif %}</button>
                 </form>
                 {% endif %}{% endif %}
                 <form action="/moderation/reports/{{ report.id }}/reopen" method="post">
                     <input type="hidden" name="status" value="{{ status.as_str() }}" />
-                    <button type="submit" class="button">Reopen</button>
+                    <button type="submit" class="button">{{ "Reopen"|t }}</button>
                 </form>
                 {% endif %}
             </div>
         </li>
         {% else %}
-        <li class="empty">{% if status == Status::Open %}No open report. All quiet.{% else %}Nothing here.{% endif %}</li>
+        <li class="empty">{% if status == Status::Open %}{{ "No open report. All quiet."|t }}{% else %}{{ "Nothing here."|t }}{% endif %}</li>
         {% endfor %}
     </ol>
     {% if let Some(before) = next_before %}
-    <p><a href="/moderation?status={{ status.as_str() }}&before={{ before }}" class="button">Older reports</a></p>
+    <p><a href="/moderation?status={{ status.as_str() }}&before={{ before }}" class="button">{{ "Older reports"|t }}</a></p>
     {% endif %}
 </section>
 {% endblock %}

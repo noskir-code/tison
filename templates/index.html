@@ -3,15 +3,14 @@
 {% call posts_ui::composer(composer) %}{% endcall %}
 {% else %}
 <section class="box content">
-    <h1>Welcome to Tison</h1>
+    <h1>{{ "Welcome to Tison"|t }}</h1>
     <p>
-        One account for every kind of service: posts, images, videos, music,
-        communities and more, all federated over ActivityPub.
+        {{ "One account for every kind of service: posts, images, videos, music, communities and more, all federated over ActivityPub."|t }}
     </p>
-    <p><a href="/login">Login</a> or <a href="/register">register</a> to post.</p>
+    <p><a href="/login">{{ "Login"|t }}</a> {{ "or"|t }} <a href="/register">{{ "register"|t }}</a> {{ "to post."|t }}</p>
 </section>
 {% endif %}
 <div class="flex center vertical full-width posts">
-    {% call posts_ui::post_list(posts, "Nobody has posted yet.", layout.viewer.is_some(), "/", false) %}{% endcall %}
+    {% call posts_ui::post_list(posts, "Nobody has posted yet."|t, layout.viewer.is_some(), "/", false) %}{% endcall %}
 </div>
 {% endblock %}

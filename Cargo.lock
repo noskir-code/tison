@@ -2342,6 +2342,7 @@ dependencies = [
  "axum",
  "lettre",
  "reqwest",
+ "ring",
  "rsa",
  "rustls",
  "serde_json",

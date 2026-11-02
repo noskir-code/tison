@@ -1,0 +1,56 @@
+{% extends "base.html" %} {% import "macros/dashboard.html" as dashboard_ui %} {% block content %}
+<section class="box content dashboard">
+    <h1>{{ "Dashboard"|t }}</h1>
+    {% call dashboard_ui::periods(periods) %}{% endcall %}
+    <nav class="profile-tabs" aria-label="{{ "Dashboard sections"|t }}">
+        {% for tab in tabs %}
+        <a href="{{ tab.url }}"{% if tab.active %} class="active" aria-current="page"{% endif %}>{{ tab.label|t }}</a>
+        {% endfor %}
+    </nav>
+    {% call dashboard_ui::tiles(tiles) %}{% endcall %}
+    {% call dashboard_ui::charts(charts) %}{% endcall %}
+
+    {% if let Some(rows) = content %}
+    <h2 class="dashboard-list-title">{{ "Each one"|t }}</h2>
+    {% if rows.is_empty() %}
+    <p class="empty">{{ "Nothing here yet: what you publish appears here with its numbers."|t }}</p>
+    {% else %}
+    <p class="post-username">{{ "Since it was published. Choose one to see its days."|t }}</p>
+    <div class="instance-table-wrap">
+        <table class="content-table">
+            <thead>
+                <tr>
+                    <th scope="col">{{ "Published"|t }}</th>
+                    <th scope="col">{% if videos %}{{ "Video"|t }}{% else %}{{ "Post"|t }}{% endif %}</th>
+                    {% if videos %}<th scope="col" class="number">{{ "Views"|t }}</th>{% endif %}
+                    <th scope="col" class="number">{{ "Likes"|t }}</th>
+                    <th scope="col" class="number">{{ "Comments"|t }}</th>
+                    <th scope="col" class="number">{{ "Shares"|t }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in rows %}
+                <tr>
+                    <td class="content-date">{{ row.date_label() }}</td>
+                    <th scope="row">
+                        <a href="/dashboard/posts/{{ row.id }}?days={{ period }}" class="content-link">
+                            {% call dashboard_ui::preview(row, false) %}{% endcall %}
+                            <span class="content-label">{% if row.label.is_empty() %}{{ "(no text)"|t }}{% else %}{{ row.label }}{% endif %}</span>
+                        </a>
+                    </th>
+                    {% if videos %}<td class="number">{{ row.views }}</td>{% endif %}
+                    <td class="number">{{ row.likes }}</td>
+                    <td class="number">{{ row.comments }}</td>
+                    <td class="number">{{ row.shares }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+    {% endif %}
+    {% if tab_slug == "followers" %}
+    <p class="post-username">{{ "Followers who left aren't kept: the line shows your followers of today, by the day they followed you."|t }}</p>
+    {% endif %}
+</section>
+{% endblock %}

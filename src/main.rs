@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use axum::{Router, extract::DefaultBodyLimit, routing::post};
 use sqlx::{PgPool, postgres::PgPoolOptions};
-use tower_http::services::ServeDir;
+use tower_http::services::{ServeDir, ServeFile};
 use tower_http::trace::TraceLayer;
 use tower_sessions::{
     Expiry, MemoryStore, SessionManagerLayer,
@@ -14,6 +14,7 @@ mod API;
 mod av;
 mod entities;
 mod geocode;
+mod i18n;
 mod handlers;
 mod linkify;
 mod mail;
@@ -21,7 +22,10 @@ mod markdown;
 mod pages;
 mod photo;
 mod preview;
+mod push;
+mod qr;
 mod settings;
+mod totp;
 use handlers::user;
 use settings::Config;
 
@@ -37,6 +41,8 @@ pub struct AppState {
     pub mailer: Option<Arc<mail::Mailer>>,
     /// Used in links sent by email, see `Config::public_base_url`.
     pub public_base_url: String,
+    /// `INSTANCE_NAME`, see `Config::instance_name`.
+    pub instance_name: String,
     /// `None` when federation is off (`FEDERATION=false`) or there is no database.
     pub federation: Option<Arc<API::Federation>>,
     /// Requests to other websites: the media proxy and link previews.
@@ -45,6 +51,8 @@ pub struct AppState {
     pub previews: Arc<tokio::sync::Notify>,
     /// Open pages waiting for their unread count, see `handlers::notification`.
     pub live_notifications: Arc<handlers::notification::LiveUsers>,
+    /// Browser notifications, `None` without a database, see `push`.
+    pub push: Option<Arc<push::Push>>,
     /// Where sessions live: long-lived connections reread them from here to
     /// notice a logout, see `handlers::notification::live`.
     pub session_store: MemoryStore,
@@ -163,13 +171,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Err(err) = entities::media::register_known_avatars(pool).await {
             tracing::warn!("failed to register avatars for the media proxy: {}", err);
         }
+        if let Err(err) = entities::media::register_known_article_pictures(pool).await {
+            tracing::warn!("failed to register article pictures for the media proxy: {}", err);
+        }
         av::live::clean(pool).await;
     }
 
-    // Old cached media of other servers, once a day.
-    tokio::spawn(async {
+    // Old cached media of other servers, and article pictures never
+    // published, once a day.
+    let cleaned_pool = pool.clone();
+    tokio::spawn(async move {
         loop {
             handlers::media::clean_cache().await;
+            if let Some(pool) = &cleaned_pool {
+                if let Err(err) = entities::views::clean(pool).await {
+                    tracing::warn!("failed to forget old video viewers: {}", err);
+                }
+                match entities::article_picture::clean_unpublished(pool).await {
+                    Ok(0) => {}
+                    Ok(count) => tracing::info!("deleted {} article pictures never published", count),
+                    Err(err) => tracing::warn!("failed to delete unpublished article pictures: {}", err),
+                }
+            }
             tokio::time::sleep(std::time::Duration::from_secs(86400)).await;
         }
     });
@@ -232,6 +255,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tokio::spawn(handlers::notification::listen(pool.clone(), live_notifications.clone()));
     }
 
+    let push = match &pool {
+        Some(pool) => match push::Push::load(pool, &config.public_base_url, config.federation_allow_insecure).await {
+            Ok(push) => {
+                let push = Arc::new(push);
+                tokio::spawn(push::run(push.clone(), pool.clone()));
+                Some(push)
+            }
+            Err(err) => {
+                tracing::warn!("browser notifications are off: {}", err);
+                None
+            }
+        },
+        None => None,
+    };
+
     let session_store = MemoryStore::default();
     let state = AppState {
         pool,
@@ -239,10 +277,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         remember_days: config.remember_me_days,
         mailer,
         public_base_url: config.public_base_url.clone(),
+        instance_name: config.instance_name.clone(),
         federation,
         web,
         previews,
         live_notifications,
+        push,
         session_store: session_store.clone(),
         rtmp_url: format!(
             "rtmp://{}:{}/live",
@@ -282,9 +322,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .fallback(handlers::system::not_found);
 
     let app = app
+        // At the root: a service worker only handles pages below its address.
+        .route_service("/sw.js", ServeFile::new("assets/sw.js"))
         .nest_service("/assets", ServeDir::new("assets"))
         .nest_service("/public", ServeDir::new("public"))
         .layer(TraceLayer::new_for_http())
+        // Each request answered in its language, see `i18n`.
+        .layer(axum::middleware::from_fn(i18n::middleware))
         .layer(DefaultBodyLimit::max(
             config.max_request_body_mb * 1024 * 1024,
         ))

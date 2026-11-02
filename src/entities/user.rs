@@ -31,11 +31,12 @@ macro_rules! user_columns {
         concat!(
             $prefix, "id, ", $prefix, "username, ", $prefix, "displayname, ",
             $prefix, "firstname, ", $prefix, "lastname, ", $prefix, "birthday, ",
-            $prefix, "gender, ", $prefix, "bio, ", $prefix, "firstname_public, ",
-            $prefix, "lastname_public, ", $prefix, "birthday_public, ",
+            $prefix, "gender, ", $prefix, "bio, ", $prefix, "names_visibility, ",
+            $prefix, "birthday_public, ",
             $prefix, "photo_url, ", $prefix, "background_url, ", $prefix, "created_at, ",
             $prefix, "session_version, ", $prefix, "public_id, ",
-            $prefix, "federation_enabled, ", $prefix, "role, ", $prefix, "suspended_at"
+            $prefix, "federation_enabled, ", $prefix, "role, ", $prefix, "suspended_at, ",
+            $prefix, "email_verified"
         )
     };
 }
@@ -57,9 +58,8 @@ pub const TABLE: Table = Table {
         Column::new("birthday", "DATE").nullable(),
         Column::new("gender", "TEXT").default("''"),
         Column::new("bio", "TEXT").default("''"),
-        // Privacy: what other users can see on the profile.
-        Column::new("firstname_public", "BOOLEAN").default("TRUE"),
-        Column::new("lastname_public", "BOOLEAN").default("TRUE"),
+        // Privacy: who sees the first and last name, see `NameVisibility`.
+        Column::new("names_visibility", "TEXT").default("'public'"),
         Column::new("birthday_public", "BOOLEAN").default("TRUE"),
         // `user`, `moderator` or `admin`, see `Role`. The first account made
         // is the admin, see `create_account`.
@@ -106,6 +106,73 @@ pub const TABLE: Table = Table {
         Index::new("users_role_idx", "role"),
     ],
 };
+
+/// Who sees a user's first and last name. Their friends see what their
+/// followers see. Elsewhere (feeds, search, other servers) only a public
+/// name is shown: the display name or the username otherwise.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum NameVisibility {
+    #[default]
+    Public,
+    Followers,
+    Friends,
+    /// Only the user.
+    Private,
+}
+
+impl NameVisibility {
+    pub const ALL: [Self; 4] = [Self::Public, Self::Followers, Self::Friends, Self::Private];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Public => "public",
+            Self::Followers => "followers",
+            Self::Friends => "friends",
+            Self::Private => "private",
+        }
+    }
+
+    /// Unknown values hide the name: a typo never shows it.
+    pub fn parse(value: &str) -> Self {
+        Self::ALL.into_iter().find(|visibility| visibility.as_str() == value).unwrap_or(Self::Private)
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Public => "Everyone, here and on the Fediverse",
+            Self::Followers => "Your followers and friends here",
+            Self::Friends => "Your friends here",
+            Self::Private => "Only you",
+        }
+    }
+
+    /// Shown next to the name for its owner.
+    pub fn note(self) -> &'static str {
+        match self {
+            Self::Public => "",
+            Self::Followers => "followers and friends",
+            Self::Friends => "friends",
+            Self::Private => "only you",
+        }
+    }
+
+    /// The choices: friends only with `DFRN` on (keeping the current one).
+    pub fn choices(current: Self) -> Vec<Self> {
+        let dfrn = crate::settings::services().dfrn;
+        Self::ALL.into_iter().filter(|choice| dfrn || *choice != Self::Friends || *choice == current).collect()
+    }
+
+    /// Whether a viewer sees the name: `follows` and `friends` say what they
+    /// are to its owner.
+    pub fn shown_to(self, own: bool, follows: bool, friends: bool) -> bool {
+        own || match self {
+            Self::Public => true,
+            Self::Followers => follows || friends,
+            Self::Friends => friends,
+            Self::Private => false,
+        }
+    }
+}
 
 /// What a user can do on the site.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -160,9 +227,9 @@ pub struct User {
     pub birthday: Option<NaiveDate>,
     pub gender: String,
     pub bio: String,
-    // Privacy: whether other users can see these on the profile.
-    pub firstname_public: bool,
-    pub lastname_public: bool,
+    /// Who sees `firstname` and `lastname`.
+    pub names_visibility: NameVisibility,
+    /// Whether other users can see it on the profile.
     pub birthday_public: bool,
     pub photo_url: Option<String>,
     pub background_url: Option<String>,
@@ -175,6 +242,8 @@ pub struct User {
     pub role: Role,
     /// Suspended by the staff, see `set_suspended`.
     pub suspended_at: Option<DateTime<Utc>>,
+    /// The link sent to the email was opened, see `handlers::verify_email`.
+    pub email_verified: bool,
 }
 
 impl User {
@@ -188,8 +257,7 @@ impl User {
             birthday: row.try_get("birthday")?,
             gender: row.try_get("gender")?,
             bio: row.try_get("bio")?,
-            firstname_public: row.try_get("firstname_public")?,
-            lastname_public: row.try_get("lastname_public")?,
+            names_visibility: NameVisibility::parse(&row.try_get::<String, _>("names_visibility")?),
             birthday_public: row.try_get("birthday_public")?,
             photo_url: row.try_get("photo_url")?,
             background_url: row.try_get("background_url")?,
@@ -199,24 +267,35 @@ impl User {
             federation_enabled: row.try_get("federation_enabled")?,
             role: Role::parse(&row.try_get::<String, _>("role")?),
             suspended_at: row.try_get("suspended_at")?,
+            email_verified: row.try_get("email_verified")?,
         })
     }
 
-    /// "First Last", skipping the empty and private parts.
-    pub fn full_name(&self) -> String {
-        [
-            (self.firstname.as_str(), self.firstname_public),
-            (self.lastname.as_str(), self.lastname_public),
-        ]
-        .into_iter()
-        .filter(|(part, public)| *public && !part.is_empty())
-        .map(|(part, _)| part)
+    /// "First Last", whoever may see it: empty when neither is written.
+    pub fn real_name(&self) -> String {
+        [self.firstname.as_str(), self.lastname.as_str()]
+            .into_iter()
+            .filter(|part| !part.is_empty())
             .collect::<Vec<_>>()
             .join(" ")
     }
 
-    /// The display name, else the public parts of the full name, else the username.
-    /// Shown to everyone, so it never contains a private name.
+    /// The real name when everyone may see it, else empty.
+    pub fn full_name(&self) -> String {
+        match self.names_visibility {
+            NameVisibility::Public => self.real_name(),
+            _ => String::new(),
+        }
+    }
+
+    /// The choices of who sees the names, for the settings.
+    pub fn name_visibility_choices(&self) -> Vec<NameVisibility> {
+        NameVisibility::choices(self.names_visibility)
+    }
+
+    /// The display name, else the public full name, else the username.
+    /// Shown to everyone and sent to other servers (Mastodon, Hubzilla...),
+    /// so it never contains a name that isn't public.
     pub fn display_name(&self) -> String {
         if !self.displayname.is_empty() {
             return self.displayname.clone();
@@ -371,8 +450,10 @@ pub struct NewAccount {
     pub username: String,
     pub email: String,
     pub password_hash: String,
+    /// Both optional: the username is enough.
     pub firstname: String,
     pub lastname: String,
+    pub names_visibility: NameVisibility,
     pub birthday: NaiveDate,
 }
 
@@ -387,8 +468,8 @@ pub async fn create_account(pool: &PgPool, account: &NewAccount) -> Result<User,
     // Not a community's name either: they share the Fediverse names. The
     // first account of the site is its admin, whoever installed it.
     let result = sqlx::query(concat!(
-        "INSERT INTO users (username, email, password_hash, firstname, lastname, birthday, role)
-         SELECT $1, $2, $3, $4, $5, $6, CASE WHEN EXISTS (SELECT 1 FROM users) THEN 'user' ELSE 'admin' END
+        "INSERT INTO users (username, email, password_hash, firstname, lastname, birthday, role, names_visibility)
+         SELECT $1, $2, $3, $4, $5, $6, CASE WHEN EXISTS (SELECT 1 FROM users) THEN 'user' ELSE 'admin' END, $7
          WHERE NOT EXISTS (SELECT 1 FROM communities WHERE LOWER(slug) = LOWER($1))
          RETURNING ",
         user_columns!()
@@ -399,6 +480,7 @@ pub async fn create_account(pool: &PgPool, account: &NewAccount) -> Result<User,
     .bind(&account.firstname)
     .bind(&account.lastname)
     .bind(account.birthday)
+    .bind(account.names_visibility.as_str())
     .fetch_optional(pool)
     .await;
 
@@ -529,8 +611,8 @@ pub async fn search(pool: &PgPool, search: &str, limit: i64) -> Result<Vec<User>
         user_columns!(),
         " FROM users,
               LATERAL (SELECT LOWER(displayname) AS display,
-                              CASE WHEN firstname_public THEN LOWER(firstname) ELSE '' END AS first,
-                              CASE WHEN lastname_public THEN LOWER(lastname) ELSE '' END AS last) n
+                              CASE WHEN names_visibility = 'public' THEN LOWER(firstname) ELSE '' END AS first,
+                              CASE WHEN names_visibility = 'public' THEN LOWER(lastname) ELSE '' END AS last) n
          WHERE suspended_at IS NULL
            AND (LOWER(username) LIKE '%' || $1 || '%' OR n.display LIKE '%' || $1 || '%'
             OR n.first LIKE '%' || $1 || '%' OR n.last LIKE '%' || $1 || '%')
@@ -560,15 +642,69 @@ pub async fn update_names(
     displayname: &str,
     firstname: &str,
     lastname: &str,
+    visibility: NameVisibility,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE users SET displayname = $1, firstname = $2, lastname = $3 WHERE id = $4")
+    sqlx::query("UPDATE users SET displayname = $1, firstname = $2, lastname = $3, names_visibility = $5 WHERE id = $4")
         .bind(displayname)
         .bind(firstname)
         .bind(lastname)
         .bind(id)
+        .bind(visibility.as_str())
         .execute(pool)
         .await?;
     Ok(())
+}
+
+/// Hours a link to verify the email works.
+pub const VERIFICATION_VALID_HOURS: i32 = 48;
+/// Minimum time between two verification emails, against spam.
+pub const VERIFICATION_RESEND_SECONDS: i32 = 120;
+
+/// The email of the user, and whether it's verified.
+pub async fn email_status(pool: &PgPool, id: i32) -> Result<Option<(String, bool)>, sqlx::Error> {
+    let row = sqlx::query("SELECT email, email_verified FROM users WHERE id = $1 AND email IS NOT NULL")
+        .bind(id)
+        .fetch_optional(pool)
+        .await?;
+    row.map(|row| Ok((row.try_get("email")?, row.try_get("email_verified")?))).transpose()
+}
+
+/// Stores the hash of a new verification link, replacing the one before:
+/// `false` when one was sent less than `VERIFICATION_RESEND_SECONDS` ago, or
+/// the email is already verified.
+pub async fn start_verification(pool: &PgPool, id: i32, token_hash: &str) -> Result<bool, sqlx::Error> {
+    Ok(sqlx::query(
+        "UPDATE users SET email_verification_token = $2, email_verification_sent_at = NOW(),
+                email_verification_expires_at = NOW() + make_interval(hours => $3)
+         WHERE id = $1 AND NOT email_verified AND email IS NOT NULL
+           AND (email_verification_sent_at IS NULL OR email_verification_sent_at < NOW() - make_interval(secs => $4))",
+    )
+    .bind(id)
+    .bind(token_hash)
+    .bind(VERIFICATION_VALID_HOURS)
+    .bind(f64::from(VERIFICATION_RESEND_SECONDS))
+    .execute(pool)
+    .await?
+    .rows_affected()
+        > 0)
+}
+
+/// Verifies the email whose link has this hash, if it hasn't expired: the
+/// link then stops working. Returns the user.
+pub async fn verify_email(pool: &PgPool, token_hash: &str) -> Result<Option<User>, sqlx::Error> {
+    sqlx::query(concat!(
+        "UPDATE users SET email_verified = TRUE, email_verified_at = NOW(),
+                email_verification_token = NULL, email_verification_expires_at = NULL
+         WHERE email_verification_token = $1 AND email_verification_expires_at > NOW()
+         RETURNING ",
+        user_columns!()
+    ))
+    .bind(token_hash)
+    .fetch_optional(pool)
+    .await?
+    .as_ref()
+    .map(User::from_row)
+    .transpose()
 }
 
 /// `None` for accounts created before passwords existed.
@@ -657,6 +793,55 @@ fn is_unique_violation(err: &sqlx::Error) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn named(displayname: &str, visibility: NameVisibility) -> User {
+        User {
+            id: 1,
+            username: "ada".to_string(),
+            displayname: displayname.to_string(),
+            firstname: "Ada".to_string(),
+            lastname: "Lovelace".to_string(),
+            birthday: None,
+            gender: String::new(),
+            bio: String::new(),
+            names_visibility: visibility,
+            birthday_public: true,
+            photo_url: None,
+            background_url: None,
+            created_at: Utc::now(),
+            session_version: 0,
+            public_id: 1,
+            federation_enabled: true,
+            role: Role::User,
+            suspended_at: None,
+            email_verified: true,
+        }
+    }
+
+    #[test]
+    fn names_are_shown_only_to_whom_they_may_be() {
+        use NameVisibility::*;
+        // (own, follows, friends)
+        let viewers = [(true, false, false), (false, false, false), (false, true, false), (false, false, true)];
+        let shown = |visibility: NameVisibility| viewers.map(|(own, follows, friends)| visibility.shown_to(own, follows, friends));
+        assert_eq!(shown(Public), [true, true, true, true]);
+        assert_eq!(shown(Followers), [true, false, true, true]);
+        assert_eq!(shown(Friends), [true, false, false, true]);
+        assert_eq!(shown(Private), [true, false, false, false]);
+        assert_eq!(NameVisibility::parse("nonsense"), Private);
+    }
+
+    #[test]
+    fn feeds_and_other_servers_only_get_a_public_name() {
+        assert_eq!(named("", NameVisibility::Public).display_name(), "Ada Lovelace");
+        assert_eq!(named("", NameVisibility::Followers).display_name(), "ada");
+        assert_eq!(named("", NameVisibility::Private).display_name(), "ada");
+        assert_eq!(named("Countess", NameVisibility::Friends).display_name(), "Countess");
+        let mut nameless = named("", NameVisibility::Public);
+        nameless.firstname.clear();
+        nameless.lastname.clear();
+        assert_eq!(nameless.display_name(), "ada");
+    }
 
     #[test]
     fn roles_are_read_safely() {

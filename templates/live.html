@@ -1,47 +1,47 @@
 {% extends "base.html" %} {% block content %}
 <section class="box content profile-edit media-form">
-    <h1>Go live</h1>
+    <h1>{{ "Go live"|t }}</h1>
     {% if let Some(message) = error %}
-    <p class="error">{{ message }}</p>
+    <p class="error">{{ message|t }}</p>
     {% else if saved %}
-    <p class="success">Saved.</p>
+    <p class="success">{{ "Saved."|t }}</p>
     {% endif %}
     {% if let Some(post_id) = settings.live_post_id %}
-    <p class="live-now-banner"><span class="live-dot" aria-hidden="true"></span> You're live. <a href="/posts/{{ post_id }}">Open your stream</a></p>
+    <p class="live-now-banner"><span class="live-dot" aria-hidden="true"></span> {{ "You're live."|t }} <a href="/posts/{{ post_id }}">{{ "Open your stream"|t }}</a></p>
     {% else %}
-    <p>Stream from <a href="https://obsproject.com" rel="noopener" target="_blank">OBS Studio</a> or any app that streams over RTMP. Your followers see a post when you go live, and everyone can watch at <a href="/live/{{ username }}">/live/{{ username }}</a>.</p>
+    <p>{{ "Stream from"|t }} <a href="https://obsproject.com" rel="noopener" target="_blank">{{ "OBS Studio"|t }}</a> {{ "or any app that streams over RTMP. Your followers see a post when you go live, and everyone can watch at"|t }} <a href="/live/{{ username }}">/live/{{ username }}</a>.</p>
     {% endif %}
 
-    <h2>Connect OBS</h2>
-    <p class="field-help">In OBS: Settings → Stream → Service: <strong>Custom…</strong>, then paste these two values.</p>
-    <label for="live-server">Server</label>
+    <h2>{{ "Connect OBS"|t }}</h2>
+    <p class="field-help">{{ "In OBS: Settings → Stream → Service:"|t }} <strong>{{ "Custom…"|t }}</strong>{{ ", then paste these two values."|t }}</p>
+    <label for="live-server">{{ "Server"|t }}</label>
     <div class="copy-field">
         <input id="live-server" type="text" value="{{ rtmp_url }}" readonly />
-        <button type="button" class="button" data-copy="{{ rtmp_url }}" hidden>Copy</button>
+        <button type="button" class="button" data-copy="{{ rtmp_url }}" hidden>{{ "Copy"|t }}</button>
     </div>
-    <label for="live-key">Stream key</label>
+    <label for="live-key">{{ "Stream key"|t }}</label>
     <div class="copy-field">
         <input id="live-key" type="password" value="{{ settings.stream_key }}" readonly data-secret />
-        <button type="button" class="button" data-reveal="live-key" hidden>Show</button>
-        <button type="button" class="button" data-copy="{{ settings.stream_key }}" hidden>Copy</button>
+        <button type="button" class="button" data-reveal="live-key" hidden>{{ "Show"|t }}</button>
+        <button type="button" class="button" data-copy="{{ settings.stream_key }}" hidden>{{ "Copy"|t }}</button>
     </div>
-    <p class="field-help">Keep the key secret: anyone who has it can stream as you.</p>
-    <form action="/live/key" method="post" data-confirm="OBS stops working with the old key until you paste the new one." data-confirm-label="Reset the key">
-        <button type="submit" class="action danger">Reset the stream key</button>
+    <p class="field-help">{{ "Keep the key secret: anyone who has it can stream as you."|t }}</p>
+    <form action="/live/key" method="post" data-confirm="{{ "OBS stops working with the old key until you paste the new one."|t }}" data-confirm-label="{{ "Reset the key"|t }}">
+        <button type="submit" class="action danger">{{ "Reset the stream key"|t }}</button>
     </form>
     <details class="field-help">
-        <summary>Recommended OBS settings</summary>
-        <p>Output: video encoder x264 or any H.264 encoder, keyframe interval 2 s, bitrate up to 6000 kbps; audio AAC. Video: 1280×720 or 1920×1080, 30 or 60 fps. Tison converts the stream for browsers at most in 1080p.</p>
+        <summary>{{ "Recommended OBS settings"|t }}</summary>
+        <p>{{ "Output: video encoder x264 or any H.264 encoder, keyframe interval 2 s, bitrate up to 6000 kbps; audio AAC. Video: 1280×720 or 1920×1080, 30 or 60 fps. Tison converts the stream for browsers at most in 1080p."|t }}</p>
     </details>
 
-    <h2>Your next stream</h2>
+    <h2>{{ "Your next stream"|t }}</h2>
     <form action="/live" method="post">
-        <label for="live-title">Title</label>
-        <input id="live-title" type="text" name="title" value="{{ settings.title }}" maxlength="{{ title_max_chars }}" placeholder="{{ username }} is live" />
-        <label for="live-description">Description</label>
+        <label for="live-title">{{ "Title"|t }}</label>
+        <input id="live-title" type="text" name="title" value="{{ settings.title }}" maxlength="{{ title_max_chars }}" placeholder="{{ "{} is live"|tf(username) }}" />
+        <label for="live-description">{{ "Description"|t }}</label>
         <textarea id="live-description" name="description" rows="3" maxlength="{{ description_max_chars }}">{{ settings.description }}</textarea>
-        <label class="checkbox-line"><input type="checkbox" name="keep_replay" value="on"{% if settings.keep_replay %} checked{% endif %} /> Keep the replay: the stream becomes a video when it ends</label>
-        <button type="submit" class="button">Save</button>
+        <label class="checkbox-line"><input type="checkbox" name="keep_replay" value="on"{% if settings.keep_replay %} checked{% endif %} /> {{ "Keep the replay: the stream becomes a video when it ends"|t }}</label>
+        <button type="submit" class="button">{{ "Save"|t }}</button>
     </form>
 </section>
 {% endblock %}

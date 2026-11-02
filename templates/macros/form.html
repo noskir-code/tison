@@ -2,7 +2,7 @@
 {% macro invalid(name, message) %}{% if let Some(text) = message %} class="invalid" aria-invalid="true"{% if !text.is_empty() %} aria-describedby="{{ name }}-error"{% endif %}{% endif %}{% endmacro %}
 
 {# Message shown under the input. #}
-{% macro message(name, message) %}{% if let Some(text) = message %}{% if !text.is_empty() %}<p class="field-error" id="{{ name }}-error">{{ text }}</p>{% endif %}{% endif %}{% endmacro %}
+{% macro message(name, message) %}{% if let Some(text) = message %}{% if !text.is_empty() %}<p class="field-error" id="{{ name }}-error">{{ text|t }}</p>{% endif %}{% endif %}{% endmacro %}
 
 {# Problems not caused by a field. #}
-{% macro general(messages) %}{% for text in messages %}<p class="error">{{ text }}</p>{% endfor %}{% endmacro %}
+{% macro general(messages) %}{% for text in messages %}<p class="error">{{ text|t }}</p>{% endfor %}{% endmacro %}

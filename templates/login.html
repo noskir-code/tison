@@ -1,13 +1,13 @@
 {% extends "base.html" %} {% import "macros/form.html" as form %} {% block content %}
 <section class="box content auth">
-    <h1>Login</h1>
+    <h1>{{ "Login"|t }}</h1>
     {% if password_reset %}
-    <p class="saved">Your password was changed. You can log in with the new one.</p>
+    <p class="saved">{{ "Your password was changed. You can log in with the new one."|t }}</p>
     {% endif %}
     {% call form::general(self.general_errors()) %}{% endcall %}
 
     <form action="/login" method="post">
-        <label for="login">Username or email</label>
+        <label for="login">{{ "Username or email"|t }}</label>
         <input
             id="login"
             {% call form::invalid("login", self.error_for("login")) %}{% endcall %}
@@ -19,7 +19,7 @@
             autofocus
         />
         {% call form::message("login", self.error_for("login")) %}{% endcall %}
-        <label for="password">Password</label>
+        <label for="password">{{ "Password"|t }}</label>
         <input
             id="password"
             {% call form::invalid("password", self.error_for("password")) %}{% endcall %}
@@ -31,11 +31,11 @@
         {% call form::message("password", self.error_for("password")) %}{% endcall %}
         <label class="checkbox">
             <input type="checkbox" name="remember" checked />
-            Stay signed in
+            {{ "Stay signed in"|t }}
         </label>
-        <button type="submit" class="button">Login</button>
+        <button type="submit" class="button">{{ "Login"|t }}</button>
     </form>
-    <p><a href="/forgot-password">Forgot your password?</a></p>
-    <p>No account yet? <a href="/register">Register</a></p>
+    <p><a href="/forgot-password">{{ "Forgot your password?"|t }}</a></p>
+    <p>{{ "No account yet?"|t }} <a href="/register">{{ "Register"|t }}</a></p>
 </section>
 {% endblock %}

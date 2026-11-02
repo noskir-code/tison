@@ -10,8 +10,8 @@ use serde_json::json;
 use crate::{
     AppState,
     handlers::{
-        auth, comment, community, event, media, messenger, moderation, notification, password, podcast, post, reaction, search,
-        user, video,
+        article_picture, auth, comment, community, dashboard, event, media, messenger, moderation, notification, password, podcast, post, push, reaction, search,
+        two_factor, user, verify_email, video,
     },
 };
 
@@ -165,6 +165,15 @@ fn base_routes() -> Router<AppState> {
             "/posts",
             post(post::create_post).layer(axum::extract::DefaultBodyLimit::max(post::MAX_POST_BYTES)),
         )
+        // One picture, with room for the form around it.
+        .route(
+            "/articles/pictures",
+            post(article_picture::upload).layer(axum::extract::DefaultBodyLimit::max(crate::handlers::image::MAX_IMAGE_BYTES + 64 * 1024)),
+        )
+        .route("/articles/preview", post(article_picture::preview))
+        .route("/dashboard", get(dashboard::dashboard))
+        .route("/dashboard/posts/{post_id}", get(dashboard::post_dashboard))
+        .route("/posts/{post_id}/view", post(dashboard::view))
         .route("/posts/{post_id}", get(comment::post_page))
         .route("/posts/{post_id}/comments", post(comment::create_comment))
         .route("/posts/{post_id}/like", post(reaction::like))
@@ -178,6 +187,10 @@ fn base_routes() -> Router<AppState> {
         .route("/moderation", get(moderation::dashboard))
         .route("/moderation/reports/{id}/{action}", post(moderation::act))
         .route("/moderation/staff", get(moderation::staff_page).post(moderation::add_moderator))
+        .route("/moderation/statistics", get(moderation::statistics_page))
+        .route("/moderation/configuration", get(moderation::configuration_page).post(moderation::save_configuration))
+        .route("/moderation/configuration/pages/preview", post(moderation::site_page_preview))
+        .route("/moderation/configuration/pages/{slug}", get(moderation::site_page_edit).post(moderation::save_site_page))
         .route("/moderation/federation", get(moderation::federation_page).post(moderation::set_instance_policy))
         .route("/moderation/staff/{user_id}/remove", post(moderation::remove_moderator))
         .route("/search", get(search::search_page))
@@ -192,6 +205,11 @@ fn base_routes() -> Router<AppState> {
         .route("/user/{username}", get(user::user_page))
         .route("/user/{username}/follow", post(user::follow_user))
         .route("/user/{username}/unfollow", post(user::unfollow_user))
+        .route("/language", post(crate::handlers::system::set_language))
+        .route("/terms-of-use", get(crate::handlers::system::site_page))
+        .route("/privacy-policy", get(crate::handlers::system::site_page))
+        .route("/cookies", get(crate::handlers::system::site_page))
+        .route("/rules", get(crate::handlers::system::site_page))
         .route("/notifications", get(notification::notifications_page))
         .route("/notifications/live", get(notification::live))
         .route("/notifications/older", get(notification::older))
@@ -199,8 +217,21 @@ fn base_routes() -> Router<AppState> {
         .route("/notifications/delete-all", post(notification::delete_all))
         .route("/notifications/{notification_id}/open", get(notification::open))
         .route("/notifications/{notification_id}/delete", post(notification::delete))
+        .route("/push/key", get(push::key))
+        .route("/push/subscribe", post(push::subscribe))
+        .route("/push/unsubscribe", post(push::unsubscribe))
+        .route("/push/status", post(push::status))
+        .route("/push/test", post(push::test))
         .route("/settings", get(user::settings_page))
         .route("/login", get(auth::login_page).post(auth::login))
+        .route("/login/two-factor", get(two_factor::login_page).post(two_factor::login_code))
+        .route("/verify-email", get(verify_email::verify))
+        .route("/settings/verify-email", post(verify_email::resend))
+        .route("/settings/two-factor", get(two_factor::settings_page))
+        .route("/settings/two-factor/start", post(two_factor::start))
+        .route("/settings/two-factor/confirm", post(two_factor::confirm))
+        .route("/settings/two-factor/recovery", post(two_factor::new_recovery))
+        .route("/settings/two-factor/disable", post(two_factor::disable))
         .route("/register", get(auth::register_page).post(auth::register))
         .route("/logout", post(auth::logout))
         .route("/forgot-password", get(password::forgot_page).post(password::forgot))

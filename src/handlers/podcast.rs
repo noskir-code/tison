@@ -30,6 +30,8 @@ use crate::{
     },
     linkify::escape,
 };
+/// `|t` and `|tf` in the templates, see `i18n`.
+use crate::i18n::filters;
 
 #[derive(Template)]
 #[template(path = "podcasts.html")]

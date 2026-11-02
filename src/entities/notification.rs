@@ -54,6 +54,8 @@ pub const TABLE: Table = Table {
             .references("communities(id) ON DELETE CASCADE"),
         Column::new("created_at", "TIMESTAMPTZ").default("NOW()"),
         Column::new("read_at", "TIMESTAMPTZ").nullable(),
+        // Sent to the user's browsers (see `push`), once even with several servers.
+        Column::new("pushed_at", "TIMESTAMPTZ").nullable(),
     ],
     indexes: &[
         Index::new("notifications_user_created_at_idx", "user_id, created_at DESC"),
@@ -327,6 +329,9 @@ pub enum Change {
     /// A message was sent, read or deleted in this conversation: the open
     /// pages refresh it and the unread count of the messenger.
     Message(i64),
+    /// This message was received: sent to the user's browsers. Comes with
+    /// `Message` for the pages.
+    NewMessage(i64),
 }
 
 impl Change {
@@ -340,6 +345,7 @@ impl Change {
             ("added", id) => Self::Added(id.parse().ok()?),
             ("removed", id) => Self::Removed(id.parse().ok()?),
             ("message", id) => Self::Message(id.parse().ok()?),
+            ("new_message", id) => Self::NewMessage(id.parse().ok()?),
             ("read", id) => Self::Read(id.parse().ok()?),
             _ => return None,
         };
@@ -787,6 +793,21 @@ pub async fn signal_message(pool: &PgPool, user_ids: &[i32], conversation_id: i6
     Ok(())
 }
 
+/// Tells the recipients of a new message, not its sender: for browser
+/// notifications (see `push`), see `Change::NewMessage`.
+pub async fn signal_new_message(pool: &PgPool, user_ids: &[i32], message_id: i64) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        // Same name as `CHANNEL`, see the tests below.
+        "SELECT pg_notify('bonfire_notifications', person::text || ':new_message:' || $2::text)
+         FROM UNNEST($1::integer[]) AS person",
+    )
+    .bind(user_ids)
+    .bind(message_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 /// `remote_actor_id` is a row of `federation_actors`.
 pub async fn followed(pool: &PgPool, user_id: i32, remote_actor_id: i64) -> Result<(), sqlx::Error> {
     sqlx::query(signalled!(
@@ -894,6 +915,18 @@ pub async fn find(pool: &PgPool, user_id: i32, id: i64) -> Result<Option<Notific
     Ok(select(pool, user_id, 1, Some(id), None).await?.pop())
 }
 
+/// Takes a new notification to send to the user's browsers: `false` when
+/// already sent by another server, or read meanwhile.
+pub async fn claim_push(pool: &PgPool, user_id: i32, id: i64) -> Result<bool, sqlx::Error> {
+    Ok(sqlx::query("UPDATE notifications SET pushed_at = NOW() WHERE user_id = $1 AND id = $2 AND pushed_at IS NULL AND read_at IS NULL")
+        .bind(user_id)
+        .bind(id)
+        .execute(pool)
+        .await?
+        .rows_affected()
+        > 0)
+}
+
 pub async fn unread_count(pool: &PgPool, user_id: i32) -> Result<i64, sqlx::Error> {
     sqlx::query_scalar(concat!(
         "SELECT COUNT(*) FROM notifications n WHERE n.user_id = $1 AND n.read_at IS NULL AND ",
@@ -975,6 +1008,7 @@ mod tests {
         assert_eq!(Change::parse("12:read:all"), Some((12, Change::AllRead)));
         assert_eq!(Change::parse("12:removed:all"), Some((12, Change::AllRemoved)));
         assert_eq!(Change::parse("12:message:7"), Some((12, Change::Message(7))));
+        assert_eq!(Change::parse("12:new_message:9"), Some((12, Change::NewMessage(9))));
         assert_eq!(Change::parse("12:added:all"), None);
         assert_eq!(Change::parse("12"), None);
         assert_eq!(Change::parse("x:read:1"), None);

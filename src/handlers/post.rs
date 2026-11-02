@@ -22,6 +22,8 @@ use crate::{
         user::signed_in_user,
     },
 };
+/// `|t` and `|tf` in the templates, see `i18n`.
+use crate::i18n::filters;
 
 /// Pages with the post form. Sent back by the form so the author returns
 /// where they posted from, only to these fixed URLs.
@@ -117,7 +119,7 @@ impl PostError {
             Self::PhotoFormat => "Photos must be JPEG, PNG, GIF or WebP.".to_string(),
             Self::NoTitle => "Give the article a title.".to_string(),
             Self::TitleTooLong => format!("A title can be at most {TITLE_MAX_CHARS} characters, on one line."),
-            Self::ArticleTooLong => format!("An article can be at most {ARTICLE_MAX_CHARS} characters."),
+            Self::ArticleTooLong => crate::i18n::tf("An article can be at most {} characters.", ARTICLE_MAX_CHARS),
             Self::Server => "Something went wrong, try again later.".to_string(),
         }
     }

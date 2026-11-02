@@ -2,9 +2,9 @@
 {% block content %}
 <section class="box content media-page">
     <div class="media-page-head">
-        <h1>Podcasts</h1>
+        <h1>{{ "Podcasts"|t }}</h1>
         {% if layout.viewer.is_some() %}
-        <div class="media-page-actions"><a href="/podcasts/new" class="button">New podcast</a></div>
+        <div class="media-page-actions"><a href="/podcasts/new" class="button">{{ "New podcast"|t }}</a></div>
         {% endif %}
     </div>
     <ul class="podcast-grid">
@@ -17,17 +17,17 @@
                 <span class="podcast-cover placeholder" aria-hidden="true">🎙</span>
                 {% endif %}
                 <strong>{{ podcast.title }}</strong>
-                <span class="post-meta">{{ podcast.author_name }} · {{ podcast.episode_count }} episode{% if podcast.episode_count != 1 %}s{% endif %}</span>
+                <span class="post-meta">{{ podcast.author_name }} · {{ podcast.episode_count }} {% if podcast.episode_count == 1 %}{{ "episode"|t }}{% else %}{{ "episodes"|t }}{% endif %}</span>
             </a>
         </li>
         {% else %}
-        <li class="empty">No podcast yet.{% if layout.viewer.is_some() %} Start the first one.{% endif %}</li>
+        <li class="empty">{{ "No podcast yet."|t }}{% if layout.viewer.is_some() %} {{ "Start the first one."|t }}{% endif %}</li>
         {% endfor %}
     </ul>
 </section>
 {% if !episodes.is_empty() %}
 <section class="box content media-page">
-    <h2>Newest episodes</h2>
+    <h2>{{ "Newest episodes"|t }}</h2>
 </section>
 <div class="flex center vertical full-width posts">
     {% for post in episodes %}

@@ -71,6 +71,14 @@ pub fn proxy_url(url: &str) -> String {
     format!("/media/{}", hash(url))
 }
 
+/// Lets the proxy serve the pictures of the web in an article's Markdown.
+pub async fn register_article_pictures(pool: &PgPool, body: &str) -> Result<(), sqlx::Error> {
+    for url in crate::markdown::pictures(body).iter().filter(|url| !is_local(url)) {
+        register(pool, url).await?;
+    }
+    Ok(())
+}
+
 /// Lets the proxy serve `url`.
 pub async fn register(pool: &PgPool, url: &str) -> Result<(), sqlx::Error> {
     sqlx::query("INSERT INTO remote_media (hash, url) VALUES ($1, $2) ON CONFLICT (hash) DO NOTHING")
@@ -92,6 +100,17 @@ pub async fn register_known_avatars(pool: &PgPool) -> Result<(), sqlx::Error> {
     .await?;
     for url in urls {
         register(pool, &url).await?;
+    }
+    Ok(())
+}
+
+/// Pictures of the web in articles saved before they were registered.
+pub async fn register_known_article_pictures(pool: &PgPool) -> Result<(), sqlx::Error> {
+    let bodies: Vec<String> = sqlx::query_scalar("SELECT body FROM posts WHERE kind = 'post' AND title IS NOT NULL AND body LIKE '%![%'")
+        .fetch_all(pool)
+        .await?;
+    for body in bodies {
+        register_article_pictures(pool, &body).await?;
     }
     Ok(())
 }
@@ -223,7 +242,7 @@ impl Attachment {
         match (self.description.is_empty(), count) {
             (false, _) => self.description.clone(),
             (true, 1) => "Photo".to_string(),
-            (true, _) => format!("Photo {} of {count}", position + 1),
+            (true, _) => crate::i18n::tf2("Photo {} of {}", position + 1, count),
         }
     }
 

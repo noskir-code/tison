@@ -24,6 +24,8 @@ use crate::{
         user::signed_in_user,
     },
 };
+/// `|t` and `|tf` in the templates, see `i18n`.
+use crate::i18n::filters;
 
 /// Errors sent back to the post page as `?error=<code>`.
 #[derive(Clone, Copy)]
@@ -176,7 +178,7 @@ pub async fn post_page(
         _ => false,
     };
     render_template(&PostTemplate {
-        title: format!("Post by {}", post.author.handle()),
+        title: crate::i18n::tf("Post by {}", post.author.handle()),
         can_moderate,
         activitypub_url,
         layout,

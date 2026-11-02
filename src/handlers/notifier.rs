@@ -241,6 +241,30 @@ pub async fn post_created(state: &AppState, pool: &PgPool, post_id: i64) {
 }
 
 /// An edited post goes where the post went.
+/// The user's profile changed, like the name it shows: their followers'
+/// servers (Mastodon, Hubzilla...) are sent it again.
+pub async fn profile_updated(state: &AppState, pool: &PgPool, user: &User) {
+    let Some(federation) = state.federation.as_deref() else {
+        return;
+    };
+    if !user.is_federated() {
+        return;
+    }
+    let public_pem = match linker::keys(pool, Signer::User(user.id)).await {
+        Ok((_, public_pem, _)) => public_pem,
+        Err(err) => {
+            tracing::warn!("failed to load the keys of @{}: {}", user.username, err);
+            return;
+        }
+    };
+    let person = activities::person(federation, user, &public_pem);
+    let audience = Audience {
+        users: vec![user.id],
+        ..Audience::default()
+    };
+    queue(federation, pool, Signer::User(user.id), &audience, &activities::update_actor(&person)).await;
+}
+
 pub async fn post_updated(state: &AppState, pool: &PgPool, post_id: i64) {
     let Some(federation) = state.federation.as_deref() else {
         return;

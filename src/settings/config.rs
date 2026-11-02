@@ -1,10 +1,10 @@
 use std::{collections::HashMap, env, fs, path::PathBuf};
 
-const DEFAULT_RUNTIME_FILE: &str = "configs/runtime.conf";
-const DEFAULT_SERVICES_FILE: &str = "configs/services.conf";
+pub(super) const DEFAULT_RUNTIME_FILE: &str = "configs/runtime.conf";
+pub(super) const DEFAULT_SERVICES_FILE: &str = "configs/services.conf";
 
 /// Path of a configuration file, overridable with the variable `name`.
-fn config_path(name: &str, default: &str) -> PathBuf {
+pub(super) fn config_path(name: &str, default: &str) -> PathBuf {
     env::var(name)
         .ok()
         .map(|value| value.trim().to_string())
@@ -16,7 +16,7 @@ fn config_path(name: &str, default: &str) -> PathBuf {
 /// Parses `KEY=VALUE` lines. Empty lines and `#` comments are ignored,
 /// surrounding quotes are stripped from values. Dashes in keys are read as
 /// underscores: `CONTENT-AGGREGATOR` is `CONTENT_AGGREGATOR`.
-fn parse_runtime_file(content: &str) -> Result<HashMap<String, String>, String> {
+pub(super) fn parse_runtime_file(content: &str) -> Result<HashMap<String, String>, String> {
     let mut values = HashMap::new();
     for (index, raw_line) in content.lines().enumerate() {
         let line = raw_line.trim();
@@ -316,6 +316,8 @@ pub struct Config {
     /// Address of the site as users reach it, used in links sent by email.
     /// Never taken from the request, which an attacker controls.
     pub public_base_url: String,
+    /// The site's name (`INSTANCE_NAME`), in the pages of `legal/`.
+    pub instance_name: String,
     pub smtp: Option<SmtpConfig>,
     /// Fediverse (ActivityPub): other servers can find and follow local users.
     pub federation: bool,
@@ -362,6 +364,7 @@ impl Config {
 
         Ok(Self {
             public_base_url,
+            instance_name: settings.get("INSTANCE_NAME").filter(|name| !name.trim().is_empty()).unwrap_or_else(|| "Tison".to_string()),
             smtp: SmtpConfig::from_settings(&settings)?,
             host,
             port,

@@ -12,8 +12,8 @@
         {% endif %}
         <span class="notification-text">
             <span>
-                <strong>{{ notification.actor_name() }}</strong> {{ notification.kind.action() }}{% if let Some(community) = notification.community %} <strong>{{ community.name }}</strong>{% endif %}
-                <span class="visually-hidden" data-unread-label{% if !notification.unread %} hidden{% endif %}>(new)</span>
+                <strong>{{ notification.actor_name() }}</strong> {{ notification.kind.action()|t }}{% if let Some(community) = notification.community %} <strong>{{ community.name }}</strong>{% endif %}
+                <span class="visually-hidden" data-unread-label{% if !notification.unread %} hidden{% endif %}>{{ "(new)"|t }}</span>
             </span>
             {% if let Some(comment) = notification.comment_excerpt %}
             <span class="notification-excerpt">“{{ comment }}”</span>
@@ -24,7 +24,7 @@
         </span>
     </a>
     <form action="/notifications/{{ notification.id }}/delete" method="post" class="notification-delete" data-notification-action>
-        <button type="submit" class="action" aria-label="Delete this notification">Delete</button>
+        <button type="submit" class="action" aria-label="{{ "Delete this notification"|t }}">{{ "Delete"|t }}</button>
     </form>
 </li>
 {% endmacro %}

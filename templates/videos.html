@@ -2,17 +2,17 @@
 {% block content %}
 <section class="box content media-page">
     <div class="media-page-head">
-        <h1>Videos</h1>
+        <h1>{{ "Videos"|t }}</h1>
         {% if layout.viewer.is_some() %}
         <div class="media-page-actions">
-            {% if crate::settings::services().video %}<a href="/videos/upload" class="button">Upload a video</a>{% endif %}
-            {% if live_streaming %}<a href="/live" class="button">Go live</a>{% endif %}
+            {% if crate::settings::services().video %}<a href="/videos/upload" class="button">{{ "Upload a video"|t }}</a>{% endif %}
+            {% if live_streaming %}<a href="/live" class="button">{{ "Go live"|t }}</a>{% endif %}
         </div>
         {% endif %}
     </div>
     {# The viewer's uploads still converting, live like on their pages. #}
     {% if !converting.is_empty() %}
-    <h2>Converting now</h2>
+    <h2>{{ "Converting now"|t }}</h2>
     <ul class="video-grid">
         {% for post in converting %}
         <li class="converting-card" data-conversion="/posts/{{ post.id }}/progress" data-conversion-list>
@@ -24,22 +24,22 @@
                 <strong class="video-thumb-title">{{ post.title_text() }}</strong>
             </a>
             <span class="converting-line">
-                <span class="post-meta" data-conversion-text>Converting…</span>
-                <a href="/posts/{{ post.id }}" class="button converting-open" data-conversion-open>Open</a>
+                <span class="post-meta" data-conversion-text>{{ "Converting…"|t }}</span>
+                <a href="/posts/{{ post.id }}" class="button converting-open" data-conversion-open>{{ "Open"|t }}</a>
             </span>
         </li>
         {% endfor %}
     </ul>
     {% endif %}
     {% if !live_now.is_empty() %}
-    <h2>Live now</h2>
+    <h2>{{ "Live now"|t }}</h2>
     {% call posts_ui::video_grid(live_now, "") %}{% endcall %}
     {% endif %}
     {% if crate::settings::services().video %}
-    <h2>Newest videos</h2>
-    {% call posts_ui::video_grid(videos, "No video yet.") %}{% endcall %}
+    <h2>{{ "Newest videos"|t }}</h2>
+    {% call posts_ui::video_grid(videos, "No video yet."|t) %}{% endcall %}
     {% else if live_now.is_empty() %}
-    <p class="empty">Nobody is live right now.</p>
+    <p class="empty">{{ "Nobody is live right now."|t }}</p>
     {% endif %}
 </section>
 {% endblock %}

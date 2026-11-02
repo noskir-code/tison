@@ -1,11 +1,32 @@
-{# The tabs of the moderation area: Reports, Federation, Staff. `sections`
-   is `handlers::moderation::Section`. #}
+{# Groups of numbers, `entities::statistics::StatGroup`: the Statistics tab
+   and the top of the Federation tab. #}
+{% macro statistics(groups) %}
+<div class="statistics">
+    {% for group in groups %}
+    <section class="statistics-group">
+        <h2>{{ group.title|t }}</h2>
+        <dl class="statistics-grid">
+            {% for stat in group.stats %}
+            <div class="statistic"{% if !stat.hint.is_empty() %} title="{{ stat.hint|t }}"{% endif %}>
+                <dt>{{ stat.label|t }}</dt>
+                <dd>{{ stat.value_label() }}</dd>
+            </div>
+            {% endfor %}
+        </dl>
+    </section>
+    {% endfor %}
+</div>
+{% endmacro %}
+
+{# The tabs of the moderation area: Reports, Federation, Statistics, Staff,
+   and Configuration for the creator. `sections` is
+   `handlers::moderation::Section`. #}
 {% macro tabs(sections) %}
-<h1 class="visually-hidden">Moderation</h1>
-<nav class="profile-tabs moderation-tabs" aria-label="Moderation">
+<h1 class="visually-hidden">{{ "Moderation"|t }}</h1>
+<nav class="profile-tabs moderation-tabs" aria-label="{{ "Moderation"|t }}">
     {% for section in sections %}
     <a href="{{ section.url }}"{% if section.active %} class="active" aria-current="page"{% endif %}>
-        {{ section.label }}{% if let Some(count) = section.count %} <span class="badge">{{ count }}</span>{% endif %}
+        {{ section.label|t }}{% if let Some(count) = section.count %} <span class="badge">{{ count }}</span>{% endif %}
     </a>
     {% endfor %}
 </nav>

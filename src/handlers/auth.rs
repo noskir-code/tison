@@ -17,7 +17,7 @@ use tower_sessions::Session;
 use crate::{
     AppState,
     entities::user::{
-        self, CreateAccountError, EMAIL_MAX_LEN, MIN_AGE_YEARS, NAME_MAX_CHARS, NewAccount,
+        self, CreateAccountError, EMAIL_MAX_LEN, MIN_AGE_YEARS, NAME_MAX_CHARS, NameVisibility, NewAccount,
         PASSWORD_MAX_CHARS, PASSWORD_MIN_CHARS, USERNAME_MAX_LEN, USERNAME_MIN_LEN,
     },
     handlers::{
@@ -25,6 +25,8 @@ use crate::{
         system::{Layout, error_page, render_template},
     },
 };
+/// `|t` and `|tf` in the templates, see `i18n`.
+use crate::i18n::filters;
 
 /*
 Passwords
@@ -141,6 +143,9 @@ struct RegisterTemplate {
     email: String,
     firstname: String,
     lastname: String,
+    names_visibility: NameVisibility,
+    /// The choices of `names_visibility`.
+    name_visibilities: Vec<NameVisibility>,
     birthday: String,
     // Limits used by the form inputs, the minimum age is checked by the server.
     today: String,
@@ -161,6 +166,9 @@ impl RegisterTemplate {
             email: field(form, "email").trim().to_string(),
             firstname: field(form, "firstname").trim().to_string(),
             lastname: field(form, "lastname").trim().to_string(),
+            // Public unless chosen otherwise, like before the choice existed.
+            names_visibility: form.get("names_visibility").map_or(NameVisibility::Public, |value| NameVisibility::parse(value)),
+            name_visibilities: NameVisibility::choices(NameVisibility::Public),
             birthday: field(form, "birthday").trim().to_string(),
             today: Utc::now().date_naive().format("%Y-%m-%d").to_string(),
             username_max_len: USERNAME_MAX_LEN,
@@ -185,27 +193,16 @@ impl RegisterTemplate {
     }
 }
 
-/// First or last name: required, and valid.
-fn required_name(
-    form: &HashMap<String, String>,
-    key: &'static str,
-    label: &str,
-    errors: &mut Vec<FormError>,
-) -> Option<String> {
-    match user::validate_name(field(form, key)) {
-        Some(name) if !name.is_empty() => Some(name),
-        Some(_) => {
-            errors.push(FormError::field(key, format!("Enter your {label}.")));
-            None
-        }
-        None => {
-            errors.push(FormError::field(
-                key,
-                format!("At most {NAME_MAX_CHARS} characters, without control characters."),
-            ));
-            None
-        }
+/// First or last name: optional (the username is enough), and valid.
+fn optional_name(form: &HashMap<String, String>, key: &'static str, errors: &mut Vec<FormError>) -> Option<String> {
+    let name = user::validate_name(field(form, key));
+    if name.is_none() {
+        errors.push(FormError::field(
+            key,
+            crate::i18n::tf("At most {} characters, without control characters.", NAME_MAX_CHARS),
+        ));
     }
+    name
 }
 
 pub async fn register_page(State(state): State<AppState>, session: Session) -> Response {
@@ -237,15 +234,17 @@ fn validate_registration(
         errors.push(FormError::field("email", "Enter a valid email address."));
     }
 
-    let firstname = required_name(form, "firstname", "first name", &mut errors);
-    let lastname = required_name(form, "lastname", "last name", &mut errors);
+    let firstname = optional_name(form, "firstname", &mut errors);
+    let lastname = optional_name(form, "lastname", &mut errors);
+    // Public when not chosen, like before the choice existed.
+    let names_visibility = form.get("names_visibility").map_or(NameVisibility::Public, |value| NameVisibility::parse(value));
 
     let birthday = user::validate_birthday(field(form, "birthday"), today);
     if birthday.is_none() {
         let message = if field(form, "birthday").trim().is_empty() {
             "Enter your birthday.".to_string()
         } else {
-            format!("You must be at least {MIN_AGE_YEARS} years old to register.")
+            crate::i18n::tf("You must be at least {} years old to register.", MIN_AGE_YEARS)
         };
         errors.push(FormError::field("birthday", message));
     }
@@ -272,6 +271,7 @@ fn validate_registration(
                 password_hash: String::new(),
                 firstname,
                 lastname,
+                names_visibility,
                 birthday,
             };
             Ok((account, password.to_string()))
@@ -324,12 +324,13 @@ pub async fn register(
         return Redirect::to("/login").into_response();
     }
     tracing::info!("new account @{}", created.username);
+    crate::handlers::verify_email::after_signup(&state, created.id);
     // A new account stays signed in, like the login form's default.
     signed_in_redirect(&state, created.id, true, &format!("/user/{}", created.username)).await
 }
 
 /// Redirect after signing in, with the "stay signed in" cookie when asked.
-async fn signed_in_redirect(state: &AppState, user_id: i32, stay_signed_in: bool, to: &str) -> Response {
+pub(crate) async fn signed_in_redirect(state: &AppState, user_id: i32, stay_signed_in: bool, to: &str) -> Response {
     let mut response = Redirect::to(to).into_response();
     if stay_signed_in && let Some(cookie) = remember(state, user_id).await {
         response.headers_mut().append(SET_COOKIE, cookie);
@@ -372,10 +373,15 @@ pub async fn login_page(
     if let Some(redirect) = redirect_signed_in(&layout) {
         return redirect;
     }
+    // Too many wrong two-factor codes: starting over.
+    let errors = match query.contains_key("two_factor") {
+        true => vec![FormError::general("Too many wrong codes. Log in again.")],
+        false => Vec::new(),
+    };
     render_template(&LoginTemplate {
         title: "Login".to_string(),
         layout,
-        errors: Vec::new(),
+        errors,
         login: String::new(),
         password_reset: query.contains_key("reset"),
     })
@@ -451,12 +457,21 @@ pub async fn login(
         let errors = vec![FormError::field("login", "This account is suspended by the site's moderators.")];
         return show_errors(layout, StatusCode::FORBIDDEN, errors);
     }
+    // A checkbox is only sent when checked.
+    let stay_signed_in = form.contains_key("remember");
+    // With two-factor authentication, its code first.
+    match crate::entities::two_factor::find(pool, user_id).await {
+        Ok(Some(_)) => return crate::handlers::two_factor::ask_code(&session, user_id, stay_signed_in).await,
+        Ok(None) => {}
+        Err(err) => {
+            tracing::error!("failed to load the two-factor authentication of user {}: {}", user_id, err);
+            return show_errors(layout, StatusCode::INTERNAL_SERVER_ERROR, vec![server_error()]);
+        }
+    }
     if let Err(err) = sign_in(&session, &signed_in_user).await {
         tracing::error!("failed to sign in user {}: {}", user_id, err);
         return show_errors(layout, StatusCode::INTERNAL_SERVER_ERROR, vec![server_error()]);
     }
-    // A checkbox is only sent when checked.
-    let stay_signed_in = form.contains_key("remember");
     signed_in_redirect(&state, user_id, stay_signed_in, "/").await
 }
 

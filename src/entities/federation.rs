@@ -371,7 +371,7 @@ impl Instance {
     }
 
     pub fn last_seen_label(&self) -> Option<String> {
-        self.last_seen.as_ref().map(|time| time.format("%b %-d, %Y").to_string())
+        self.last_seen.as_ref().map(|time| crate::i18n::date(time.date_naive()))
     }
 }
 

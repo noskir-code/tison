@@ -1,0 +1,9 @@
+{{ "Hello @{},"|tf(username) }}
+
+{{ "Welcome to Tison!"|t }}
+{{ "Confirm that this address is yours, so it can be used to reset your password and send you important messages."|t }}
+{{ "Open this link within {} hours:"|tf(valid_hours) }}
+
+{{ link }}
+
+{{ "If you didn't create this account, ignore this email: the address stays unverified."|t }}

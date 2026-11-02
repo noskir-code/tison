@@ -5,7 +5,7 @@
     stylesheets). The layout uses tables, the way every client displays the same.
     Needs `site_url` in the email's template struct.
 #}
-<html lang="en">
+<html lang="{{ crate::i18n::current().code() }}">
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -42,7 +42,7 @@
                         </tr>
                     </table>
                     <p class="footer">
-                        {% block footer %}You receive this email because of an action on your Tison account.{% endblock %}
+                        {% block footer %}{{ "You receive this email because of an action on your Tison account."|t }}{% endblock %}
                     </p>
                 </td>
             </tr>

@@ -1,0 +1,19 @@
+{% extends "base.html" %} {% import "macros/dashboard.html" as dashboard_ui %} {% block content %}
+<section class="box content dashboard">
+    <p><a href="{{ back }}" class="action">{{ "← Dashboard"|t }}</a></p>
+    {# Also a way to the post, for the pointer: "Open it" below is the one for keyboards and screen readers. #}
+    <a href="/posts/{{ post.id }}" class="dashboard-post-preview" tabindex="-1" aria-hidden="true">{% call dashboard_ui::preview(post, true) %}{% endcall %}</a>
+    <h1 class="dashboard-post-title">{% if post.is_written() %}{{ "Post"|t }}{% else if post.label.is_empty() %}{{ "(no text)"|t }}{% else %}{{ post.label }}{% endif %}</h1>
+    <p class="post-meta">{{ "Published"|t }} {{ post.date_label() }} · <a href="/posts/{{ post.id }}">{{ "Open it"|t }}</a></p>
+    <h2 class="dashboard-list-title">{{ "Since it was published"|t }}</h2>
+    <dl class="stat-tiles">
+        {% for tile in totals %}
+        <div class="stat-tile"><dt>{{ tile.label|t }}</dt><dd><span class="stat-value">{{ tile.value_label() }}</span></dd></div>
+        {% endfor %}
+    </dl>
+    <h2 class="dashboard-list-title">{{ "Per day"|t }}</h2>
+    {% call dashboard_ui::periods(periods) %}{% endcall %}
+    {% call dashboard_ui::charts(charts) %}{% endcall %}
+    <p class="post-username">{{ "Likes and shares from other servers count in the totals only: they don't say when they came."|t }}</p>
+</section>
+{% endblock %}

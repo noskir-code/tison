@@ -2,21 +2,24 @@
 <section class="box content moderation federation">
     {% call moderation_ui::tabs(sections) %}{% endcall %}
     <p class="post-username">
-        The servers of the Fediverse this site has met, from the accounts it knows.
-        <strong>Limit</strong>: their posts and notifications only reach the people following their accounts.
-        <strong>Ban</strong>: what came from them is deleted, nothing goes to them, what they send is ignored.
+        {{ "The servers of the Fediverse this site has met, from the accounts it knows."|t }}
+        <strong>{{ "Limit"|t }}</strong>{{ ": their posts and notifications only reach the people following their accounts."|t }}
+        <strong>{{ "Ban"|t }}</strong>{{ ": what came from them is deleted, nothing goes to them, what they send is ignored."|t }}
     </p>
     {% if !federation_on %}
-    <p class="empty">The Fediverse is turned off on this site: no other server is reached.</p>
+    <p class="empty">{{ "The Fediverse is turned off on this site: no other server is reached."|t }}</p>
     {% endif %}
     {% if let Some(text) = message %}
-    <p class="saved">{{ text }}</p>
+    <p class="saved">{{ text|t }}</p>
     {% endif %}
 
+    {% call moderation_ui::statistics(statistics) %}{% endcall %}
+    <h2 class="instance-list-title">{{ "Servers"|t }}</h2>
+
     <form action="/moderation/federation" method="get" class="search-field instance-search" role="search">
-        <label for="instance-search" class="visually-hidden">Find a server</label>
-        <input id="instance-search" type="search" name="q" value="{{ search }}" placeholder="Find a server" />
-        <button type="submit" class="button" aria-label="Find">
+        <label for="instance-search" class="visually-hidden">{{ "Find a server"|t }}</label>
+        <input id="instance-search" type="search" name="q" value="{{ search }}" placeholder="{{ "Find a server"|t }}" />
+        <button type="submit" class="button" aria-label="{{ "Find"|t }}">
             <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
                 <circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2.2" />
                 <line x1="15.5" y1="15.5" x2="21" y2="21" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
@@ -28,14 +31,14 @@
         <table class="instance-table">
             <thead>
                 <tr>
-                    <th scope="col">Server</th>
-                    <th scope="col" class="number" title="Accounts of this server known here">Accounts</th>
-                    <th scope="col" class="number" title="Its accounts following people or communities here">Followers here</th>
-                    <th scope="col" class="number" title="Its accounts followed by people here">Followed</th>
-                    <th scope="col" class="number">Posts</th>
-                    <th scope="col">Last seen</th>
-                    <th scope="col">Status</th>
-                    <th scope="col"><span class="visually-hidden">Actions</span></th>
+                    <th scope="col">{{ "Server"|t }}</th>
+                    <th scope="col" class="number" title="{{ "Accounts of this server known here"|t }}">{{ "Accounts"|t }}</th>
+                    <th scope="col" class="number" title="{{ "Its accounts following people or communities here"|t }}">{{ "Followers here"|t }}</th>
+                    <th scope="col" class="number" title="{{ "Its accounts followed by people here"|t }}">{{ "Followed"|t }}</th>
+                    <th scope="col" class="number">{{ "Posts"|t }}</th>
+                    <th scope="col">{{ "Last seen"|t }}</th>
+                    <th scope="col">{{ "Status"|t }}</th>
+                    <th scope="col"><span class="visually-hidden">{{ "Actions"|t }}</span></th>
                 </tr>
             </thead>
             <tbody>
@@ -46,13 +49,13 @@
                     <td class="number">{{ instance.followers }}</td>
                     <td class="number">{{ instance.followed }}</td>
                     <td class="number">{{ instance.posts }}</td>
-                    <td>{% if let Some(iso) = instance.last_seen_iso() %}{% if let Some(label) = instance.last_seen_label() %}<time datetime="{{ iso }}">{{ label }}</time>{% endif %}{% else %}<span class="post-meta">never</span>{% endif %}</td>
+                    <td>{% if let Some(iso) = instance.last_seen_iso() %}{% if let Some(label) = instance.last_seen_label() %}<time datetime="{{ iso }}">{{ label|t }}</time>{% endif %}{% else %}<span class="post-meta">{{ "never"|t }}</span>{% endif %}</td>
                     <td>
                         {% match instance.policy %}
                         {% when Some(policy) %}
-                        <span class="instance-status {{ policy.as_str() }}"{% if !instance.reason.is_empty() %} title="{{ instance.reason }}"{% endif %}>{% if policy.as_str() == "banned" %}Banned{% else %}Limited{% endif %}</span>
+                        <span class="instance-status {{ policy.as_str() }}"{% if !instance.reason.is_empty() %} title="{{ instance.reason }}"{% endif %}>{% if policy.as_str() == "banned" %}{{ "Banned"|t }}{% else %}{{ "Limited"|t }}{% endif %}</span>
                         {% when None %}
-                        <span class="post-meta">Normal</span>
+                        <span class="post-meta">{{ "Normal"|t }}</span>
                         {% endmatch %}
                     </td>
                     <td class="instance-actions">
@@ -62,53 +65,53 @@
                         <form action="/moderation/federation" method="post">
                             <input type="hidden" name="domain" value="{{ instance.domain }}" />
                             <input type="hidden" name="policy" value="none" />
-                            <button type="submit" class="action">Unlimit</button>
+                            <button type="submit" class="action">{{ "Unlimit"|t }}</button>
                         </form>
-                        <form action="/moderation/federation" method="post" data-confirm="Ban {{ instance.domain }}? What came from it is deleted, and it can't be brought back." data-confirm-label="Ban">
+                        <form action="/moderation/federation" method="post" data-confirm="{{ "Ban {}? What came from it is deleted, and it can't be brought back."|tf(instance.domain) }}" data-confirm-label="{{ "Ban"|t }}">
                             <input type="hidden" name="domain" value="{{ instance.domain }}" />
                             <input type="hidden" name="policy" value="banned" />
-                            <button type="submit" class="action danger">Ban</button>
+                            <button type="submit" class="action danger">{{ "Ban"|t }}</button>
                         </form>
                         {% else %}
                         <form action="/moderation/federation" method="post">
                             <input type="hidden" name="domain" value="{{ instance.domain }}" />
                             <input type="hidden" name="policy" value="none" />
-                            <button type="submit" class="action">Unban</button>
+                            <button type="submit" class="action">{{ "Unban"|t }}</button>
                         </form>
                         {% endif %}
                         {% when None %}
                         <form action="/moderation/federation" method="post">
                             <input type="hidden" name="domain" value="{{ instance.domain }}" />
                             <input type="hidden" name="policy" value="limited" />
-                            <button type="submit" class="action">Limit</button>
+                            <button type="submit" class="action">{{ "Limit"|t }}</button>
                         </form>
-                        <form action="/moderation/federation" method="post" data-confirm="Ban {{ instance.domain }}? What came from it is deleted, and it can't be brought back." data-confirm-label="Ban">
+                        <form action="/moderation/federation" method="post" data-confirm="{{ "Ban {}? What came from it is deleted, and it can't be brought back."|tf(instance.domain) }}" data-confirm-label="{{ "Ban"|t }}">
                             <input type="hidden" name="domain" value="{{ instance.domain }}" />
                             <input type="hidden" name="policy" value="banned" />
-                            <button type="submit" class="action danger">Ban</button>
+                            <button type="submit" class="action danger">{{ "Ban"|t }}</button>
                         </form>
                         {% endmatch %}
                     </td>
                 </tr>
                 {% else %}
-                <tr><td colspan="8" class="empty">{% if search.is_empty() %}No server met yet.{% else %}No server matches.{% endif %}</td></tr>
+                <tr><td colspan="8" class="empty">{% if search.is_empty() %}{{ "No server met yet."|t }}{% else %}{{ "No server matches."|t }}{% endif %}</td></tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
 
-    <h2>Limit or ban a server</h2>
-    <p class="post-username">Also one this site hasn't met yet: it will be treated so from its first contact.</p>
+    <h2>{{ "Limit or ban a server"|t }}</h2>
+    <p class="post-username">{{ "Also one this site hasn't met yet: it will be treated so from its first contact."|t }}</p>
     <form action="/moderation/federation" method="post" class="instance-form">
-        <label for="instance-domain" class="visually-hidden">Domain</label>
-        <input id="instance-domain" type="text" name="domain" placeholder="Domain, like spam.example" required autocomplete="off" />
-        <label for="instance-reason" class="visually-hidden">Reason (optional, for the staff)</label>
-        <input id="instance-reason" type="text" name="reason" placeholder="Reason (optional, for the staff)" maxlength="500" autocomplete="off" />
-        <select name="policy" aria-label="Rule">
-            <option value="limited">Limit</option>
-            <option value="banned">Ban</option>
+        <label for="instance-domain" class="visually-hidden">{{ "Domain"|t }}</label>
+        <input id="instance-domain" type="text" name="domain" placeholder="{{ "Domain, like spam.example"|t }}" required autocomplete="off" />
+        <label for="instance-reason" class="visually-hidden">{{ "Reason (optional, for the staff)"|t }}</label>
+        <input id="instance-reason" type="text" name="reason" placeholder="{{ "Reason (optional, for the staff)"|t }}" maxlength="500" autocomplete="off" />
+        <select name="policy" aria-label="{{ "Rule"|t }}">
+            <option value="limited">{{ "Limit"|t }}</option>
+            <option value="banned">{{ "Ban"|t }}</option>
         </select>
-        <button type="submit" class="button primary">Apply</button>
+        <button type="submit" class="button primary">{{ "Apply"|t }}</button>
     </form>
 </section>
 {% endblock %}

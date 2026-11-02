@@ -6,29 +6,29 @@
 <section class="box content profile">
     <div class="profile-background">
         {% if let Some(url) = user.background_url %}
-        <img src="{{ url }}" alt="Background of @{{ user.username }}" />
+        <img src="{{ url }}" alt="{{ "Background of @{}"|tf(user.username) }}" />
         {% endif %}
     </div>
     <div class="profile-header">
         {% if let Some(url) = user.photo_url %}
-        <img class="avatar" src="{{ url }}" alt="Photo of @{{ user.username }}" />
+        <img class="avatar" src="{{ url }}" alt="{{ "Photo of @{}"|tf(user.username) }}" />
         {% else %}
         <div class="avatar placeholder" aria-hidden="true">{{ user.initial() }}</div>
         {% endif %}
         <div>
             <div class="flex center">
-                <h1 class="profile-name">{{ user.display_name() }}</h1>
-                {% if let Some(badge) = user.role.badge() %}<span class="role-badge {{ user.role.as_str() }}" title="{% if user.is_admin() %}Created this site{% else %}Moderates this site{% endif %}">{{ badge }}</span>{% endif %}
+                <h1 class="profile-name">{{ profile_name }}</h1>
+                {% if let Some(badge) = user.role.badge() %}<span class="role-badge {{ user.role.as_str() }}" title="{% if user.is_admin() %}{{ "Created this site"|t }}{% else %}{{ "Moderates this site"|t }}{% endif %}">{{ badge|t }}</span>{% endif %}
                 <p class="profile-username">@{{ user.username }}</p>
             </div>
             <p class="profile-counts">
-                <a href="/user/{{ user.username }}?tab=followers"{% if tab.slug() == "followers" %} class="active" aria-current="page"{% endif %}><strong>{{ counts.followers }}</strong> follower{% if counts.followers != 1 %}s{% endif %}</a>
-                <a href="/user/{{ user.username }}?tab=following"{% if tab.slug() == "following" %} class="active" aria-current="page"{% endif %}><strong>{{ counts.following }}</strong> following</a>
-                {% if crate::settings::services().dfrn %}<a href="/user/{{ user.username }}?tab=friends"{% if tab.slug() == "friends" %} class="active" aria-current="page"{% endif %}><strong>{{ friend_count }}</strong> friend{% if friend_count != 1 %}s{% endif %}</a>{% endif %}
+                <a href="/user/{{ user.username }}?tab=followers"{% if tab.slug() == "followers" %} class="active" aria-current="page"{% endif %}><strong>{{ counts.followers }}</strong> {% if counts.followers == 1 %}{{ "follower"|t }}{% else %}{{ "followers"|t }}{% endif %}</a>
+                <a href="/user/{{ user.username }}?tab=following"{% if tab.slug() == "following" %} class="active" aria-current="page"{% endif %}><strong>{{ counts.following }}</strong> {{ "following"|t }}</a>
+                {% if crate::settings::services().dfrn %}<a href="/user/{{ user.username }}?tab=friends"{% if tab.slug() == "friends" %} class="active" aria-current="page"{% endif %}><strong>{{ friend_count }}</strong> {% if friend_count == 1 %}{{ "friend"|t }}{% else %}{{ "friends"|t }}{% endif %}</a>{% endif %}
             </p>
         </div>
         {% if is_own_profile %}
-        <a href="/settings" class="button profile-edit-link">Edit profile</a>
+        <a href="/settings" class="button profile-edit-link">{{ "Edit profile"|t }}</a>
         {% else if let Some(follows) = viewer_follows %}
         <div class="profile-actions profile-edit-link">
             {% if let Some(friendship) = friendship %}
@@ -36,47 +36,47 @@
             {% when FriendState::None %}
             <form action="/user/{{ user.username }}/friend" method="post">
                 <input type="hidden" name="return" value="/user/{{ user.username }}" />
-                <button type="submit" class="button primary">Add friend</button>
+                <button type="submit" class="button primary">{{ "Add friend"|t }}</button>
             </form>
             {% when FriendState::RequestReceived %}
             <form action="/user/{{ user.username }}/friend" method="post">
                 <input type="hidden" name="return" value="/user/{{ user.username }}" />
-                <button type="submit" class="button primary">Accept friend</button>
+                <button type="submit" class="button primary">{{ "Accept friend"|t }}</button>
             </form>
             <form action="/user/{{ user.username }}/unfriend" method="post">
                 <input type="hidden" name="return" value="/user/{{ user.username }}" />
-                <button type="submit" class="button">Decline</button>
+                <button type="submit" class="button">{{ "Decline"|t }}</button>
             </form>
             {% when FriendState::RequestSent %}
             <form action="/user/{{ user.username }}/unfriend" method="post">
                 <input type="hidden" name="return" value="/user/{{ user.username }}" />
-                <button type="submit" class="button" title="Waiting for @{{ user.username }} to accept">Cancel request</button>
+                <button type="submit" class="button" title="{{ "Waiting for @{} to accept"|tf(user.username) }}">{{ "Cancel request"|t }}</button>
             </form>
             {% when FriendState::Friends %}
-            <form action="/user/{{ user.username }}/unfriend" method="post" data-confirm="Remove @{{ user.username }} from your friends?" data-confirm-label="Remove friend">
+            <form action="/user/{{ user.username }}/unfriend" method="post" data-confirm="{{ "Remove @{} from your friends?"|tf(user.username) }}" data-confirm-label="{{ "Remove friend"|t }}">
                 <input type="hidden" name="return" value="/user/{{ user.username }}" />
-                <button type="submit" class="button">Friends ✓</button>
+                <button type="submit" class="button">{{ "Friends ✓"|t }}</button>
             </form>
             {% endmatch %}
             {% endif %}
             <form action="/user/{{ user.username }}/{% if follows %}unfollow{% else %}follow{% endif %}" method="post">
                 <input type="hidden" name="return" value="/user/{{ user.username }}" />
-                <button type="submit" class="button">{% if follows %}Unfollow{% else %}Follow{% endif %}</button>
+                <button type="submit" class="button">{% if follows %}{{ "Unfollow"|t }}{% else %}{{ "Follow"|t }}{% endif %}</button>
             </form>
             {% if crate::settings::services().dfrn %}
             <form action="/messenger/with/{{ user.username }}" method="post">
-                <button type="submit" class="button">Message</button>
+                <button type="submit" class="button">{{ "Message"|t }}</button>
             </form>
             {% endif %}
-            <a href="/report?user={{ user.username }}" class="button report-button" title="Report @{{ user.username }} to the moderators">Report</a>
+            <a href="/report?user={{ user.username }}" class="button report-button" title="{{ "Report @{} to the moderators"|tf(user.username) }}">{{ "Report"|t }}</a>
         </div>
         {% else %}
-        <a href="/login" class="button profile-edit-link">Login to {% if crate::settings::services().dfrn %}add as friend or {% endif %}follow</a>
+        <a href="/login" class="button profile-edit-link">{{ "Login to"|t }} {% if crate::settings::services().dfrn %}{{ "add as friend or"|t }} {% endif %}{{ "follow"|t }}</a>
         {% endif %}
     </div>
-    <nav class="profile-tabs" aria-label="Profile sections">
+    <nav class="profile-tabs" aria-label="{{ "Profile sections"|t }}">
         {% for link in tabs %}
-        <a href="{{ link.url }}"{% if link.active %} class="active" aria-current="page"{% endif %}>{{ link.label }}</a>
+        <a href="{{ link.url }}"{% if link.active %} class="active" aria-current="page"{% endif %}>{{ link.label|t }}</a>
         {% endfor %}
     </nav>
 </section>
@@ -84,24 +84,24 @@
 <section class="box content profile-tab">
     {% match tab %}
     {% when ProfileTab::Posts %}
-    <h2>Posts</h2>
+    <h2>{{ "Posts"|t }}</h2>
     {% if posts.is_empty() %}
     <p class="empty">
-        {% if is_own_profile %}You haven't posted anything yet.{% else %}@{{ user.username }} hasn't posted anything yet.{% endif %}
+        {% if is_own_profile %}{{ "You haven't posted anything yet."|t }}{% else %}@{{ "{} hasn't posted anything yet."|tf(user.username) }}{% endif %}
     </p>
     {% endif %}
     {% when ProfileTab::Photos %}
-    <h2>Photos</h2>
+    <h2>{{ "Photos"|t }}</h2>
     {% if is_own_profile %}
-    {% call posts_ui::photo_grid(photos, "You haven't posted photos yet. Add some from the post form on the home page.") %}{% endcall %}
+    {% call posts_ui::photo_grid(photos, "You haven't posted photos yet. Add some from the post form on the home page."|t) %}{% endcall %}
     {% else %}
-    {% call posts_ui::photo_grid(photos, "No photo here yet.") %}{% endcall %}
+    {% call posts_ui::photo_grid(photos, "No photo here yet."|t) %}{% endcall %}
     {% endif %}
     {% when ProfileTab::Articles %}
-    <h2>Articles</h2>
+    <h2>{{ "Articles"|t }}</h2>
     {% if articles.is_empty() %}
     <p class="empty">
-        {% if is_own_profile %}You haven't written an article yet. Write one from the Article tab of the post form on the home page.{% else %}@{{ user.username }} hasn't written an article yet.{% endif %}
+        {% if is_own_profile %}{{ "You haven't written an article yet. Write one from the Article tab of the post form on the home page."|t }}{% else %}@{{ "{} hasn't written an article yet."|tf(user.username) }}{% endif %}
     </p>
     {% else %}
     <ol class="article-list">
@@ -109,94 +109,94 @@
         <li>
             <a href="/posts/{{ article.id }}" class="article-list-title">{{ article.title_text() }}</a>
             <time class="post-meta" datetime="{{ article.created_at_iso() }}">{{ article.created_at_label() }}</time>
-            <span class="post-meta">· {{ article.reading_minutes() }} min read</span>
+            <span class="post-meta">· {{ "{} min read"|tf(article.reading_minutes()) }}</span>
             <p class="article-excerpt">{{ article.article_excerpt() }}</p>
         </li>
         {% endfor %}
     </ol>
     {% endif %}
     {% when ProfileTab::Videos %}
-    <h2>Videos</h2>
+    <h2>{{ "Videos"|t }}</h2>
     {% if is_own_profile %}
-    {% call posts_ui::video_grid(videos, "You haven't uploaded a video yet.") %}{% endcall %}
+    {% call posts_ui::video_grid(videos, "You haven't uploaded a video yet."|t) %}{% endcall %}
     {% else %}
-    {% call posts_ui::video_grid(videos, "No video here yet.") %}{% endcall %}
+    {% call posts_ui::video_grid(videos, "No video here yet."|t) %}{% endcall %}
     {% endif %}
     {% when ProfileTab::Friends %}
     {% if !requests_received.is_empty() %}
-    <h2>Friend requests</h2>
+    <h2>{{ "Friend requests"|t }}</h2>
     <ul class="account-list">
         {% for requester in requests_received %}
         <li>
             {% call accounts_ui::user_identity(requester) %}{% endcall %}
             <form action="/user/{{ requester.username }}/friend" method="post" class="inline">
                 <input type="hidden" name="return" value="/user/{{ user.username }}?tab=friends" />
-                <button type="submit" class="action">Accept</button>
+                <button type="submit" class="action">{{ "Accept"|t }}</button>
             </form>
             <form action="/user/{{ requester.username }}/unfriend" method="post" class="inline">
                 <input type="hidden" name="return" value="/user/{{ user.username }}?tab=friends" />
-                <button type="submit" class="action danger">Decline</button>
+                <button type="submit" class="action danger">{{ "Decline"|t }}</button>
             </form>
         </li>
         {% endfor %}
     </ul>
     {% endif %}
-    <h2>Friends</h2>
+    <h2>{{ "Friends"|t }}</h2>
     <ul class="account-list">
         {% for friend in friends %}
         <li>{% call accounts_ui::user_identity(friend) %}{% endcall %}</li>
         {% else %}
-        <li class="empty">{% if is_own_profile %}You don't have friends yet.{% else %}@{{ user.username }} doesn't have friends yet.{% endif %}</li>
+        <li class="empty">{% if is_own_profile %}{{ "You don't have friends yet."|t }}{% else %}@{{ "{} doesn't have friends yet."|tf(user.username) }}{% endif %}</li>
         {% endfor %}
     </ul>
     {% if !requests_sent.is_empty() %}
-    <h2>Requests you sent</h2>
+    <h2>{{ "Requests you sent"|t }}</h2>
     <ul class="account-list">
         {% for asked in requests_sent %}
         <li>
             {% call accounts_ui::user_identity(asked) %}{% endcall %}
-            <span class="post-username">Waiting</span>
+            <span class="post-username">{{ "Waiting"|t }}</span>
             <form action="/user/{{ asked.username }}/unfriend" method="post" class="inline">
                 <input type="hidden" name="return" value="/user/{{ user.username }}?tab=friends" />
-                <button type="submit" class="action">Cancel</button>
+                <button type="submit" class="action">{{ "Cancel"|t }}</button>
             </form>
         </li>
         {% endfor %}
     </ul>
     {% endif %}
     {% when ProfileTab::Followers %}
-    <h2>Followers</h2>
+    <h2>{{ "Followers"|t }}</h2>
     <ul class="account-list">
         {% for listed in accounts %}
         <li>{% call accounts_ui::author_identity(listed.account) %}{% endcall %}</li>
         {% else %}
-        <li class="empty">{% if is_own_profile %}Nobody follows you yet.{% else %}Nobody follows @{{ user.username }} yet.{% endif %}</li>
+        <li class="empty">{% if is_own_profile %}{{ "Nobody follows you yet."|t }}{% else %}{{ "Nobody follows @{} yet."|tf(user.username) }}{% endif %}</li>
         {% endfor %}
     </ul>
     {% when ProfileTab::Following %}
-    <h2>Following</h2>
+    <h2>{{ "Following"|t }}</h2>
     <ul class="account-list">
         {% for listed in accounts %}
         <li>
             {% call accounts_ui::author_identity(listed.account) %}{% endcall %}
-            {% if !listed.accepted %}<span class="post-username">Waiting for their server</span>{% endif %}
+            {% if !listed.accepted %}<span class="post-username">{{ "Waiting for their server"|t }}</span>{% endif %}
         </li>
         {% else %}
-        <li class="empty">{% if is_own_profile %}You don't follow anyone yet.{% else %}@{{ user.username }} doesn't follow anyone yet.{% endif %}</li>
+        <li class="empty">{% if is_own_profile %}{{ "You don't follow anyone yet."|t }}{% else %}@{{ "{} doesn't follow anyone yet."|tf(user.username) }}{% endif %}</li>
         {% endfor %}
     </ul>
     {% when ProfileTab::About %}
-    <h2>About me</h2>
+    <h2>{{ "About me"|t }}</h2>
     {% if !user.bio.is_empty() %}
     <p class="profile-bio">{{ user.bio }}</p>
     {% else if is_own_profile %}
-    <p class="empty">You haven't written anything about yourself yet.</p>
+    <p class="empty">{{ "You haven't written anything about yourself yet."|t }}</p>
     {% endif %}
     {% if !about.is_empty() %}
     <dl class="profile-about">
         {% for row in about %}
-        <dt>{{ row.label }}</dt>
-        <dd>{{ row.value }}{% if row.only_you %} <span class="only-you">(only you)</span>{% endif %}</dd>
+        <dt>{{ row.label|t }}</dt>
+        <dd>{{ row.value }}{% if !row.note.is_empty() %} <span class="only-you">({{ row.note|t }})</span>{% endif %}</dd>
         {% endfor %}
     </dl>
     {% endif %}

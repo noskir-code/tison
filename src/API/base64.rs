@@ -48,9 +48,48 @@ pub fn decode(text: &str) -> Option<Vec<u8>> {
     Some(bytes)
 }
 
+/// The URL variant without padding (`-` and `_`), used by Web Push and JWTs.
+pub fn encode_url(bytes: &[u8]) -> String {
+    encode(bytes)
+        .trim_end_matches('=')
+        .chars()
+        .map(|letter| match letter {
+            '+' => '-',
+            '/' => '_',
+            letter => letter,
+        })
+        .collect()
+}
+
+/// The URL variant, padded or not.
+pub fn decode_url(text: &str) -> Option<Vec<u8>> {
+    let mut standard: String = text
+        .trim_end_matches('=')
+        .chars()
+        .map(|letter| match letter {
+            '-' => '+',
+            '_' => '/',
+            '+' | '/' => '!',
+            letter => letter,
+        })
+        .collect();
+    while standard.len() % 4 != 0 {
+        standard.push('=');
+    }
+    decode(&standard)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn url_variant() {
+        assert_eq!(encode_url(&[0xfb, 0xff]), "-_8");
+        assert_eq!(decode_url("-_8"), Some(vec![0xfb, 0xff]));
+        assert_eq!(decode_url("-_8="), Some(vec![0xfb, 0xff]));
+        assert_eq!(decode_url("+/8"), None);
+    }
 
     #[test]
     fn round_trip() {

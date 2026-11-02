@@ -24,6 +24,8 @@
     --danger: hsl(0, 70%, 40%);
     --success: hsl(140, 50%, 35%);
     --hover-brightness: 0.95;
+    /* The line of the dashboard's charts, checked against its card (--background). */
+    --chart-line: #2a78d6;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -39,6 +41,7 @@
         --danger: hsl(0, 80%, 70%);
         --success: hsl(140, 50%, 60%);
         --hover-brightness: 1.25;
+        --chart-line: #3987e5;
     }
 }
 
@@ -54,6 +57,7 @@
     --danger: hsl(0, 80%, 70%);
     --success: hsl(140, 50%, 60%);
     --hover-brightness: 1.25;
+    --chart-line: #3987e5;
 }
 
 body {
@@ -251,6 +255,7 @@ div .small.text {
 
 .logo {
     width: 2em;
+    margin: 0 0.3em 0 0;
 }
 
 .fixed {
@@ -458,7 +463,8 @@ nav.profile-tabs {
 
 nav.profile-tabs a {
     width: auto;
-    flex: 1;
+    /* Sized by the label, so a long one (in Spanish...) wraps the row instead of overlapping. */
+    flex: 1 1 auto;
     min-width: 6em;
     padding: 0.8em 1em;
     text-align: center;
@@ -508,7 +514,12 @@ Posts
     margin-bottom: 1em;
 }
 
+/* The whole width of the box, like the article's, taller only by hand. */
 .composer textarea {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    resize: vertical;
     color: var(--text);
     background-color: var(--background);
     border: solid 0.1em var(--button);
@@ -1231,6 +1242,51 @@ form.search-field {
     margin-bottom: 1em;
 }
 
+/* Under the search bar, as wide: asks to turn on browser notifications. */
+.push-ask {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75em;
+    box-sizing: border-box;
+    width: 60%;
+    margin-bottom: 1em;
+    border-left: solid 0.25em var(--light-text);
+}
+
+.push-ask[hidden] {
+    display: none;
+}
+
+/* Asks to verify the email, like `.push-ask`, until it is. */
+.verify-ask {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75em;
+    box-sizing: border-box;
+    width: 60%;
+    margin-bottom: 1em;
+    border-left: solid 0.25em var(--error);
+}
+
+.verify-ask p {
+    flex: 1 1 18em;
+    margin: 0;
+}
+
+.push-ask p {
+    flex: 1 1 18em;
+    margin: 0;
+}
+
+.push-ask-actions {
+    display: flex;
+    gap: 0.5em;
+}
+
 .search-field input {
     flex: 1;
     min-width: 0;
@@ -1573,7 +1629,9 @@ form.search-field {
         margin-top: 1em;
     }
 
-    .site-search {
+    .site-search,
+    .push-ask,
+    .verify-ask {
         width: 100%;
     }
 
@@ -1661,7 +1719,9 @@ form.search-field {
         box-sizing: border-box;
     }
 
-    .site-search {
+    .site-search,
+    .push-ask,
+    .verify-ask {
         width: 100%;
         max-width: 48em;
     }
@@ -1866,7 +1926,8 @@ body:has(.messenger, .conversation) .page-content {
     margin-bottom: 1em;
 }
 
-body:has(.messenger, .conversation) .page-content > .box {
+/* Not the notifications banner: it keeps its height, the messenger takes the rest. */
+body:has(.messenger, .conversation) .page-content > .box:not(.push-ask, .verify-ask) {
     flex: 1;
 }
 
@@ -2257,6 +2318,202 @@ body:has(.conversation) {
 .instance-table-wrap {
     position: relative;
     overflow-x: auto;
+}
+
+/* Statistics: groups of numbers in cards (Statistics and Federation tabs). */
+.statistics {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25em;
+    margin: 1em 0 1.5em;
+}
+
+.statistics-group h2,
+.instance-list-title,
+.config-file h2 {
+    margin: 0 0 0.5em;
+    font-size: 1.05em;
+}
+
+.statistics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(9.5em, 1fr));
+    gap: 0.5em;
+    margin: 0;
+}
+
+.statistic {
+    display: flex;
+    flex-direction: column-reverse;
+    justify-content: flex-end;
+    gap: 0.15em;
+    padding: 0.6em 0.75em;
+    background-color: var(--background);
+    border: solid 0.1em var(--button);
+    border-radius: 0.4em;
+}
+
+.statistic[title] {
+    cursor: help;
+}
+
+.statistic dt {
+    font-size: 0.85em;
+    color: var(--light-text);
+}
+
+.statistic dd {
+    margin: 0;
+    font-size: 1.5em;
+    font-weight: bold;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Configuration tab: the files, read-only. */
+.config-file + .config-file {
+    margin-top: 2em;
+}
+
+/* Terms of Use, Privacy Policy... in the Configuration tab, see entities/site_page.rs. */
+.site-pages {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.site-pages .config-key {
+    font-family: inherit;
+    font-size: 1em;
+}
+
+.site-pages-edit {
+    margin-left: auto;
+}
+
+.site-page-edit {
+    margin-top: 2em;
+}
+
+.config-path {
+    margin-left: 0.4em;
+    font-size: 0.75em;
+    font-weight: normal;
+    color: var(--light-text);
+}
+
+.config-list {
+    display: flex;
+    flex-direction: column;
+}
+
+.config-heading {
+    margin: 1.25em 0 0.25em;
+    font-size: 0.8em;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--light-text);
+}
+
+.config-row {
+    padding: 0.5em 0;
+    border-bottom: solid 0.1em var(--button);
+}
+
+.config-setting {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35em 0.6em;
+    margin: 0;
+}
+
+.config-key {
+    min-width: 12em;
+    font-family: ui-monospace, "Cascadia Mono", "DejaVu Sans Mono", monospace;
+    font-size: 0.9em;
+    font-weight: bold;
+    overflow-wrap: anywhere;
+}
+
+/* The field takes the rest of the line, the badges after it. */
+.config-input {
+    flex: 1 1 14em;
+    min-width: 0;
+    padding: 0.3em 0.5em;
+    font-family: ui-monospace, "Cascadia Mono", "DejaVu Sans Mono", monospace;
+    font-size: 0.9em;
+    color: var(--text);
+    background-color: var(--background);
+    border: solid 0.1em var(--button);
+    border-radius: 0.3em;
+}
+
+select.config-input {
+    flex-grow: 0;
+    font-family: inherit;
+}
+
+.config-default .config-key {
+    color: var(--light-text);
+    font-weight: normal;
+}
+
+.config-environment {
+    margin: 0.25em 0 0;
+    font-size: 0.85em;
+    overflow-wrap: anywhere;
+}
+
+/* Under each file: the creator's password and Save, kept in view. */
+.config-save {
+    position: sticky;
+    bottom: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5em 0.75em;
+    margin-top: 0.75em;
+    padding: 0.75em 0;
+    background-color: var(--main);
+    border-top: solid 0.1em var(--button);
+}
+
+.config-save input {
+    flex: 1 1 12em;
+    max-width: 20em;
+    padding: 0.35em 0.5em;
+}
+
+/* One line per comment line of the file. */
+.config-help {
+    margin: 0.2em 0 0;
+    font-size: 0.85em;
+    white-space: pre-line;
+    color: var(--light-text);
+}
+
+.config-badge {
+    display: inline-block;
+    padding: 0 0.45em;
+    font-size: 0.75em;
+    font-weight: bold;
+    border-radius: 1em;
+    background-color: var(--button);
+    color: var(--text);
+    white-space: nowrap;
+}
+
+/* The theme's colors, for light and dark. */
+.config-badge.on {
+    background: none;
+    color: var(--success);
+    box-shadow: inset 0 0 0 0.1em var(--success);
+}
+
+.config-badge.off {
+    background: none;
+    color: var(--error);
+    box-shadow: inset 0 0 0 0.1em var(--error);
 }
 
 .instance-table {
@@ -2759,10 +3016,132 @@ see `composer` and `article_card` / `article_full` in macros/post.html.
 }
 
 .composer-article textarea,
-.edit-form .article-title-field + label + textarea {
+.edit-form .article-title-field ~ textarea {
     font-family: ui-monospace, "Cascadia Mono", "DejaVu Sans Mono", monospace;
     font-size: 0.95em;
     line-height: 1.5;
+}
+
+/* The article's text, and its preview under it: the form keeps the width
+   of the post form. */
+.article-editor {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1em;
+    margin-bottom: 0.75em;
+}
+
+.article-editor-write {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.article-editor-write textarea {
+    flex: 1;
+    margin: 0;
+}
+
+.article-live-preview {
+    box-sizing: border-box;
+    min-width: 0;
+    max-height: 30em;
+    padding: 0.75em 1.25em;
+    overflow-y: auto;
+    background-color: var(--background);
+    border: solid 0.1em var(--button);
+    border-radius: 0.3em;
+}
+
+.article-live-preview[hidden],
+.article-live-preview [hidden] {
+    display: none;
+}
+
+.article-live-preview-label {
+    margin: 0 0 0.5em;
+    font-size: 0.75em;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--light-text);
+}
+
+.article-live-preview .article-title {
+    margin: 0 0 0.5em;
+    font-size: 1.6em;
+}
+
+.article-live-preview .empty {
+    margin: 2em 0;
+}
+
+/* Formatting buttons, joined to the top of the article's text. */
+.markdown-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.15em;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 0.25em;
+    background-color: var(--button);
+    border-radius: 0.3em 0.3em 0 0;
+}
+
+.markdown-toolbar[hidden] {
+    display: none;
+}
+
+.markdown-toolbar + textarea {
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+}
+
+.markdown-toolbar button {
+    min-width: 2.1em;
+    height: 2.1em;
+    padding: 0 0.4em;
+    font: inherit;
+    font-size: 0.95em;
+    line-height: 1;
+    color: var(--text);
+    background: none;
+    border: none;
+    border-radius: 0.25em;
+    cursor: pointer;
+}
+
+.markdown-toolbar button:hover,
+.markdown-toolbar button:focus-visible {
+    background-color: var(--background);
+}
+
+.markdown-toolbar button code {
+    font-size: 0.85em;
+    background: none;
+}
+
+/* Upload progress and errors, at the end of the toolbar. */
+.markdown-toolbar-status {
+    flex: 1 1 10em;
+    min-width: 0;
+    padding: 0 0.4em;
+    font-size: 0.85em;
+    color: var(--light-text);
+    text-align: right;
+    overflow-wrap: anywhere;
+}
+
+.markdown-toolbar-status:empty {
+    display: none;
+}
+
+.markdown-toolbar-gap {
+    width: 0.1em;
+    height: 1.4em;
+    margin: 0 0.25em;
+    background-color: var(--light-text);
+    opacity: 0.35;
 }
 
 .markdown-help {
@@ -2895,6 +3274,40 @@ see `composer` and `article_card` / `article_full` in macros/post.html.
     margin-top: 0.25em;
 }
 
+/* Scrolls sideways on its own when too wide (phones), not the page. */
+.article-body table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+    margin: 0 0 1em;
+    border-collapse: collapse;
+    font-size: 0.9em;
+    line-height: 1.45;
+    overflow-wrap: normal;
+}
+
+.article-body th,
+.article-body td {
+    min-width: 8em;
+    padding: 0.45em 0.7em;
+    border: solid 0.1em var(--button);
+    text-align: left;
+    vertical-align: top;
+}
+
+.article-body th {
+    background-color: var(--button);
+}
+
+/* A page of legal/ starting with its own `# Title`, shown as the page's. */
+.site-page .article-body > h1:first-child {
+    font-size: 2em;
+}
+
+.site-page-updated {
+    margin-top: 2em;
+}
+
 .article-body blockquote {
     margin: 0 0 1em;
     padding: 0.1em 1em;
@@ -2979,70 +3392,27 @@ see `composer` and `article_card` / `article_full` in macros/post.html.
     overflow-wrap: anywhere;
 }
 
-/* An article in a feed: a large preview card like Mastodon's, its picture
-   across the top. Without a picture, a small card with a mark. */
-.link-card.article-preview {
-    flex-direction: column;
-    margin-top: 0.4em;
-}
-
-.article-preview .link-card-image {
-    width: 100%;
-    height: auto;
-    aspect-ratio: 1.91;
-    border-right: none;
-    border-bottom: solid 0.1em var(--button);
-}
-
+/* An article in a feed: a card like a link's (see `.link-card`), its
+   first picture on the left, or a mark when it has none. */
 .article-preview.sensitive .link-card-image {
     filter: blur(1.5em);
 }
 
-.article-preview .link-card-text {
-    padding: 0.75em 1em;
-    gap: 0.25em;
-}
-
-.article-preview .link-card-title {
-    font-family: Georgia, "Times New Roman", serif;
-    font-size: 1.2em;
-    line-height: 1.3;
-}
-
-.article-preview .link-card-description {
-    -webkit-line-clamp: 3;
-    line-clamp: 3;
-    line-height: 1.45;
-}
-
-.article-preview-author {
-    margin-top: 0.2em;
-    font-size: 0.85em;
-    color: var(--light-text);
-}
-
-.link-card.article-preview.no-picture {
-    flex-direction: row;
-}
-
-.article-preview.no-picture .article-preview-icon {
+/* As big as `.link-card-image` (11em), at its own font size. */
+.article-preview-icon {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 5.5em;
-    height: auto;
-    aspect-ratio: auto;
-    border-bottom: none;
-    border-right: solid 0.1em var(--button);
+    width: 4.4em;
+    height: 4.4em;
     font-family: Georgia, "Times New Roman", serif;
-    font-size: 1.6em;
+    font-size: 2.5em;
     color: var(--light-text);
 }
 
-@media (max-width: 40em) {
-    .article-preview.no-picture .article-preview-icon {
-        width: 3.5em;
-    }
+.article-preview-author {
+    font-size: 0.85em;
+    color: var(--light-text);
 }
 
 /*
@@ -4560,4 +4930,493 @@ Events, like Mobilizon's (macros/post.html, events.html, event_form.html).
 
 .video-frame.live .live-waiting {
     z-index: 1;
+}
+
+/* Two-factor authentication (two_factor.html). */
+.settings-two-factor {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1em;
+    width: 100%;
+    padding: 0.75em 0;
+    border-top: solid 0.1em var(--button);
+    border-bottom: solid 0.1em var(--button);
+}
+
+/* The email row, right above the two-factor row: one line between them. */
+.settings-email + .settings-two-factor {
+    border-top: none;
+}
+
+.settings-email [class~="post-meta"] {
+    display: block;
+}
+
+.email-status {
+    color: var(--error);
+}
+
+.email-status.verified {
+    color: var(--success);
+}
+
+/* Right under the two-factor row: one line between them. */
+.settings-two-factor.settings-push {
+    border-top: none;
+}
+
+.settings-push [data-push-status] {
+    display: block;
+}
+
+.push-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.5em;
+}
+
+.push-buttons [hidden] {
+    display: none;
+}
+
+.two-factor form {
+    flex-direction: column;
+    align-items: stretch;
+    flex-wrap: nowrap;
+}
+
+.two-factor form .button {
+    align-self: flex-start;
+}
+
+/* White behind the QR code, in dark mode too: readers need contrast. */
+.two-factor-qr {
+    width: 13em;
+    max-width: 100%;
+    padding: 0.5em;
+    border-radius: 0.5em;
+    background-color: white;
+}
+
+.two-factor-qr svg {
+    display: block;
+    width: 100%;
+    height: auto;
+}
+
+.recovery-codes {
+    padding: 1em;
+    border: solid 0.15em var(--success);
+    border-radius: 0.6em;
+}
+
+.recovery-codes h2 {
+    margin-top: 0;
+}
+
+.recovery-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(9em, 1fr));
+    gap: 0.4em 1.5em;
+    padding-left: 1.5em;
+    font-size: 1.1em;
+}
+
+.two-factor-on {
+    display: flex;
+    align-items: center;
+    gap: 0.6em;
+}
+
+button.button.danger {
+    color: var(--error);
+}
+
+/* Signup and settings: optional fields, and hints under a field. */
+label .optional {
+    font-weight: normal;
+    font-size: 0.9em;
+    color: var(--light-text);
+}
+
+.form-hint {
+    margin: 0;
+    font-size: 0.85em;
+}
+
+/* --- Creator dashboard, see dashboard.html and macros/dashboard.html. --- */
+.dashboard h1 {
+    margin-bottom: 0.5em;
+}
+
+/* The period: one row above everything it scopes. */
+.dashboard-periods {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4em;
+    margin-bottom: 1em;
+}
+
+.dashboard-periods .button.active {
+    color: var(--background);
+    background-color: var(--text);
+}
+
+.dashboard-list-title {
+    margin: 1.5em 0 0.5em;
+    font-size: 1.05em;
+}
+
+.dashboard-post-title {
+    margin: 0.25em 0;
+    font-size: 1.4em;
+    overflow-wrap: anywhere;
+}
+
+.stat-tiles {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(10em, 1fr));
+    gap: 0.5em;
+    margin: 1em 0;
+}
+
+.stat-tile {
+    padding: 0.7em 0.85em;
+    background-color: var(--background);
+    border: solid 0.1em var(--button);
+    border-radius: 0.4em;
+}
+
+.stat-tile dt {
+    font-size: 0.85em;
+    color: var(--light-text);
+}
+
+.stat-tile dd {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15em;
+    margin: 0.2em 0 0;
+}
+
+/* Proportional figures: a standalone number, not a column. */
+.stat-value {
+    font-size: 1.6em;
+    font-weight: 600;
+}
+
+.chart-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(19em, 1fr));
+    gap: 0.75em;
+}
+
+.chart {
+    min-width: 0;
+    margin: 0;
+    padding: 0.75em 0.85em 0.5em;
+    background-color: var(--background);
+    border: solid 0.1em var(--button);
+    border-radius: 0.4em;
+}
+
+.chart-title {
+    font-weight: 600;
+}
+
+.chart-unit {
+    font-weight: normal;
+    font-size: 0.85em;
+    color: var(--light-text);
+}
+
+.chart-plot {
+    position: relative;
+    height: 180px;
+    margin-top: 0.4em;
+    touch-action: pan-y;
+}
+
+.chart-plot:focus-visible {
+    outline: solid 0.15em var(--chart-line);
+    outline-offset: 0.2em;
+    border-radius: 0.2em;
+}
+
+.chart-plot svg {
+    display: block;
+    overflow: visible;
+}
+
+/* Recessive: hairline, solid, one step off the surface. */
+.chart-gridline {
+    stroke: var(--button);
+    stroke-width: 1;
+}
+
+.chart-axis {
+    font-size: 11px;
+    fill: var(--light-text);
+    font-variant-numeric: tabular-nums;
+}
+
+.chart-line {
+    fill: none;
+    stroke: var(--chart-line);
+    stroke-width: 2;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+}
+
+.chart-area {
+    fill: var(--chart-line);
+    fill-opacity: 0.1;
+    stroke: none;
+}
+
+/* The ring in the card's color keeps the dot clear of the line. */
+.chart-dot {
+    fill: var(--chart-line);
+    stroke: var(--background);
+    stroke-width: 2;
+}
+
+.chart-end-label {
+    font-size: 12px;
+    font-weight: 600;
+    fill: var(--text);
+}
+
+.chart-crosshair {
+    stroke: var(--light-text);
+    stroke-width: 1;
+}
+
+.chart-tooltip {
+    position: absolute;
+    top: -0.4em;
+    display: flex;
+    flex-direction: column;
+    padding: 0.3em 0.55em;
+    font-size: 0.85em;
+    white-space: nowrap;
+    pointer-events: none;
+    color: var(--text);
+    background-color: var(--main);
+    border: solid 0.1em var(--button);
+    border-radius: 0.3em;
+    box-shadow: 0 0.2em 0.6em rgba(0, 0, 0, 0.12);
+}
+
+.chart-tooltip[hidden] {
+    display: none;
+}
+
+.chart-tooltip span {
+    font-size: 0.85em;
+    color: var(--light-text);
+}
+
+.chart-table summary {
+    cursor: pointer;
+    font-size: 0.85em;
+    color: var(--light-text);
+}
+
+.chart-table table,
+.content-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9em;
+}
+
+.chart-table td,
+.chart-table th,
+.content-table td,
+.content-table th {
+    padding: 0.35em 0.4em;
+    text-align: left;
+    border-bottom: solid 0.1em var(--button);
+}
+
+.chart-table .number,
+.content-table .number {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.content-table thead th {
+    font-size: 0.85em;
+    color: var(--light-text);
+}
+
+/* Never squeezed to a letter a line: the table scrolls sideways instead. */
+.content-table th[scope="row"] {
+    min-width: 10em;
+    font-weight: normal;
+    overflow-wrap: anywhere;
+}
+
+.content-date {
+    white-space: nowrap;
+    color: var(--light-text);
+}
+
+/* Previews of the dashboard's posts, see `preview` in macros/dashboard.html:
+   16:9 like video thumbnails, small in the list, large on a post's page. */
+/* The underline on the title only: a link's underline reaches all inside it. */
+.content-link {
+    display: flex;
+    align-items: center;
+    gap: 0.75em;
+    text-decoration: none;
+}
+
+.content-label {
+    min-width: 0;
+    text-decoration: underline;
+}
+
+/* Inside links: not underlined like the title next to it. */
+.content-preview,
+.dashboard-post-preview {
+    text-decoration: none;
+}
+
+.content-preview {
+    position: relative;
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 7.5em;
+    aspect-ratio: 16 / 9;
+    overflow: hidden;
+    color: var(--light-text);
+    background-color: var(--button);
+    border-radius: 0.35em;
+}
+
+.content-preview img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+/* A written post: its first words, like a small page. */
+.content-preview.text {
+    align-items: flex-start;
+    justify-content: flex-start;
+    padding: 0.35em 0.45em;
+    background-color: var(--background);
+    border: solid 0.1em var(--button);
+}
+
+.preview-text {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 4;
+    line-clamp: 4;
+    overflow: hidden;
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 0.62em;
+    line-height: 1.35;
+    color: var(--text);
+    overflow-wrap: anywhere;
+}
+
+.preview-text strong {
+    display: block;
+}
+
+.preview-mark {
+    font-size: 1.4em;
+}
+
+.preview-play {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.8em;
+    height: 1.8em;
+    padding-left: 0.15em;
+    font-size: 0.8em;
+    color: white;
+    background-color: rgba(0, 0, 0, 0.55);
+    border-radius: 50%;
+}
+
+.preview-badge {
+    position: absolute;
+    right: 0.3em;
+    bottom: 0.3em;
+    padding: 0 0.3em;
+    font-size: 0.7em;
+    font-weight: bold;
+    color: white;
+    background-color: rgba(0, 0, 0, 0.75);
+    border-radius: 0.2em;
+}
+
+.dashboard-post-preview {
+    display: block;
+    margin: 0.75em 0 0.5em;
+}
+
+.content-preview.large {
+    width: 100%;
+    max-width: 32em;
+    border-radius: 0.5em;
+}
+
+.content-preview.large .preview-play {
+    font-size: 1.6em;
+}
+
+.content-preview.large .preview-badge {
+    font-size: 0.85em;
+}
+
+.content-preview.large.text {
+    aspect-ratio: auto;
+    padding: 1em 1.2em;
+}
+
+.content-preview.large .preview-text {
+    -webkit-line-clamp: 8;
+    line-clamp: 8;
+    font-size: 1em;
+}
+
+/* Phones: the title under its preview, the numbers in view. */
+@media (max-width: 40em) {
+    .content-link {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.35em;
+    }
+}
+
+/* The language picker, under the menu, see base.html. */
+.language-picker {
+    display: flex;
+    gap: 0.4em;
+    margin: 0.5em 1em 0;
+}
+
+.language-picker select {
+    flex: 1;
+    padding: 0.3em;
+    color: var(--text);
+    background-color: var(--background);
+    border: solid 0.1em var(--button);
+    border-radius: 0.3em;
+    font-size: 0.9em;
+}
+
+.language-picker [hidden] {
+    display: none;
 }

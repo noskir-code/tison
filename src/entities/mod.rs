@@ -1,5 +1,7 @@
+pub mod article_picture;
 pub mod author;
 pub mod comment;
+pub mod creator_stats;
 pub mod community;
 pub mod event;
 pub mod federation;
@@ -12,11 +14,16 @@ pub mod password_reset;
 pub mod podcast;
 pub mod post;
 pub mod preview;
+pub mod push;
 pub mod report;
 pub mod schema;
 pub mod session;
+pub mod site_page;
+pub mod statistics;
+pub mod two_factor;
 pub mod user;
 pub mod video;
+pub mod views;
 
 /// SQL that is true when a service of `configs/services.conf` is on, given
 /// to the database connections by `Services::sql_settings`: `aggregator`
@@ -58,6 +65,8 @@ pub const TABLES: &[&schema::Table] = &[
     &follow::TABLE,
     &friend::TABLE,
     &session::TABLE,
+    &two_factor::TABLE,
+    &two_factor::RECOVERY_TABLE,
     &password_reset::TABLE,
     &federation::FOLLOWERS_TABLE,
     &federation::COMMUNITY_FOLLOWERS_TABLE,
@@ -66,6 +75,11 @@ pub const TABLES: &[&schema::Table] = &[
     &federation::DELIVERIES_TABLE,
     &federation::INSTANCES_TABLE,
     &notification::TABLE,
+    &views::DAILY_TABLE,
+    &views::MARKS_TABLE,
+    &article_picture::TABLE,
+    &push::TABLE,
+    &push::KEYS_TABLE,
     &message::CONVERSATIONS_TABLE,
     &message::MESSAGES_TABLE,
     &preview::TABLE,

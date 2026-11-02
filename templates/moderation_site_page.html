@@ -1,0 +1,33 @@
+{% extends "base.html" %} {% import "macros/moderation.html" as moderation_ui %} {% import "macros/post.html" as post_ui %} {% block content %}
+<section class="box content moderation configuration composer edit-form">
+    {% call moderation_ui::tabs(sections) %}{% endcall %}
+    <p><a href="/moderation/configuration#site-pages">{{ "← Configuration"|t }}</a></p>
+    <h1>{{ title|t }} <code class="config-path">{{ page.kind.path() }}</code></h1>
+    <p class="post-username">{{ page.kind.about()|t }}</p>
+    <p class="post-username">{{ "Saved in this file, which can also be changed in any editor. Written in Markdown, like articles, with tables. Visitors don't see the <!-- comments -->, and these are filled in for them: {}."|tf(placeholders) }} {{ "Leave it empty to show that it isn't written yet."|t }}</p>
+    {% if let Some(message) = error %}
+    <p class="error" role="alert">{{ message|t }}</p>
+    {% endif %}
+    <form action="/moderation/configuration/pages/{{ page.kind.slug() }}" method="post">
+        <input type="hidden" name="version" value="{{ page.version }}" />
+        <div class="article-editor">
+            <div class="article-editor-write">
+                <label for="site-page-body" class="visually-hidden">{{ "Page, in Markdown"|t }}</label>
+                {% call post_ui::markdown_toolbar("site-page-body") %}{% endcall %}
+                <textarea id="site-page-body" name="body" maxlength="{{ body_max_chars }}" rows="22">{{ page.body }}</textarea>
+            </div>
+            {# Like post_ui::article_preview, as visitors will see it. #}
+            <section class="article-live-preview article" aria-label="{{ "Preview"|t }}" data-article-preview="site-page-body" data-preview-url="/moderation/configuration/pages/preview" hidden>
+                <p class="article-live-preview-label" aria-hidden="true">{{ "Preview"|t }}</p>
+                <h1 class="article-title" data-preview-title hidden></h1>
+                <div class="article-body" data-preview-body aria-live="off"></div>
+                <p class="empty" data-preview-empty>{{ "The page shows here as you write it."|t }}</p>
+            </section>
+        </div>
+        <div class="flex center space-between">
+            <a href="/{{ page.kind.slug() }}" class="action">{{ "See the page"|t }}</a>
+            <button type="submit" class="button">{{ "Save"|t }}</button>
+        </div>
+    </form>
+</section>
+{% endblock %}

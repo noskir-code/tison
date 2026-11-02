@@ -1,52 +1,58 @@
-{% extends "base.html" %} {% block content %}
+{% extends "base.html" %} {% import "macros/post.html" as post_ui %} {% block content %}
 <section class="box content composer edit-form">
-    <h1>{{ title }}</h1>
+    <h1>{{ title|t }}</h1>
     {% if let Some(message) = error %}
-    <p class="error">{{ message }}</p>
+    <p class="error">{{ message|t }}</p>
     {% endif %}
     {% if federated %}
-    <p class="post-username">Servers of the Fediverse that have it are sent the new text.</p>
+    <p class="post-username">{{ "Servers of the Fediverse that have it are sent the new text."|t }}</p>
     {% endif %}
     <form action="{{ action }}" method="post">
         {% if let Some(article_title) = article_title %}
-        <label for="edit-title" class="visually-hidden">Title</label>
+        <label for="edit-title" class="visually-hidden">{{ "Title"|t }}</label>
         <input type="text" id="edit-title" name="title" class="article-title-field" value="{{ article_title }}" maxlength="{{ title_max_chars }}" required />
-        <label for="edit-body" class="visually-hidden">Article, in Markdown</label>
-        <textarea id="edit-body" name="body" maxlength="{{ body_max_chars }}" rows="18">{{ body }}</textarea>
+        <div class="article-editor">
+            <div class="article-editor-write">
+                <label for="edit-body" class="visually-hidden">{{ "Article, in Markdown"|t }}</label>
+                {% call post_ui::markdown_toolbar("edit-body") %}{% endcall %}
+                <textarea id="edit-body" name="body" maxlength="{{ body_max_chars }}" rows="18">{{ body }}</textarea>
+            </div>
+            {% call post_ui::article_preview("edit-body", "edit-title") %}{% endcall %}
+        </div>
         {% else %}
-        <label for="edit-body" class="visually-hidden">Text</label>
+        <label for="edit-body" class="visually-hidden">{{ "Text"|t }}</label>
         <textarea id="edit-body" name="body" maxlength="{{ body_max_chars }}" rows="8" required>{{ body }}</textarea>
         {% endif %}
         <div class="flex center space-between">
-            <a href="{{ back }}" class="action">Cancel</a>
-            <button type="submit" class="button">Save</button>
+            <a href="{{ back }}" class="action">{{ "Cancel"|t }}</a>
+            <button type="submit" class="button">{{ "Save"|t }}</button>
         </div>
     </form>
 </section>
 {% if let Some(thumbnail) = video_thumbnail %}
 <section class="box content profile-edit media-form" id="thumbnail">
-    <h2>Thumbnail</h2>
+    <h2>{{ "Thumbnail"|t }}</h2>
     {% if let Some(message) = thumbnail.error %}
-    <p class="error">{{ message }}</p>
+    <p class="error">{{ message|t }}</p>
     {% else if thumbnail.saved %}
-    <p class="success">Thumbnail saved.</p>
+    <p class="success">{{ "Thumbnail saved."|t }}</p>
     {% endif %}
     <div class="thumbnail-preview">
         {% if let Some(url) = thumbnail.url %}
-        <img src="{{ url }}" alt="The video's thumbnail" data-thumbnail-preview />
+        <img src="{{ url }}" alt="{{ "The video's thumbnail"|t }}" data-thumbnail-preview />
         {% else %}
         <span class="video-thumb-placeholder" aria-hidden="true">▶</span>
         {% endif %}
     </div>
     <form action="/posts/{{ thumbnail.post_id }}/thumbnail" method="post" enctype="multipart/form-data">
-        <label for="thumbnail-file">New thumbnail</label>
+        <label for="thumbnail-file">{{ "New thumbnail"|t }}</label>
         <input id="thumbnail-file" type="file" name="thumbnail" accept="image/jpeg,image/png,image/gif,image/webp" required data-thumbnail-input />
-        <p class="field-help">Shown before the video plays and in lists. Cropped to {{ thumbnail.width }}×{{ thumbnail.height }} (16:9) from its middle; its location and camera details are removed.</p>
-        <button type="submit" class="button">Upload the thumbnail</button>
+        <p class="field-help">{{ "Shown before the video plays and in lists. Cropped to"|t }} {{ thumbnail.width }}×{{ "{} (16:9) from its middle; its location and camera details are removed."|tf(thumbnail.height) }}</p>
+        <button type="submit" class="button">{{ "Upload the thumbnail"|t }}</button>
     </form>
     <form action="/posts/{{ thumbnail.post_id }}/thumbnail" method="post" enctype="multipart/form-data">
         <input type="hidden" name="reset" value="on" />
-        <button type="submit" class="action">Use a frame of the video instead</button>
+        <button type="submit" class="action">{{ "Use a frame of the video instead"|t }}</button>
     </form>
 </section>
 {% endif %}

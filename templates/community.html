@@ -5,10 +5,10 @@
 {% block content %}
 <section class="box content">
     {% if community.is_banned() %}
-    <p class="error">This community is closed by the site's moderators. Only they can see it.</p>
+    <p class="error">{{ "This community is closed by the site's moderators. Only they can see it."|t }}</p>
     {% endif %}
     {% if let Some(message) = error %}
-    <p class="error">{{ message }}</p>
+    <p class="error">{{ message|t }}</p>
     {% endif %}
     <div class="community-identity">
         {% if let Some(url) = community.photo_url %}
@@ -19,12 +19,12 @@
         <div>
             <h1>{{ community.name }}</h1>
             <p class="post-username">
-                {{ community.member_count }} member{% if community.member_count != 1 %}s{% endif %}
-                {% if follower_count > 0 %} · {{ follower_count }} on the Fediverse{% endif %}
-                {% if !community.is_public() %} · Private{% endif %}
+                {{ community.member_count }} {% if community.member_count == 1 %}{{ "member"|t }}{% else %}{{ "members"|t }}{% endif %}
+                {% if follower_count > 0 %} · {{ "{} on the Fediverse"|tf(follower_count) }}{% endif %}
+                {% if !community.is_public() %} {{ "· Private"|t }}{% endif %}
             </p>
             {% if let Some(handle) = fediverse_handle %}
-            <p class="post-username">On Misskey, Mastodon...: follow <strong>{{ handle }}</strong>, mention it to post.</p>
+            <p class="post-username">{{ "On Misskey, Mastodon...: follow"|t }} <strong>{{ handle }}</strong>{{ ", mention it to post."|t }}</p>
             {% endif %}
         </div>
     </div>
@@ -33,40 +33,40 @@
         {% if membership.is_member %}
         {% if !membership.is_owner %}
         <form action="/community/{{ community.slug }}/quit" method="post">
-            <button type="submit" class="button">Leave</button>
+            <button type="submit" class="button">{{ "Leave"|t }}</button>
         </form>
         {% endif %}
         {% else if membership.has_requested %}
         <form action="/community/{{ community.slug }}/request/cancel" method="post">
-            <button type="submit" class="button" title="Waiting for a moderator">Cancel request</button>
+            <button type="submit" class="button" title="{{ "Waiting for a moderator"|t }}">{{ "Cancel request"|t }}</button>
         </form>
-        <span class="post-username community-waiting">Request sent, waiting for a moderator.</span>
+        <span class="post-username community-waiting">{{ "Request sent, waiting for a moderator."|t }}</span>
         {% else if community.is_public() %}
         <form action="/community/{{ community.slug }}/join" method="post">
-            <button type="submit" class="button primary">Join</button>
+            <button type="submit" class="button primary">{{ "Join"|t }}</button>
         </form>
         {% else %}
         <form action="/community/{{ community.slug }}/join" method="post">
-            <button type="submit" class="button primary">Ask to join</button>
+            <button type="submit" class="button primary">{{ "Ask to join"|t }}</button>
         </form>
         {% endif %}
         {% if !membership.can_manage() %}
         <form action="/community/{{ community.slug }}/ignore" method="post">
             <button type="submit" class="button" aria-pressed="{{ membership.is_ignored }}">
-                {% if membership.is_ignored %}Show on home{% else %}Hide from home{% endif %}
+                {% if membership.is_ignored %}{{ "Show on home"|t }}{% else %}{{ "Hide from home"|t }}{% endif %}
             </button>
         </form>
         {% endif %}
         {% if can_manage %}
-        <a href="/community/{{ community.slug }}/settings" class="button">Settings</a>
+        <a href="/community/{{ community.slug }}/settings" class="button">{{ "Settings"|t }}</a>
         {% endif %}
         {% if is_staff %}
         <form action="/community/{{ community.slug }}/ban" method="post">
-            <button type="submit" class="button danger">{% if community.is_banned() %}Reopen{% else %}Close (ban){% endif %}</button>
+            <button type="submit" class="button danger">{% if community.is_banned() %}{{ "Reopen"|t }}{% else %}{{ "Close (ban)"|t }}{% endif %}</button>
         </form>
         {% endif %}
         {% else %}
-        <a href="/login" class="button primary">Login to {% if community.is_public() %}join{% else %}ask to join{% endif %}</a>
+        <a href="/login" class="button primary">{{ "Login to"|t }} {% if community.is_public() %}{{ "join"|t }}{% else %}{{ "ask to join"|t }}{% endif %}</a>
         {% endif %}
     </div>
 </section>
@@ -75,42 +75,42 @@
     <div class="community-main">
         {% if membership.is_member && !community.is_banned() %}
         <section class="box content composer" id="composer">
-            <h2>Post in {{ community.name }}</h2>
+            <h2>{{ "Post in"|t }} {{ community.name }}</h2>
             <form action="/community/{{ community.slug }}/posts" method="post">
-                <label for="post-body" class="visually-hidden">Post</label>
+                <label for="post-body" class="visually-hidden">{{ "Post"|t }}</label>
                 <textarea
                     id="post-body"
                     name="body"
-                    placeholder="What do you want to share with the community?"
+                    placeholder="{{ "What do you want to share with the community?"|t }}"
                     maxlength="{{ body_max_chars }}"
                     rows="4"
                     required
                 ></textarea>
-                <button type="submit" class="button">Publish</button>
+                <button type="submit" class="button">{{ "Publish"|t }}</button>
             </form>
         </section>
         {% endif %}
 
-        <nav class="profile-tabs community-sorts" aria-label="Sort posts">
+        <nav class="profile-tabs community-sorts" aria-label="{{ "Sort posts"|t }}">
             {% for link in sorts %}
-            <a href="{{ link.url }}"{% if link.active %} class="active" aria-current="page"{% endif %}>{{ link.label }}</a>
+            <a href="{{ link.url }}"{% if link.active %} class="active" aria-current="page"{% endif %}>{{ link.label|t }}</a>
             {% endfor %}
         </nav>
 
         <div class="flex center vertical full-width posts">
             {% if posts_hidden %}
-            <p class="box content empty">This community is private: only members approved by its moderators can read its posts.</p>
+            <p class="box content empty">{{ "This community is private: only members approved by its moderators can read its posts."|t }}</p>
             {% else %}
-            {% call posts_ui::post_list(posts, "No post yet.", layout.viewer.is_some(), return_to, can_manage) %}{% endcall %}
+            {% call posts_ui::post_list(posts, "No post yet."|t, layout.viewer.is_some(), return_to, can_manage) %}{% endcall %}
             {% endif %}
         </div>
     </div>
 
     <aside class="community-side">
         <section class="box content">
-            <h2>About</h2>
+            <h2>{{ "About"|t }}</h2>
             {% if community.description.is_empty() %}
-            <p class="empty">No description.</p>
+            <p class="empty">{{ "No description."|t }}</p>
             {% else %}
             <p class="profile-bio">{{ community.description }}</p>
             {% endif %}
@@ -119,40 +119,40 @@
         {# The events it organizes, like a Mobilizon group's. #}
         {% if crate::settings::services().events && (!events.is_empty() || membership.is_member) %}
         <section class="box content community-events">
-            <h2>Events</h2>
+            <h2>{{ "Events"|t }}</h2>
             <ul class="event-list">
                 {% for post in events %}
                 {% call posts_ui::event_row(post) %}{% endcall %}
                 {% else %}
-                <li class="empty">No event planned.</li>
+                <li class="empty">{{ "No event planned."|t }}</li>
                 {% endfor %}
             </ul>
-            {% if membership.is_member && !community.is_banned() %}<a href="/events/new?community={{ community.id }}" class="button">New event</a>{% endif %}
+            {% if membership.is_member && !community.is_banned() %}<a href="/events/new?community={{ community.id }}" class="button">{{ "New event"|t }}</a>{% endif %}
         </section>
         {% endif %}
 
         <section class="box content">
-            <h2>Rules</h2>
+            <h2>{{ "Rules"|t }}</h2>
             {% for rule in rules %}
             <details class="community-rule">
                 <summary>{{ loop.index }}. {{ rule.title }}</summary>
                 {% if !rule.body.is_empty() %}<p class="profile-bio">{{ rule.body }}</p>{% endif %}
             </details>
             {% else %}
-            <p class="empty">No rules yet.</p>
+            <p class="empty">{{ "No rules yet."|t }}</p>
             {% endfor %}
         </section>
 
         <section class="box content">
-            <h2>Moderators</h2>
+            <h2>{{ "Moderators"|t }}</h2>
             <ul class="community-moderators">
                 {% for moderator in moderators %}
                 <li>
                     <a href="/user/{{ moderator.user.username }}">{{ moderator.user.display_name() }}</a>
-                    <span class="post-username">@{{ moderator.user.username }}{% if moderator.is_owner %} · owner{% endif %}</span>
+                    <span class="post-username">@{{ moderator.user.username }}{% if moderator.is_owner %} {{ "· owner"|t }}{% endif %}</span>
                 </li>
                 {% else %}
-                <li class="empty">No moderators.</li>
+                <li class="empty">{{ "No moderators."|t }}</li>
                 {% endfor %}
             </ul>
         </section>

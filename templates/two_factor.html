@@ -1,0 +1,69 @@
+{% extends "base.html" %} {% block content %}
+<section class="box content profile-edit two-factor">
+    <h1>{{ "Two-factor authentication"|t }}</h1>
+    <p><a href="/settings">{{ "← Settings"|t }}</a></p>
+    {% if let Some(message) = error %}<p class="error">{{ message|t }}</p>{% endif %}
+    {% if let Some(message) = saved %}<p class="saved">{{ message|t }}</p>{% endif %}
+
+    {% if !recovery.is_empty() %}
+    <div class="recovery-codes" id="recovery">
+        <h2>{{ "Your recovery codes"|t }}</h2>
+        <p>{{ "Keep them somewhere safe, like a password manager or on paper. Each one lets you log in once without your phone."|t }} <strong>{{ "They are shown only now."|t }}</strong></p>
+        <ol class="recovery-list">
+            {% for code in recovery %}<li><code>{{ code }}</code></li>{% endfor %}
+        </ol>
+        <div class="copy-field">
+            <button type="button" class="button" data-copy="{% for code in recovery %}{{ code }}&#10;{% endfor %}" hidden>{{ "Copy the codes"|t }}</button>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if let Some(factor) = factor %}
+    <p class="two-factor-on"><span class="event-badge going">{{ "On"|t }}</span> {{ "Since {}. When you log in, your password is followed by a code from your app."|tf(factor.enabled_label()) }}</p>
+    <p class="post-meta">{% if factor.recovery_left == 1 %}{{ "{} recovery code left."|tf(factor.recovery_left) }}{% else %}{{ "{} recovery codes left."|tf(factor.recovery_left) }}{% endif %}</p>
+
+    <h2>{{ "New recovery codes"|t }}</h2>
+    <form action="/settings/two-factor/recovery" method="post">
+        <label for="recovery-code">{{ "Code from your app"|t }}</label>
+        <input id="recovery-code" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="20" required />
+        <button type="submit" class="button">{{ "Make new codes"|t }}</button>
+    </form>
+    <p class="field-help">{{ "The old ones stop working."|t }}</p>
+
+    <h2>{{ "Turn it off"|t }}</h2>
+    <form action="/settings/two-factor/disable" method="post" data-confirm="{{ "Your account will be protected by your password only."|t }}" data-confirm-label="{{ "Turn off"|t }}">
+        <label for="off-password">{{ "Password"|t }}</label>
+        <input id="off-password" type="password" name="password" autocomplete="current-password" required />
+        <label for="off-code">{{ "Code from your app, or a recovery code"|t }}</label>
+        <input id="off-code" type="text" name="code" autocomplete="one-time-code" maxlength="20" required />
+        <button type="submit" class="button danger">{{ "Turn off two-factor authentication"|t }}</button>
+    </form>
+
+    {% else if let Some((qr, secret)) = setup %}
+    <div id="setup">
+        <h2>{{ "1. Scan this code with your app"|t }}</h2>
+        <p>{{ "Aegis, 2FAS, Google Authenticator, Microsoft Authenticator, Bitwarden, 1Password, KeePassXC… any authenticator app works."|t }}</p>
+        <div class="two-factor-qr" role="img" aria-label="{{ "QR code to scan with an authenticator app"|t }}">{{ qr|safe }}</div>
+        <p class="field-help">{{ "No camera? Type this key in the app instead (time-based, 6 digits):"|t }}</p>
+        <div class="copy-field">
+            <input type="text" value="{{ secret }}" readonly aria-label="{{ "Key to type in the app"|t }}" />
+            <button type="button" class="button" data-copy="{{ secret }}" hidden>{{ "Copy"|t }}</button>
+        </div>
+        <h2>{{ "2. Type the code it shows"|t }}</h2>
+        <form action="/settings/two-factor/confirm" method="post">
+            <label for="setup-code">{{ "6-digit code"|t }}</label>
+            <input id="setup-code" type="text" name="code" inputmode="numeric" pattern="[0-9 ]{6,7}" autocomplete="one-time-code" maxlength="7" required autofocus />
+            <button type="submit" class="button primary">{{ "Turn on"|t }}</button>
+        </form>
+    </div>
+
+    {% else %}
+    <p>{{ "Protect your account with a second step at login: after your password, a 6-digit code from an app on your phone, which changes every 30 seconds. Someone who learns your password still can't log in."|t }}</p>
+    <form action="/settings/two-factor/start" method="post">
+        <label for="start-password">{{ "Password"|t }}</label>
+        <input id="start-password" type="password" name="password" autocomplete="current-password" required />
+        <button type="submit" class="button primary">{{ "Set up two-factor authentication"|t }}</button>
+    </form>
+    {% endif %}
+</section>
+{% endblock %}

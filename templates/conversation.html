@@ -1,7 +1,7 @@
 {% extends "base.html" %} {% import "macros/message.html" as ui %} {% block content %}
 <section class="box content conversation" data-conversation="{{ conversation.id }}">
     <header class="conversation-header">
-        <a href="/messenger" class="action" aria-label="Back to the conversations">←</a>
+        <a href="/messenger" class="action" aria-label="{{ "Back to the conversations"|t }}">←</a>
         <a href="{{ conversation.other.profile_url() }}" class="post-author">
             {% if let Some(url) = conversation.other.photo_url() %}
             <img src="{{ url }}" alt="" class="nav-avatar" />
@@ -15,7 +15,7 @@
         </a>
     </header>
     {% if conversation.other.is_remote() %}
-    <p class="post-username conversation-note">On another server: they receive your messages as private messages. Their server can read them, like any email provider.</p>
+    <p class="post-username conversation-note">{{ "On another server: they receive your messages as private messages. Their server can read them, like any email provider."|t }}</p>
     {% endif %}
 
     <ol class="message-list" data-message-list>
@@ -23,18 +23,18 @@
         {% call ui::message_item(message, conversation.id) %}{% endcall %}
         {% endfor %}
     </ol>
-    <p class="empty" data-messages-empty{% if !messages.is_empty() %} hidden{% endif %}>No message yet: say hello!</p>
+    <p class="empty" data-messages-empty{% if !messages.is_empty() %} hidden{% endif %}>{{ "No message yet: say hello!"|t }}</p>
 
     {% if let Some(reason) = closed %}
     <p class="empty">{{ reason }}</p>
     {% else %}
     <form action="/messenger/{{ conversation.id }}" method="post" class="message-form" id="composer">
         {% if let Some(message) = error %}
-        <p class="error">{{ message }}</p>
+        <p class="error">{{ message|t }}</p>
         {% endif %}
-        <label for="message-body" class="visually-hidden">Message</label>
-        <textarea id="message-body" name="body" rows="2" maxlength="{{ body_max_chars }}" placeholder="Write a message..." required data-message-input></textarea>
-        <button type="submit" class="button primary">Send</button>
+        <label for="message-body" class="visually-hidden">{{ "Message"|t }}</label>
+        <textarea id="message-body" name="body" rows="2" maxlength="{{ body_max_chars }}" placeholder="{{ "Write a message..."|t }}" required data-message-input></textarea>
+        <button type="submit" class="button primary">{{ "Send"|t }}</button>
     </form>
     {% endif %}
 </section>

@@ -14,18 +14,18 @@
             {% endif %}
             <span>
                 <strong>{{ comment.author.display_name() }}</strong>
-                {% if let Some(badge) = comment.author.role_badge() %}<span class="role-badge {{ comment.author.role_name() }}">{{ badge }}</span>{% endif %}
+                {% if let Some(badge) = comment.author.role_badge() %}<span class="role-badge {{ comment.author.role_name() }}">{{ badge|t }}</span>{% endif %}
                 <span class="post-username">{{ comment.author.handle() }}</span>
             </span>
         </a>
         <span class="post-meta">
             <time datetime="{{ comment.created_at_iso() }}" data-relative>{{ comment.created_at_label() }}</time>
-            {% if let Some(edited) = comment.edited_at_iso() %} · <span title="{{ edited }}">edited</span>{% endif %}
+            {% if let Some(edited) = comment.edited_at_iso() %} · <span title="{{ edited }}">{{ "edited"|t }}</span>{% endif %}
         </span>
     </header>
     {% if let Some(parent_author) = comment.parent_author %}
     {% if let Some(parent_id) = comment.parent_id %}
-    <a href="#comment-{{ parent_id }}" class="reply-context">Replying to @{{ parent_author }}</a>
+    <a href="#comment-{{ parent_id }}" class="reply-context">{{ "Replying to @{}"|tf(parent_author) }}</a>
     {% endif %}
     {% endif %}
     {% if !comment.body.is_empty() %}
@@ -36,7 +36,7 @@
         {% if signed_in %}
         <form action="/comments/{{ comment.id }}/like" method="post">
             <button type="submit" class="action{% if comment.liked %} active{% endif %}" aria-pressed="{{ comment.liked }}">
-                {% if comment.liked %}Liked{% else %}Like{% endif %} · {{ comment.like_count }}
+                {% if comment.liked %}{{ "Liked"|t }}{% else %}{{ "Like"|t }}{% endif %} · {{ comment.like_count }}
             </button>
         </form>
         <a
@@ -44,22 +44,22 @@
             class="action"
             data-reply-to="{{ comment.id }}"
             data-reply-author="{{ comment.author.mention() }}"
-        >Reply</a>
+        >{{ "Reply"|t }}</a>
         {% if !comment.is_own %}
-        <a href="/report?comment={{ comment.id }}" class="action report-link">Report</a>
+        <a href="/report?comment={{ comment.id }}" class="action report-link">{{ "Report"|t }}</a>
         {% endif %}
         {% if comment.is_own && !comment.author.is_remote() %}
-        <a href="/comments/{{ comment.id }}/edit" class="action">Edit</a>
-        <form action="/comments/{{ comment.id }}/delete" method="post" data-confirm="Delete this comment and its replies?">
-            <button type="submit" class="action danger">Delete</button>
+        <a href="/comments/{{ comment.id }}/edit" class="action">{{ "Edit"|t }}</a>
+        <form action="/comments/{{ comment.id }}/delete" method="post" data-confirm="{{ "Delete this comment and its replies?"|t }}">
+            <button type="submit" class="action danger">{{ "Delete"|t }}</button>
         </form>
         {% else if moderate %}
-        <form action="/comments/{{ comment.id }}/delete" method="post" data-confirm="Remove this comment and its replies?">
-            <button type="submit" class="action danger">Remove</button>
+        <form action="/comments/{{ comment.id }}/delete" method="post" data-confirm="{{ "Remove this comment and its replies?"|t }}">
+            <button type="submit" class="action danger">{{ "Remove"|t }}</button>
         </form>
         {% endif %}
         {% else %}
-        <a href="/login" class="action">Like · {{ comment.like_count }}</a>
+        <a href="/login" class="action">{{ "Like ·"|t }} {{ comment.like_count }}</a>
         {% endif %}
     </footer>
 </article>

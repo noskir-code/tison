@@ -1,27 +1,27 @@
 {% extends "base.html" %} {% block content %}
 <section class="box content profile-edit settings">
-    <h1>Edit profile</h1>
+    <h1>{{ "Edit profile"|t }}</h1>
     {% if let Some(message) = error %}
-    <p class="error">{{ message }}</p>
+    <p class="error">{{ message|t }}</p>
     {% else if saved %}
-    <p class="saved">Changes saved.</p>
+    <p class="saved">{{ "Changes saved."|t }}</p>
     {% endif %}
-    <p><a href="/user/{{ user.username }}">See your profile</a></p>
+    <p><a href="/user/{{ user.username }}">{{ "See your profile"|t }}</a></p>
 
     <form action="/settings/bio" method="post">
-        <label for="bio">Bio</label>
+        <label for="bio">{{ "Bio"|t }}</label>
         <textarea
             id="bio"
             name="bio"
             rows="4"
             maxlength="{{ bio_max_chars }}"
-            placeholder="A few words about you, shown in &quot;About me&quot;."
+            placeholder="{{ "A few words about you, shown in “About me”."|t }}"
         >{{ user.bio }}</textarea>
-        <button type="submit" class="button">Save bio</button>
+        <button type="submit" class="button">{{ "Save bio"|t }}</button>
     </form>
 
     <form action="/settings/username" method="post">
-        <label for="username">Username</label>
+        <label for="username">{{ "Username"|t }}</label>
         <input
             id="username"
             type="text"
@@ -31,11 +31,11 @@
             pattern="[A-Za-z0-9_]+"
             required
         />
-        <button type="submit" class="button">Save username</button>
+        <button type="submit" class="button">{{ "Save username"|t }}</button>
     </form>
 
     <form action="/settings/names" method="post">
-        <label for="displayname">Display name</label>
+        <label for="displayname">{{ "Display name"|t }}</label>
         <input
             id="displayname"
             type="text"
@@ -43,7 +43,7 @@
             value="{{ user.displayname }}"
             maxlength="{{ name_max_chars }}"
         />
-        <label for="firstname">First name</label>
+        <label for="firstname">{{ "First name"|t }}</label>
         <input
             id="firstname"
             type="text"
@@ -51,7 +51,7 @@
             value="{{ user.firstname }}"
             maxlength="{{ name_max_chars }}"
         />
-        <label for="lastname">Last name</label>
+        <label for="lastname">{{ "Last name"|t }}</label>
         <input
             id="lastname"
             type="text"
@@ -59,11 +59,21 @@
             value="{{ user.lastname }}"
             maxlength="{{ name_max_chars }}"
         />
-        <button type="submit" class="button">Save names</button>
+        {# See `NameVisibility`: elsewhere, only a public name is shown. #}
+        <label for="names_visibility">{{ "Who sees your first and last name"|t }}</label>
+        <select id="names_visibility" name="names_visibility">
+            {% for choice in user.name_visibility_choices() %}
+            <option value="{{ choice.as_str() }}"{% if choice.as_str() == user.names_visibility.as_str() %} selected{% endif %}>{{ choice.label()|t }}</option>
+            {% endfor %}
+        </select>
+        <p class="post-username form-hint">
+            {{ "Both are optional: your username is enough. Unless they're public, posts, comments, search and other servers (Mastodon, Hubzilla...) show your display name, or your username."|t }}
+        </p>
+        <button type="submit" class="button">{{ "Save names"|t }}</button>
     </form>
 
     <form action="/settings/password" method="post">
-        <label for="current_password">Current password</label>
+        <label for="current_password">{{ "Current password"|t }}</label>
         <input
             id="current_password"
             type="password"
@@ -71,7 +81,7 @@
             autocomplete="current-password"
             required
         />
-        <label for="new_password">New password</label>
+        <label for="new_password">{{ "New password"|t }}</label>
         <input
             id="new_password"
             type="password"
@@ -81,7 +91,7 @@
             autocomplete="new-password"
             required
         />
-        <label for="new_password_confirm">Confirm new password</label>
+        <label for="new_password_confirm">{{ "Confirm new password"|t }}</label>
         <input
             id="new_password_confirm"
             type="password"
@@ -91,11 +101,50 @@
             autocomplete="new-password"
             required
         />
-        <button type="submit" class="button">Change password</button>
+        <button type="submit" class="button">{{ "Change password"|t }}</button>
     </form>
 
+    {# See handlers/verify_email.rs. #}
+    <div class="settings-two-factor settings-email" id="email">
+        <span>
+            <strong>{{ "Email"|t }}</strong>
+            <span class="post-meta settings-email-address">{{ email }}</span>
+            {% if user.email_verified %}
+            <span class="post-meta email-status verified">{{ "Verified"|t }}</span>
+            {% else %}
+            <span class="post-meta email-status">{{ "Not verified yet: open the link we sent you."|t }}</span>
+            {% endif %}
+            {% if let Some(message) = verification_message %}
+            <span class="post-meta" role="status">{{ message|t }}</span>
+            {% endif %}
+        </span>
+        {% if !user.email_verified && can_send_email %}
+        <form action="/settings/verify-email" method="post">
+            <input type="hidden" name="return" value="/settings#email" />
+            <button type="submit" class="button">{{ "Send the link again"|t }}</button>
+        </form>
+        {% endif %}
+    </div>
+
+    <div class="settings-two-factor">
+        <strong>{{ "Two-factor authentication"|t }}</strong>
+        <a href="/settings/two-factor" class="button">{{ "Manage"|t }}</a>
+    </div>
+
+    {# Shown by assets/system.js when the browser can receive them. #}
+    <div class="settings-two-factor settings-push" data-push hidden>
+        <span>
+            <strong>{{ "Browser notifications"|t }}</strong>
+            <span class="post-meta" data-push-status></span>
+        </span>
+        <span class="push-buttons">
+            <button type="button" class="button" data-push-test hidden>{{ "Send a test"|t }}</button>
+            <button type="button" class="button" data-push-toggle data-on="{{ "Turn off"|t }}" data-off="{{ "Turn on"|t }}">{{ "Turn on"|t }}</button>
+        </span>
+    </div>
+
     <form action="/settings/photo" method="post" enctype="multipart/form-data">
-        <label for="photo">Photo</label>
+        <label for="photo">{{ "Photo"|t }}</label>
         <input
             id="photo"
             type="file"
@@ -103,16 +152,16 @@
             accept="image/jpeg,image/png,image/gif,image/webp,image/avif"
             required
         />
-        <button type="submit" class="button">Upload photo</button>
+        <button type="submit" class="button">{{ "Upload photo"|t }}</button>
     </form>
     {% if user.photo_url.is_some() %}
     <form action="/settings/photo/remove" method="post">
-        <button type="submit" class="button">Remove photo</button>
+        <button type="submit" class="button">{{ "Remove photo"|t }}</button>
     </form>
     {% endif %}
 
     <form action="/settings/background" method="post" enctype="multipart/form-data">
-        <label for="background">Background</label>
+        <label for="background">{{ "Background"|t }}</label>
         <input
             id="background"
             type="file"
@@ -120,11 +169,11 @@
             accept="image/jpeg,image/png,image/gif,image/webp,image/avif"
             required
         />
-        <button type="submit" class="button">Upload background</button>
+        <button type="submit" class="button">{{ "Upload background"|t }}</button>
     </form>
     {% if user.background_url.is_some() %}
     <form action="/settings/background/remove" method="post">
-        <button type="submit" class="button">Remove background</button>
+        <button type="submit" class="button">{{ "Remove background"|t }}</button>
     </form>
     {% endif %}
 </section>

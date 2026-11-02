@@ -1,8 +1,8 @@
 {% extends "base.html" %} {% block content %}
 <section class="box content profile-edit media-form">
-    <h1>{{ title }}</h1>
+    <h1>{{ title|t }}</h1>
     {% if let Some(message) = error %}
-    <p class="error">{{ message }}</p>
+    <p class="error">{{ message|t }}</p>
     {% endif %}
     {# system.js adds the time zone: the times are written in the writer's. #}
     <form action="{{ action }}" method="post" enctype="multipart/form-data" data-event-form>
@@ -10,86 +10,86 @@
         <input type="hidden" name="end_offset" value="0" data-offset-for="event-end" />
         <input type="hidden" name="timezone" value="UTC" data-timezone />
 
-        <label for="event-title">Title</label>
+        <label for="event-title">{{ "Title"|t }}</label>
         <input id="event-title" type="text" name="title" value="{{ values.title }}" maxlength="{{ title_max_chars }}" required />
 
         <div class="event-form-times">
             <div>
-                <label for="event-start">Starts</label>
+                <label for="event-start">{{ "Starts"|t }}</label>
                 <input id="event-start" type="datetime-local" name="starts_at" value="{{ values.starts_at }}" required{% if editing %} data-utc-time{% endif %} />
             </div>
             <div>
-                <label for="event-end">Ends (optional)</label>
+                <label for="event-end">{{ "Ends (optional)"|t }}</label>
                 <input id="event-end" type="datetime-local" name="ends_at" value="{{ values.ends_at }}"{% if editing %} data-utc-time{% endif %} />
             </div>
         </div>
-        <p class="field-help" data-timezone-help>Times are in UTC.</p>
+        <p class="field-help" data-timezone-help>{{ "Times are in UTC."|t }}</p>
 
         {% if !editing %}
         <div class="event-form-times">
             <div>
-                <label for="event-repeat">Repeats</label>
+                <label for="event-repeat">{{ "Repeats"|t }}</label>
                 <select id="event-repeat" name="repeat">
-                    <option value="">No</option>
+                    <option value="">{{ "No"|t }}</option>
                     {% for frequency in frequencies %}
-                    <option value="{{ frequency.as_str() }}">{{ frequency.label() }}</option>
+                    <option value="{{ frequency.as_str() }}">{{ frequency.label()|t }}</option>
                     {% endfor %}
                 </select>
             </div>
             <div>
-                <label for="event-until">Until</label>
+                <label for="event-until">{{ "Until"|t }}</label>
                 <input id="event-until" type="date" name="repeat_until" />
             </div>
         </div>
-        <p class="field-help">Each date is an event of its own, with its participants: the next ones appear two at a time.</p>
+        <p class="field-help">{{ "Each date is an event of its own, with its participants: the next ones appear two at a time."|t }}</p>
         {% else if let Some(repeat) = repeat_label %}
-        <p class="field-help">{{ repeat }}: this changes this date only. The next dates are copied from the last one.</p>
+        <p class="field-help">{{ repeat }}{{ ": this changes this date only. The next dates are copied from the last one."|t }}</p>
         {% endif %}
 
         {% if !communities.is_empty() %}
-        <label for="event-organizer">Organized by</label>
+        <label for="event-organizer">{{ "Organized by"|t }}</label>
         <select id="event-organizer" name="community">
-            <option value="">You</option>
+            <option value="">{{ "You"|t }}</option>
             {% for community in communities %}
             <option value="{{ community.id }}"{% if values.is_community(community.id) %} selected{% endif %}>{{ community.name }}</option>
             {% endfor %}
         </select>
-        <p class="field-help">A community's events are on its page, and its moderators can manage them, like Mobilizon's groups.</p>
+        <p class="field-help">{{ "A community's events are on its page, and its moderators can manage them, like Mobilizon's groups."|t }}</p>
         {% endif %}
 
         <fieldset class="event-form-where">
-            <legend>Where</legend>
-            <label for="event-place">Place</label>
-            <input id="event-place" type="text" name="place_name" value="{{ values.place_name }}" maxlength="200" placeholder="The Green Café" />
-            <label for="event-address">Address</label>
-            <input id="event-address" type="text" name="address" value="{{ values.address }}" maxlength="500" placeholder="12 Main Street, Springfield" />
-            <label for="event-online">Online link</label>
-            <input id="event-online" type="url" name="online_url" value="{{ values.online_url }}" maxlength="1000" placeholder="https://meet.example.org/our-meetup" />
-            <label class="checkbox-line"><input type="checkbox" name="online_public" value="on"{% if values.online_public %} checked{% endif %} /> Show the online link to everyone (otherwise only to participants)</label>
-            <p class="field-help">A place, an address, a link to join online, or several. With an address, a map is shown.</p>
+            <legend>{{ "Where"|t }}</legend>
+            <label for="event-place">{{ "Place"|t }}</label>
+            <input id="event-place" type="text" name="place_name" value="{{ values.place_name }}" maxlength="200" placeholder="{{ "The Green Café"|t }}" />
+            <label for="event-address">{{ "Address"|t }}</label>
+            <input id="event-address" type="text" name="address" value="{{ values.address }}" maxlength="500" placeholder="{{ "12 Main Street, Springfield"|t }}" />
+            <label for="event-online">{{ "Online link"|t }}</label>
+            <input id="event-online" type="url" name="online_url" value="{{ values.online_url }}" maxlength="1000" placeholder="{{ "https://meet.example.org/our-meetup"|t }}" />
+            <label class="checkbox-line"><input type="checkbox" name="online_public" value="on"{% if values.online_public %} checked{% endif %} /> {{ "Show the online link to everyone (otherwise only to participants)"|t }}</label>
+            <p class="field-help">{{ "A place, an address, a link to join online, or several. With an address, a map is shown."|t }}</p>
         </fieldset>
 
-        <label for="event-description">Description</label>
+        <label for="event-description">{{ "Description"|t }}</label>
         <textarea id="event-description" name="description" rows="6" maxlength="{{ description_max_chars }}">{{ values.description }}</textarea>
 
-        <label for="event-category">Category</label>
+        <label for="event-category">{{ "Category"|t }}</label>
         <select id="event-category" name="category">
             {% for (code, label) in categories %}
-            <option value="{{ code }}"{% if values.category.as_str() == *code %} selected{% endif %}>{{ label }}</option>
+            <option value="{{ code }}"{% if values.category.as_str() == *code %} selected{% endif %}>{{ label|t }}</option>
             {% endfor %}
         </select>
 
-        <label for="event-capacity">Places (optional)</label>
-        <input id="event-capacity" type="number" name="capacity" value="{{ values.capacity }}" min="1" max="1000000" placeholder="No limit" />
+        <label for="event-capacity">{{ "Places (optional)"|t }}</label>
+        <input id="event-capacity" type="number" name="capacity" value="{{ values.capacity }}" min="1" max="1000000" placeholder="{{ "No limit"|t }}" />
 
-        <label class="checkbox-line"><input type="checkbox" name="approval" value="on"{% if values.approval %} checked{% endif %} /> I accept each participant myself</label>
+        <label class="checkbox-line"><input type="checkbox" name="approval" value="on"{% if values.approval %} checked{% endif %} /> {{ "I accept each participant myself"|t }}</label>
 
-        <label for="event-banner">Banner (optional)</label>
-        {% if let Some(banner) = values.banner_url %}<img src="{{ banner }}" alt="The event's banner" class="event-banner preview" />{% endif %}
+        <label for="event-banner">{{ "Banner (optional)"|t }}</label>
+        {% if let Some(banner) = values.banner_url %}<img src="{{ banner }}" alt="{{ "The event's banner"|t }}" class="event-banner preview" />{% endif %}
         <input id="event-banner" type="file" name="banner" accept="image/jpeg,image/png,image/gif,image/webp" />
-        <p class="field-help">Wide pictures look best, like 1920×1080. Their location and camera details are removed.</p>
+        <p class="field-help">{{ "Wide pictures look best, like 1920×1080. Their location and camera details are removed."|t }}</p>
 
-        <button type="submit" class="button primary">{% if editing %}Save{% else %}Publish the event{% endif %}</button>
+        <button type="submit" class="button primary">{% if editing %}{{ "Save"|t }}{% else %}{{ "Publish the event"|t }}{% endif %}</button>
     </form>
 </section>
 {% endblock %}

@@ -1,0 +1,10 @@
+{% extends "base.html" %} {% import "macros/moderation.html" as moderation_ui %} {% block content %}
+<section class="box content moderation">
+    {% call moderation_ui::tabs(sections) %}{% endcall %}
+    <p class="post-username">
+        {{ "What was made on this site, counted now. What came from other servers is on the"|t }}
+        <a href="/moderation/federation">{{ "Federation"|t }}</a> {{ "tab."|t }}
+    </p>
+    {% call moderation_ui::statistics(statistics) %}{% endcall %}
+</section>
+{% endblock %}

@@ -1,0 +1,17 @@
+{% extends "base.html" %} {% block content %}
+<section class="box content auth">
+    <h1>{{ "Two-factor authentication"|t }}</h1>
+    <p>{{ "Type the 6-digit code your authenticator app shows for this site."|t }}</p>
+    {% if let Some(message) = error %}<p class="error">{{ message|t }}</p>{% endif %}
+    <form action="/login/two-factor" method="post">
+        <label for="code">{{ "Code"|t }}</label>
+        <input id="code" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="20" required autofocus />
+        <button type="submit" class="button">{{ "Log in"|t }}</button>
+    </form>
+    <details class="field-help">
+        <summary>{{ "Lost your phone?"|t }}</summary>
+        <p>{{ "Type one of your recovery codes (like"|t }} <code>abcde-fghij</code>{{ ") instead of the code: each works once."|t }}</p>
+    </details>
+    <p><a href="/login">{{ "Start over"|t }}</a></p>
+</section>
+{% endblock %}

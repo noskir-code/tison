@@ -29,6 +29,8 @@ use crate::{
     handlers::system::{Layout, error_page, render_template},
     handlers::user::signed_in_user,
 };
+/// `|t` and `|tf` in the templates, see `i18n`.
+use crate::i18n::filters;
 
 /// Errors of the upload and live forms, sent back as `?error=<code>`.
 #[derive(Clone, Copy, Debug)]
@@ -77,8 +79,8 @@ impl MediaError {
     pub fn message(self, max_bytes: usize) -> String {
         match self {
             Self::NoFile => "Choose a file to upload.".to_string(),
-            Self::TooLarge => format!("The file can be at most {} MB.", max_bytes / 1024 / 1024),
-            Self::ThumbnailTooLarge => format!("The thumbnail can be at most {} MB.", MAX_IMAGE_BYTES / 1024 / 1024),
+            Self::TooLarge => crate::i18n::tf("The file can be at most {} MB.", max_bytes / 1024 / 1024),
+            Self::ThumbnailTooLarge => crate::i18n::tf("The thumbnail can be at most {} MB.", MAX_IMAGE_BYTES / 1024 / 1024),
             Self::ThumbnailFormat => "The thumbnail must be a JPEG, PNG, GIF or WebP picture.".to_string(),
             Self::NoTitle => "Give it a title.".to_string(),
             Self::TitleTooLong => format!("A title can be at most {} characters, on one line.", video::TITLE_MAX_CHARS),

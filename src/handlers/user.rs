@@ -15,19 +15,22 @@ use crate::{
     entities::follow::{self, Counts, Listed},
     entities::friend::{self, Added, State as FriendState},
     entities::notification,
-    entities::post::{self, Post},
+    entities::post::{self, ContentKinds, Post},
     entities::session as remember_tokens,
     entities::user::{
-        self, BIO_MAX_CHARS, NAME_MAX_CHARS, PASSWORD_MAX_CHARS, PASSWORD_MIN_CHARS, ProfileImage,
+        self, BIO_MAX_CHARS, NAME_MAX_CHARS, NameVisibility, PASSWORD_MAX_CHARS, PASSWORD_MIN_CHARS, ProfileImage,
         USERNAME_MAX_LEN, USERNAME_MIN_LEN, User,
     },
     handlers::{
         auth::{hash_password_blocking, verify_password_blocking},
+        notifier,
         image::{self, IMAGE_FIELD, ImageError, ImageOwner, MAX_IMAGE_BYTES},
         session::{has_remember_cookie, remember, sign_in, signed_in},
         system::{Layout, error_page, local_path, render_template},
     },
 };
+/// `|t` and `|tf` in the templates, see `i18n`.
+use crate::i18n::filters;
 
 /// Errors sent back to the settings page as `?error=<code>`.
 #[derive(Clone, Copy)]
@@ -82,28 +85,17 @@ impl EditError {
 
     fn message(self) -> String {
         match self {
-            Self::InvalidName => format!(
-                "Names must be at most {NAME_MAX_CHARS} characters, without control characters."
-            ),
-            Self::InvalidBio => format!(
-                "The bio must be at most {BIO_MAX_CHARS} characters, without control characters."
-            ),
-            Self::InvalidUsername => format!(
-                "The username must be {USERNAME_MIN_LEN} to {USERNAME_MAX_LEN} characters, using only letters, digits and _."
-            ),
+            Self::InvalidName => crate::i18n::tf("Names must be at most {} characters, without control characters.", NAME_MAX_CHARS),
+            Self::InvalidBio => crate::i18n::tf("The bio must be at most {} characters, without control characters.", BIO_MAX_CHARS),
+            Self::InvalidUsername => crate::i18n::tf2("The username must be {} to {} characters, using only letters, digits and _.", USERNAME_MIN_LEN, USERNAME_MAX_LEN),
             Self::UsernameTaken => "This username is already taken.".to_string(),
             Self::MissingImage => "Choose an image to upload.".to_string(),
-            Self::ImageTooLarge => format!(
-                "The image must be at most {} MB.",
-                MAX_IMAGE_BYTES / 1024 / 1024
-            ),
+            Self::ImageTooLarge => crate::i18n::tf("The image must be at most {} MB.", MAX_IMAGE_BYTES / 1024 / 1024),
             Self::UnsupportedImage => {
                 "Supported formats are JPEG, PNG, GIF, WebP and AVIF.".to_string()
             }
             Self::WrongPassword => "Your current password is wrong.".to_string(),
-            Self::WeakPassword => format!(
-                "The new password must be {PASSWORD_MIN_CHARS} to {PASSWORD_MAX_CHARS} characters, with an uppercase letter, a lowercase letter, a digit and a symbol. Spaces are allowed only one at a time, between words."
-            ),
+            Self::WeakPassword => crate::i18n::tf2("The new password must be {} to {} characters, with an uppercase letter, a lowercase letter, a digit and a symbol. Spaces are allowed only one at a time, between words.", PASSWORD_MIN_CHARS, PASSWORD_MAX_CHARS),
             Self::PasswordMismatch => "The two new passwords are different.".to_string(),
             Self::Server => "Something went wrong, try again later.".to_string(),
         }
@@ -197,17 +189,29 @@ impl ProfileTab {
         }
     }
 
+    /// Shown, and for photos, articles and videos, only when the user made
+    /// some the viewer can see.
+    fn available(self, kinds: ContentKinds) -> bool {
+        self.shown()
+            && match self {
+                Self::Photos => kinds.photos,
+                Self::Articles => kinds.articles,
+                Self::Videos => kinds.videos,
+                _ => true,
+            }
+    }
+
     /// In the tab bar. The followers and following lists open from their
     /// counts under the name instead.
-    fn in_bar(self) -> bool {
-        self.shown() && !matches!(self, Self::Followers | Self::Following)
+    fn in_bar(self, kinds: ContentKinds) -> bool {
+        self.available(kinds) && !matches!(self, Self::Followers | Self::Following)
     }
 
     /// Unknown, hidden or missing values open the posts.
-    fn from_query(value: Option<&String>) -> Self {
+    fn from_query(value: Option<&String>, kinds: ContentKinds) -> Self {
         value
             .and_then(|slug| Self::ALL.into_iter().find(|tab| tab.slug() == slug))
-            .filter(|tab| tab.shown())
+            .filter(|tab| tab.available(kinds))
             .unwrap_or(Self::Posts)
     }
 }
@@ -219,10 +223,10 @@ struct TabLink {
 }
 
 /// The default tab links to the profile itself, so `/user/alice` stays the main URL.
-fn tab_links(username: &str, current: ProfileTab) -> Vec<TabLink> {
+fn tab_links(username: &str, current: ProfileTab, kinds: ContentKinds) -> Vec<TabLink> {
     ProfileTab::ALL
         .into_iter()
-        .filter(|tab| tab.in_bar())
+        .filter(|tab| tab.in_bar(kinds))
         .map(|tab| TabLink {
             label: tab.label(),
             url: match tab {
@@ -237,30 +241,33 @@ fn tab_links(username: &str, current: ProfileTab) -> Vec<TabLink> {
 struct AboutRow {
     label: &'static str,
     value: String,
-    /// Hidden from other users, shown to the owner with a note.
-    only_you: bool,
+    /// For the owner: who else sees it, like "only you". Empty when everyone does.
+    note: &'static str,
 }
 
 /// What the viewer may see in "About me", following the privacy settings.
-fn about_rows(user: &User, is_own_profile: bool) -> Vec<AboutRow> {
+/// `names_shown`: the viewer may see the first and last name.
+fn about_rows(user: &User, is_own_profile: bool, names_shown: bool) -> Vec<AboutRow> {
     let mut rows = Vec::new();
-    let mut add = |label, value: String, public: bool| {
-        if !value.is_empty() && (public || is_own_profile) {
+    let mut add = |label, value: String, shown: bool, note: &'static str| {
+        if !value.is_empty() && shown {
             rows.push(AboutRow {
                 label,
                 value,
-                only_you: !public,
+                note: if is_own_profile { note } else { "" },
             });
         }
     };
 
-    add("First name", user.firstname.clone(), user.firstname_public);
-    add("Last name", user.lastname.clone(), user.lastname_public);
+    let names_note = user.names_visibility.note();
+    add("First name", user.firstname.clone(), names_shown, names_note);
+    add("Last name", user.lastname.clone(), names_shown, names_note);
     if let Some(birthday) = user.birthday {
-        add("Birthday", birthday.format("%B %-d, %Y").to_string(), user.birthday_public);
+        let note = if user.birthday_public { "" } else { "only you" };
+        add("Birthday", crate::i18n::long_date(birthday), user.birthday_public || is_own_profile, note);
     }
-    add("Gender", user.gender.clone(), true);
-    add("Joined", user.created_at.format("%B %Y").to_string(), true);
+    add("Gender", user.gender.clone(), true, "");
+    add("Joined", crate::i18n::month_year(user.created_at.date_naive()), true, "");
     rows
 }
 
@@ -295,6 +302,9 @@ struct UserTemplate {
     friends: Vec<User>,
     requests_received: Vec<User>,
     requests_sent: Vec<User>,
+    /// The name at the top: the display name, else the first and last name
+    /// when the viewer may see them, else the username.
+    profile_name: String,
     /// The actor for Fediverse servers, see `templates/base.html`.
     activitypub_url: Option<String>,
     /// Where the like and share buttons come back to.
@@ -315,6 +325,12 @@ struct SettingsTemplate {
     password_min_chars: usize,
     password_max_chars: usize,
     username_max_len: usize,
+    /// The address, empty for accounts made before emails were asked.
+    email: String,
+    /// After "Send it again", see `verify_email::resend_message`.
+    verification_message: Option<&'static str>,
+    /// Links can be sent: there is a mail server.
+    can_send_email: bool,
 }
 
 pub async fn user_page(
@@ -347,9 +363,13 @@ pub async fn user_page(
 
     let is_own_profile = layout.viewer.as_ref().is_some_and(|viewer| viewer.id == user.id);
 
-    let tab = ProfileTab::from_query(query.get("tab"));
+    let viewer_id = layout.viewer.as_ref().map(|viewer| viewer.id);
+    let kinds = post::content_kinds(pool, user.id, viewer_id).await.unwrap_or_else(|err| {
+        tracing::error!("failed to check the content of {}: {}", user.username, err);
+        ContentKinds::default()
+    });
+    let tab = ProfileTab::from_query(query.get("tab"), kinds);
     let posts = if tab == ProfileTab::Posts {
-        let viewer_id = layout.viewer.as_ref().map(|viewer| viewer.id);
         post::by_author(pool, user.id, viewer_id)
             .await
             .unwrap_or_else(|err| {
@@ -360,7 +380,6 @@ pub async fn user_page(
         Vec::new()
     };
     let photos = if tab == ProfileTab::Photos {
-        let viewer_id = layout.viewer.as_ref().map(|viewer| viewer.id);
         post::photos_by_author(pool, user.id, viewer_id)
             .await
             .unwrap_or_else(|err| {
@@ -371,7 +390,6 @@ pub async fn user_page(
         Vec::new()
     };
     let articles = if tab == ProfileTab::Articles {
-        let viewer_id = layout.viewer.as_ref().map(|viewer| viewer.id);
         post::articles_by_author(pool, user.id, viewer_id)
             .await
             .unwrap_or_else(|err| {
@@ -382,7 +400,6 @@ pub async fn user_page(
         Vec::new()
     };
     let videos = if tab == ProfileTab::Videos {
-        let viewer_id = layout.viewer.as_ref().map(|viewer| viewer.id);
         post::media_list(pool, viewer_id, post::MediaList::VideosBy(user.id))
             .await
             .unwrap_or_else(|err| {
@@ -439,7 +456,17 @@ pub async fn user_page(
         .as_ref()
         .filter(|_| user.federation_enabled)
         .map(|federation| federation.actor_url(user.public_id));
+    let names_shown = user.names_visibility.shown_to(
+        is_own_profile,
+        viewer_follows == Some(true),
+        friendship == Some(FriendState::Friends),
+    );
+    let profile_name = match (user.displayname.is_empty(), names_shown, user.real_name()) {
+        (true, true, real_name) if !real_name.is_empty() => real_name,
+        _ => user.display_name(),
+    };
     let template = UserTemplate {
+        profile_name,
         accounts,
         counts,
         viewer_follows,
@@ -452,8 +479,8 @@ pub async fn user_page(
         activitypub_url,
         layout,
         tab,
-        tabs: tab_links(&user.username, tab),
-        about: about_rows(&user, is_own_profile),
+        tabs: tab_links(&user.username, tab, kinds),
+        about: about_rows(&user, is_own_profile, names_shown),
         posts,
         photos,
         articles,
@@ -582,7 +609,19 @@ pub async fn settings_page(
         return Redirect::to("/login").into_response();
     };
 
+    let email = match &state.pool {
+        Some(pool) => user::email_status(pool, user.id).await.unwrap_or_else(|err| {
+            tracing::warn!("failed to load the email of @{}: {}", user.username, err);
+            None
+        }),
+        None => None,
+    }
+    .map(|(email, _)| email)
+    .unwrap_or_default();
     let template = SettingsTemplate {
+        email,
+        verification_message: crate::handlers::verify_email::resend_message(query.get("verification")),
+        can_send_email: state.mailer.is_some(),
         title: "Settings".to_string(),
         layout,
         user,
@@ -722,14 +761,23 @@ pub async fn update_names(
     };
 
     let field = |key: &str| user::validate_name(form.get(key).map(String::as_str).unwrap_or(""));
+    // Missing (an older form): kept as it was.
+    let visibility = form.get("names_visibility").map_or(me.names_visibility, |value| NameVisibility::parse(value));
     let result = match (field("displayname"), field("firstname"), field("lastname")) {
         (Some(displayname), Some(firstname), Some(lastname)) => {
-            user::update_names(&pool, me.id, &displayname, &firstname, &lastname)
+            user::update_names(&pool, me.id, &displayname, &firstname, &lastname, visibility)
                 .await
                 .map_err(server_error)
         }
         _ => Err(EditError::InvalidName),
     };
+    // The name other servers show may have changed: they're told.
+    if result.is_ok()
+        && let Ok(Some(updated)) = user::find_by_id(&pool, me.id).await
+        && updated.display_name() != me.display_name()
+    {
+        notifier::profile_updated(&state, &pool, &updated).await;
+    }
     back_to_settings(result)
 }
 

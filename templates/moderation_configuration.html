@@ -1,0 +1,85 @@
+{% extends "base.html" %} {% import "macros/moderation.html" as moderation_ui %} {% block content %}
+<section class="box content moderation configuration">
+    {% call moderation_ui::tabs(sections) %}{% endcall %}
+    <p class="post-username">
+        {{ "The configuration files of the server. Passwords and keys are hidden: leave them empty to keep them. Saving rewrites the file (the previous one is kept as"|t }} <code>.bak</code>{{ "); changes apply when Tison restarts. An environment variable with the same name wins over the file."|t }}
+    </p>
+    {% if let Some(text) = message %}
+    <p class="saved" role="status">{{ text|t }}</p>
+    {% endif %}
+    {% if let Some(text) = error %}
+    <p class="error" role="alert">{{ text|t }}</p>
+    {% endif %}
+    {# See entities/site_page.rs: linked under the menu of every page. #}
+    <section class="config-file" id="site-pages">
+        <h2>{{ "Pages of the site"|t }}</h2>
+        <p class="post-username">{{ "Linked under the menu of every page. Each is a Markdown file of the folder"|t }} <code>legal/</code>{{ ", which can also be changed in any editor."|t }}</p>
+        <ul class="site-pages">
+            {% for page in pages %}
+            <li class="config-row">
+                <div class="config-setting">
+                    <a class="config-key" href="/{{ page.kind.slug() }}">{{ page.kind.title()|t }}</a>
+                    <code class="config-path">{{ page.kind.path() }}</code>
+                    {% if page.is_written() %}
+                    <span class="post-meta">{% if let Some(date) = page.updated_label() %}{{ "Last updated: {}"|tf(date) }}{% endif %}</span>
+                    {% else %}
+                    <span class="config-badge off">{{ "not written yet"|t }}</span>
+                    {% endif %}
+                    <a class="button site-pages-edit" href="/moderation/configuration/pages/{{ page.kind.slug() }}">{% if page.is_written() %}{{ "Edit"|t }}{% else %}{{ "Write"|t }}{% endif %}</a>
+                </div>
+                <p class="config-help">{{ page.kind.about()|t }}</p>
+            </li>
+            {% endfor %}
+        </ul>
+    </section>
+    {% for file in files %}
+    <section class="config-file" id="{{ file.id }}">
+        <h2>{{ file.name }} <code class="config-path">{{ file.path }}</code>{% if !file.read %} <span class="config-badge off">{{ "not read"|t }}</span>{% endif %}</h2>
+        <p class="post-username">{{ file.about|t }}</p>
+        {% if file.missing %}
+        <p class="empty">{{ "This file doesn't exist: every setting has its default value."|t }}</p>
+        {% else %}
+        <form action="/moderation/configuration" method="post" class="config-form">
+            <input type="hidden" name="file" value="{{ file.id }}" />
+            <input type="hidden" name="version" value="{{ file.version }}" />
+            <div class="config-list">
+                {% for line in file.lines %}
+                {% if let Some(title) = line.heading %}
+                <h3 class="config-heading">{{ title|t }}</h3>
+                {% else %}
+                <div class="config-row{% if !line.set %} config-default{% endif %}">
+                    <div class="config-setting">
+                        <label class="config-key" for="{{ file.id }}-{{ line.number }}">{{ line.key }}</label>
+                        {% if line.boolean %}
+                        <select id="{{ file.id }}-{{ line.number }}" name="line-{{ line.number }}" class="config-input">
+                            <option value=""{% if line.choice() == "" %} selected{% endif %}>{{ line.default_label()|t }}</option>
+                            <option value="true"{% if line.choice() == "true" %} selected{% endif %}>true</option>
+                            <option value="false"{% if line.choice() == "false" %} selected{% endif %}>false</option>
+                        </select>
+                        {% else if line.secret %}
+                        <input type="password" id="{{ file.id }}-{{ line.number }}" name="line-{{ line.number }}" class="config-input" autocomplete="new-password" placeholder="{% if line.set %}{{ "Hidden: leave empty to keep it"|t }}{% else %}{{ "Not set"|t }}{% endif %}" />
+                        {% else %}
+                        <input type="text" id="{{ file.id }}-{{ line.number }}" name="line-{{ line.number }}" class="config-input" value="{{ line.field_value }}" placeholder="{% if line.example.is_empty() %}{{ "Not set (default)"|t }}{% else %}{{ "Not set (default), e.g. {}"|tf(line.example) }}{% endif %}" spellcheck="false" autocomplete="off" />
+                        {% endif %}
+                        {% if let Some(on) = line.in_effect %}<span class="config-badge {% if on %}on{% else %}off{% endif %}" title="{{ "In effect now"|t }}">{% if on %}{{ "on"|t }}{% else %}{{ "off"|t }}{% endif %}</span>{% endif %}
+                        {% if line.unused %}<span class="config-badge" title="{{ "Not written yet in this version"|t }}">{{ "not used yet"|t }}</span>{% endif %}
+                    </div>
+                    {% if let Some(value) = line.environment %}
+                    <p class="config-environment">{{ "An environment variable sets it to"|t }} <code>{{ value }}</code>{{ ", which wins over the file."|t }}</p>
+                    {% endif %}
+                    {% if !line.help.is_empty() %}<p class="config-help">{{ line.help }}</p>{% endif %}
+                </div>
+                {% endif %}
+                {% endfor %}
+            </div>
+            <div class="config-save">
+                <label for="{{ file.id }}-password">{{ "Your password"|t }}</label>
+                <input type="password" id="{{ file.id }}-password" name="password" autocomplete="current-password" required />
+                <button type="submit" class="button primary">{{ "Save"|t }} {{ file.name }}</button>
+            </div>
+        </form>
+        {% endif %}
+    </section>
+    {% endfor %}
+</section>
+{% endblock %}

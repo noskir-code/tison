@@ -35,6 +35,8 @@ use crate::{
         user::signed_in_user,
     },
 };
+/// `|t` and `|tf` in the templates, see `i18n`.
+use crate::i18n::filters;
 
 #[derive(Template)]
 #[template(path = "messenger.html")]
@@ -144,6 +146,19 @@ async fn signal(pool: &PgPool, conversation_id: i64) {
     .await;
     if let Err(err) = signalled {
         tracing::warn!("failed to signal conversation {}: {}", conversation_id, err);
+    }
+}
+
+/// Tells the other person here of a new message, for their browsers.
+async fn signal_received(pool: &PgPool, conversation_id: i64, sender_id: i32, message_id: i64) {
+    let signalled = async {
+        let mut people = message::local_people(pool, conversation_id).await?;
+        people.retain(|person| *person != sender_id);
+        notification::signal_new_message(pool, &people, message_id).await
+    }
+    .await;
+    if let Err(err) = signalled {
+        tracing::warn!("failed to signal message {}: {}", message_id, err);
     }
 }
 
@@ -290,7 +305,7 @@ pub async fn conversation_page(
     // Other tabs update their unread count.
     notification::signal_message(&pool, &[me.id], id).await.ok();
     render_template(&ConversationTemplate {
-        title: format!("Messages with {}", conversation.other.display_name()),
+        title: crate::i18n::tf("Messages with {}", conversation.other.display_name()),
         layout: Layout::load(&state, &session).await,
         closed: closed(&state, &me, &conversation),
         conversation,
@@ -320,6 +335,7 @@ pub async fn send(
     match message::add(&pool, id, me.id, &body).await {
         Ok((message_id, sent_at)) => {
             signal(&pool, id).await;
+            signal_received(&pool, id, me.id, message_id).await;
             notifier::message_sent(&state, &pool, &me, &conversation, message_id, &body, &sent_at).await;
             Redirect::to(&format!("/messenger/{id}#message-{message_id}")).into_response()
         }

@@ -32,6 +32,8 @@ use crate::{
         video::{Upload, read_upload},
     },
 };
+/// `|t` and `|tf` in the templates, see `i18n`.
+use crate::i18n::filters;
 
 /// Errors of the event form, sent back as `?error=<code>`.
 #[derive(Clone, Copy, Debug)]
@@ -95,13 +97,13 @@ impl EventError {
             Self::TitleTooLong => format!("A title can be at most {} characters, on one line.", event::TITLE_MAX_CHARS),
             Self::NoStart => "Choose when it starts.".to_string(),
             Self::EndBeforeStart => "It must end after it starts.".to_string(),
-            Self::DescriptionTooLong => format!("The description can be at most {BODY_MAX_CHARS} characters."),
+            Self::DescriptionTooLong => crate::i18n::tf("The description can be at most {} characters.", BODY_MAX_CHARS),
             Self::NoPlace => "Say where it takes place: a place, an address, or a link to join online.".to_string(),
             Self::BadLink => "The online link must start with https:// or http://.".to_string(),
             Self::BadCapacity => "The number of places must be a whole number from 1.".to_string(),
             Self::InvalidCharacters => "The text contains characters that are not allowed.".to_string(),
             Self::BannerFormat => "The picture must be a JPEG, PNG, GIF or WebP.".to_string(),
-            Self::BannerTooLarge => format!("The picture can be at most {} MB.", MAX_IMAGE_BYTES / 1024 / 1024),
+            Self::BannerTooLarge => crate::i18n::tf("The picture can be at most {} MB.", MAX_IMAGE_BYTES / 1024 / 1024),
             Self::BadRepeat => format!("A repeated event needs its last date, after the first one and within {} days.", event::SERIES_MAX_DAYS),
             Self::NotMember => "You can only organize events for communities you belong to.".to_string(),
             Self::Server => "Something went wrong, try again later.".to_string(),
@@ -331,7 +333,7 @@ pub async fn events_page(State(state): State<AppState>, session: Session, Query(
     // The viewer's events are listed once, under "Your events".
     events.retain(|event| !mine.iter().any(|own| own.id == event.id));
     let title = match (&events.first(), series, past) {
-        (Some(first), Some(_), _) => format!("Dates of {}", first.title_text()),
+        (Some(first), Some(_), _) => crate::i18n::tf("Dates of {}", first.title_text()),
         (None, Some(_), _) => "Dates".to_string(),
         (_, None, true) => "Past events".to_string(),
         (_, None, false) => "Events".to_string(),
@@ -799,7 +801,7 @@ pub async fn participants_page(State(state): State<AppState>, session: Session, 
         Vec::new()
     });
     render_template(&ParticipantsTemplate {
-        title: format!("Participants of {}", post.title_text()),
+        title: crate::i18n::tf("Participants of {}", post.title_text()),
         layout: Layout::load(&state, &session).await,
         post,
         participants,

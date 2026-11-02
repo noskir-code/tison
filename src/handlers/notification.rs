@@ -39,6 +39,8 @@ use crate::{
         user::signed_in_user,
     },
 };
+/// `|t` and `|tf` in the templates, see `i18n`.
+use crate::i18n::filters;
 
 /// Proxies close WebSockets that stay silent, usually after a minute.
 const PING_EVERY: Duration = Duration::from_secs(30);
@@ -372,6 +374,8 @@ async fn describe(pool: &PgPool, user_id: i32, change: Change) -> Option<Value> 
         Change::AllRemoved => json!({ "removed": "all" }),
         Change::AllRead => json!({ "read": "all" }),
         Change::Message(conversation_id) => json!({ "message": conversation_id }),
+        // Only for browser notifications, the page got `Message`.
+        Change::NewMessage(_) => return None,
     })
 }
 

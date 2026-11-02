@@ -1,35 +1,35 @@
 {% extends "base.html" %} {% import "macros/upload.html" as upload_ui %} {% block content %}
 <section class="box content profile-edit media-form">
-    <h1>Upload a video</h1>
+    <h1>{{ "Upload a video"|t }}</h1>
     {% if let Some(message) = error %}
-    <p class="error">{{ message }}</p>
+    <p class="error">{{ message|t }}</p>
     {% endif %}
     <form action="/videos/upload" method="post" enctype="multipart/form-data" data-upload-progress>
-        <span class="field-label">Video</span>
-        {% call upload_ui::drop_zone("video-file", "video", "video/*", "Choose a video", "or drop it here") %}{% endcall %}
-        <p class="field-help">Up to {{ max_mb }} MB, in any format: it's converted for every browser in every quality from its own size down to 144p. Its location and camera details are removed.</p>
+        <span class="field-label">{{ "Video"|t }}</span>
+        {% call upload_ui::drop_zone("video-file", "video", "video/*", "Choose a video"|t, "or drop it here"|t) %}{% endcall %}
+        <p class="field-help">{{ "Up to {} MB, in any format: it's converted for every browser in every quality from its own size down to 144p. Its location and camera details are removed."|tf(max_mb) }}</p>
 
-        <label for="video-thumbnail">Thumbnail (optional)</label>
+        <label for="video-thumbnail">{{ "Thumbnail (optional)"|t }}</label>
         <input id="video-thumbnail" type="file" name="thumbnail" accept="image/jpeg,image/png,image/gif,image/webp" data-thumbnail-input />
-        <div class="thumbnail-preview" hidden><img alt="The chosen thumbnail" data-thumbnail-preview /></div>
-        <p class="field-help">A picture shown before the video plays and in lists, cropped to 1280×720 (16:9) from its middle. Without one, a frame of the video is used.</p>
+        <div class="thumbnail-preview" hidden><img alt="{{ "The chosen thumbnail"|t }}" data-thumbnail-preview /></div>
+        <p class="field-help">{{ "A picture shown before the video plays and in lists, cropped to 1280×720 (16:9) from its middle. Without one, a frame of the video is used."|t }}</p>
 
-        <label for="video-title">Title</label>
+        <label for="video-title">{{ "Title"|t }}</label>
         <input id="video-title" type="text" name="title" maxlength="{{ title_max_chars }}" required />
 
-        <label for="video-description">Description</label>
+        <label for="video-description">{{ "Description"|t }}</label>
         <textarea id="video-description" name="description" rows="5" maxlength="{{ description_max_chars }}"></textarea>
 
-        <label for="video-visibility">Who can see it</label>
+        <label for="video-visibility">{{ "Who can see it"|t }}</label>
         <select id="video-visibility" name="visibility">
             {% for visibility in visibilities %}
-            <option value="{{ visibility.as_str() }}">{{ visibility.label() }}</option>
+            <option value="{{ visibility.as_str() }}">{{ visibility.label()|t }}</option>
             {% endfor %}
         </select>
 
-        <label class="checkbox-line"><input type="checkbox" name="sensitive" value="on" /> Sensitive: blur it until clicked</label>
+        <label class="checkbox-line"><input type="checkbox" name="sensitive" value="on" /> {{ "Sensitive: blur it until clicked"|t }}</label>
 
-        {% call upload_ui::upload_button("Upload the video") %}{% endcall %}
+        {% call upload_ui::upload_button("Upload the video"|t) %}{% endcall %}
     </form>
 </section>
 {% endblock %}

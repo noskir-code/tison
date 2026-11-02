@@ -5,7 +5,7 @@
 //!
 //! What is understood: headings (`#`), paragraphs (a line break is kept),
 //! `>` quotes, `-` / `*` / `1.` lists, fenced code (```), `---` lines,
-//! `**bold**`, `*italic*`, `~~struck~~`, `` `code` ``, `[links](https://...)`,
+//! `**bold**`, `*italic*`, `++underlined++`, `~~struck~~`, `` `code` ``, `[links](https://...)`,
 //! `![pictures](https://...)`, `\` to keep a character as it is, and
 //! addresses written as they are.
 
@@ -16,9 +16,25 @@ const LINK_ATTRIBUTES: &str = "rel=\"nofollow noopener noreferrer ugc\" target=\
 /// The article as HTML. `picture` gives the address shown for a picture
 /// (through the media proxy on pages, absolute for other servers).
 pub fn to_html(source: &str, picture: &dyn Fn(&str) -> String) -> String {
+    render(source, &Render { picture, breaks: true })
+}
+
+/// Like `to_html`, for a document wrapped by hand (the pages of `legal/`):
+/// a single line break is a space, a blank line starts a paragraph.
+pub fn document_to_html(source: &str, picture: &dyn Fn(&str) -> String) -> String {
+    render(source, &Render { picture, breaks: false })
+}
+
+struct Render<'a> {
+    picture: &'a dyn Fn(&str) -> String,
+    /// Each line break kept, as articles are written.
+    breaks: bool,
+}
+
+fn render(source: &str, render: &Render) -> String {
     let lines: Vec<&str> = source.lines().collect();
     let mut html = String::with_capacity(source.len() + source.len() / 4);
-    blocks(&lines, picture, &mut html);
+    blocks(&lines, render, &mut html);
     html
 }
 
@@ -52,6 +68,49 @@ fn list_item(line: &str) -> Option<(bool, &str)> {
     None
 }
 
+/// `|---|:---:|`, under the first row of a table: its number of columns.
+fn table_delimiter(line: &str) -> Option<usize> {
+    let line = line.trim();
+    let cells = table_cells(line);
+    let valid = line.starts_with('|')
+        && !cells.is_empty()
+        && cells.iter().all(|cell| {
+            let dashes = cell.trim_matches(':');
+            dashes.len() >= 3 && dashes.chars().all(|letter| letter == '-')
+        });
+    valid.then_some(cells.len())
+}
+
+/// The cells of `| a | b |`, `\|` staying in its cell.
+fn table_cells(line: &str) -> Vec<String> {
+    let inner = line.strip_prefix('|').unwrap_or(line);
+    let inner = inner.strip_suffix('|').filter(|rest| !rest.ends_with('\\')).unwrap_or(inner);
+    let mut cells = vec![String::new()];
+    let mut letters = inner.chars().peekable();
+    while let Some(letter) = letters.next() {
+        match letter {
+            '\\' if letters.peek() == Some(&'|') => {
+                cells.last_mut().unwrap().push('|');
+                letters.next();
+            }
+            '|' => cells.push(String::new()),
+            _ => cells.last_mut().unwrap().push(letter),
+        }
+    }
+    cells.into_iter().map(|cell| cell.trim().to_string()).collect()
+}
+
+/// One row, as many cells as the table has columns.
+fn table_row(line: &str, tag: &str, columns: usize, render: &Render, html: &mut String) {
+    let mut cells = table_cells(line);
+    cells.resize(columns, String::new());
+    html.push_str("<tr>");
+    for cell in cells {
+        html.push_str(&format!("<{tag}>{}</{tag}>", inline(&cell, render)));
+    }
+    html.push_str("</tr>\n");
+}
+
 fn is_fence(line: &str) -> bool {
     let line = line.trim_start();
     line.starts_with("```") || line.starts_with("~~~")
@@ -63,7 +122,7 @@ fn starts_block(line: &str) -> bool {
     heading(trimmed).is_some() || is_rule(trimmed) || trimmed.starts_with('>') || list_item(line).is_some() || is_fence(line)
 }
 
-fn blocks(lines: &[&str], picture: &dyn Fn(&str) -> String, html: &mut String) {
+fn blocks(lines: &[&str], render: &Render, html: &mut String) {
     let mut index = 0;
     while index < lines.len() {
         let line = lines[index];
@@ -81,7 +140,7 @@ fn blocks(lines: &[&str], picture: &dyn Fn(&str) -> String, html: &mut String) {
             index += 1;
             html.push_str(&format!("<pre><code>{}</code></pre>\n", escape(&code.join("\n"))));
         } else if let Some((level, text)) = heading(trimmed) {
-            html.push_str(&format!("<h{level}>{}</h{level}>\n", inline(text, picture)));
+            html.push_str(&format!("<h{level}>{}</h{level}>\n", inline(text, render)));
             index += 1;
         } else if is_rule(trimmed) {
             html.push_str("<hr>\n");
@@ -94,7 +153,7 @@ fn blocks(lines: &[&str], picture: &dyn Fn(&str) -> String, html: &mut String) {
                 index += 1;
             }
             html.push_str("<blockquote>\n");
-            blocks(&quoted, picture, html);
+            blocks(&quoted, render, html);
             html.push_str("</blockquote>\n");
         } else if let Some((numbered, _)) = list_item(line) {
             let tag = if numbered { "ol" } else { "ul" };
@@ -117,9 +176,19 @@ fn blocks(lines: &[&str], picture: &dyn Fn(&str) -> String, html: &mut String) {
                     item.push(lines[index].trim());
                     index += 1;
                 }
-                html.push_str(&format!("<li>{}</li>\n", inline(&item.join("\n"), picture)));
+                html.push_str(&format!("<li>{}</li>\n", inline(&item.join("\n"), render)));
             }
             html.push_str(&format!("</{tag}>\n"));
+        } else if let Some(columns) = lines.get(index + 1).and_then(|next| table_delimiter(next)).filter(|_| trimmed.starts_with('|')) {
+            html.push_str("<table>\n<thead>\n");
+            table_row(trimmed, "th", columns, render, html);
+            html.push_str("</thead>\n<tbody>\n");
+            index += 2;
+            while index < lines.len() && lines[index].trim_start().starts_with('|') {
+                table_row(lines[index].trim(), "td", columns, render, html);
+                index += 1;
+            }
+            html.push_str("</tbody>\n</table>\n");
         } else {
             let mut paragraph = vec![trimmed];
             index += 1;
@@ -127,7 +196,7 @@ fn blocks(lines: &[&str], picture: &dyn Fn(&str) -> String, html: &mut String) {
                 paragraph.push(lines[index].trim());
                 index += 1;
             }
-            html.push_str(&format!("<p>{}</p>\n", inline(&paragraph.join("\n"), picture)));
+            html.push_str(&format!("<p>{}</p>\n", inline(&paragraph.join("\n"), render)));
         }
     }
 }
@@ -177,12 +246,13 @@ fn closing(text: &str, from: usize, marker: &str) -> Option<usize> {
     None
 }
 
-fn inline(text: &str, picture: &dyn Fn(&str) -> String) -> String {
+fn inline(text: &str, render: &Render) -> String {
     let mut html = String::with_capacity(text.len() + 16);
     // Plain text waiting to be written, with its addresses made links.
     let mut plain = String::new();
     let flush = |plain: &mut String, html: &mut String| {
-        html.push_str(&crate::linkify::to_html(plain).replace('\n', "<br>\n"));
+        let linked = crate::linkify::to_html(plain);
+        html.push_str(&if render.breaks { linked.replace('\n', "<br>\n") } else { linked });
         plain.clear();
     };
     let mut index = 0;
@@ -209,7 +279,7 @@ fn inline(text: &str, picture: &dyn Fn(&str) -> String) -> String {
             && (is_web_address(address) || crate::entities::media::is_local(address))
         {
             flush(&mut plain, &mut html);
-            html.push_str(&format!("<img src=\"{}\" alt=\"{}\" loading=\"lazy\">", escape(&picture(address)), escape(alt)));
+            html.push_str(&format!("<img src=\"{}\" alt=\"{}\" loading=\"lazy\">", escape(&(render.picture)(address)), escape(alt)));
             index = end;
             continue;
         }
@@ -219,13 +289,13 @@ fn inline(text: &str, picture: &dyn Fn(&str) -> String) -> String {
         {
             flush(&mut plain, &mut html);
             // No link inside a link: addresses in its words stay text.
-            let inside = inline(words, picture);
+            let inside = inline(words, render);
             let inside = if inside.contains("<a ") { escape(words) } else { inside };
             html.push_str(&format!("<a href=\"{}\" {LINK_ATTRIBUTES}>{inside}</a>", escape(address)));
             index = end;
             continue;
         }
-        let span = [("**", "strong"), ("__", "strong"), ("~~", "del"), ("*", "em"), ("_", "em")]
+        let span = [("**", "strong"), ("__", "strong"), ("~~", "del"), ("++", "u"), ("*", "em"), ("_", "em")]
             .into_iter()
             .find(|(marker, _)| rest.starts_with(marker));
         if let Some((marker, tag)) = span {
@@ -234,7 +304,7 @@ fn inline(text: &str, picture: &dyn Fn(&str) -> String) -> String {
             let opens = !in_word && rest[marker.len()..].chars().next().is_some_and(|next| !next.is_whitespace());
             if opens && let Some(close) = closing(text, index + marker.len(), marker) {
                 flush(&mut plain, &mut html);
-                html.push_str(&format!("<{tag}>{}</{tag}>", inline(&text[index + marker.len()..close], picture)));
+                html.push_str(&format!("<{tag}>{}</{tag}>", inline(&text[index + marker.len()..close], render)));
                 index = close + marker.len();
                 continue;
             }
@@ -265,9 +335,14 @@ pub fn to_text(source: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// The address of the article's first picture (`![...](...)` outside code),
-/// for its preview card.
+/// The address of the article's first picture, for its preview card.
 pub fn first_picture(source: &str) -> Option<String> {
+    pictures(source).into_iter().next()
+}
+
+/// The addresses of the article's pictures (`![...](...)` outside code), in order.
+pub fn pictures(source: &str) -> Vec<String> {
+    let mut found_pictures = Vec::new();
     let mut in_code = false;
     for line in source.lines() {
         if is_fence(line) {
@@ -283,12 +358,12 @@ pub fn first_picture(source: &str) -> Option<String> {
             if let Some((_, address, _)) = bracketed(line, start + 1)
                 && (is_web_address(address) || crate::entities::media::is_local(address))
             {
-                return Some(address.to_string());
+                found_pictures.push(address.to_string());
             }
             search = start + 2;
         }
     }
-    None
+    found_pictures
 }
 
 /// Minutes to read it, at 200 words a minute like WriteFreely.
@@ -334,6 +409,7 @@ pub fn from_html(html: &str) -> String {
             ("strong" | "b", _) => markdown.push_str("**"),
             ("em" | "i", _) => markdown.push('*'),
             ("del" | "s" | "strike", _) => markdown.push_str("~~"),
+            ("u" | "ins", _) => markdown.push_str("++"),
             ("code", _) if !in_pre => markdown.push('`'),
             ("pre", false) => {
                 markdown.push_str("\n\n```\n");
@@ -422,7 +498,7 @@ fn push_text(markdown: &mut String, text: &str, in_pre: bool) {
             continue;
         }
         last_space = false;
-        if matches!(letter, '\\' | '*' | '_' | '`' | '[' | ']' | '~') {
+        if matches!(letter, '\\' | '*' | '_' | '`' | '[' | ']' | '~' | '+') {
             markdown.push('\\');
         }
         markdown.push(letter);
@@ -472,6 +548,25 @@ fn attribute(tag: &str, name: &str) -> Option<String> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn tables() {
+        let source = "| Name | Purpose |\n|---|:---:|\n| `lang` | The **language** |\n| a \\| b |\n\nAfter";
+        assert_eq!(
+            html(source),
+            "<table>\n<thead>\n<tr><th>Name</th><th>Purpose</th></tr>\n</thead>\n<tbody>\n<tr><td><code>lang</code></td><td>The <strong>language</strong></td></tr>\n<tr><td>a | b</td><td></td></tr>\n</tbody>\n</table>\n<p>After</p>\n"
+        );
+        // Without its `|---|` line, it's text.
+        assert_eq!(html("| a | b |\nnext"), "<p>| a | b |<br>\nnext</p>\n");
+    }
+
+    #[test]
+    fn documents_join_wrapped_lines() {
+        let source = "A line\nwrapped.\n\n1. **One**,\n   continued.";
+        let document = document_to_html(source, &|address| address.to_string());
+        assert_eq!(document, "<p>A line\nwrapped.</p>\n<ol>\n<li><strong>One</strong>,\ncontinued.</li>\n</ol>\n");
+        assert!(html(source).contains("A line<br>"));
+    }
+
     fn html(source: &str) -> String {
         to_html(source, &|address| format!("/proxy?{address}"))
     }
@@ -495,6 +590,8 @@ mod tests {
         assert_eq!(html("**bold** *it* _it_ ~~no~~ `a*b`"), "<p><strong>bold</strong> <em>it</em> <em>it</em> <del>no</del> <code>a*b</code></p>\n");
         assert_eq!(html("snake_case_name and 2 * 3 * 4"), "<p>snake_case_name and 2 * 3 * 4</p>\n");
         assert_eq!(html("\\*kept\\*"), "<p>*kept*</p>\n");
+        assert_eq!(html("++under++ C++ and 1 + 2"), "<p><u>under</u> C++ and 1 + 2</p>\n");
+        assert_eq!(from_html("<p><u>a</u> <ins>b</ins> C++</p>"), "++a++ ++b++ C\\+\\+");
     }
 
     #[test]

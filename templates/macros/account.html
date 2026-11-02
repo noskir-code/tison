@@ -5,14 +5,14 @@
 <form action="/fediverse/unfollow" method="post">
     <input type="hidden" name="actor" value="{{ account.author.id }}" />
     <input type="hidden" name="return" value="{{ return_to }}" />
-    <button type="submit" class="button">{% if accepted %}Unfollow{% else %}Cancel request{% endif %}</button>
+    <button type="submit" class="button">{% if accepted %}{{ "Unfollow"|t }}{% else %}{{ "Cancel request"|t }}{% endif %}</button>
 </form>
-{% if !accepted %}<p class="post-username">Waiting for their server to accept.</p>{% endif %}
+{% if !accepted %}<p class="post-username">{{ "Waiting for their server to accept."|t }}</p>{% endif %}
 {% else %}
 <form action="/fediverse/follow" method="post">
     <input type="hidden" name="actor" value="{{ account.author.id }}" />
     <input type="hidden" name="return" value="{{ return_to }}" />
-    <button type="submit" class="button">Follow</button>
+    <button type="submit" class="button">{{ "Follow"|t }}</button>
 </form>
 {% endif %}
 {% endmacro %}

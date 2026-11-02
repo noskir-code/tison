@@ -9,7 +9,7 @@
 // device's share menu (phones), or copies the full link to the clipboard.
 //
 // Long posts: any `<p data-collapsible id="...">` taller than the limit set in
-// style.css (`--collapsed-lines`) is cut with a "Show more" button. Without
+// style.css (`--collapsed-lines`) is cut with a t("Show more") button. Without
 // JavaScript posts stay complete.
 //
 // Notifications: the unread count in the menu (`[data-unread]`) is kept up to
@@ -17,6 +17,16 @@
 // new notifications appear at the top, read and deleted ones update at once,
 // actions are sent without reloading, and older ones load when scrolling
 // down. Without JavaScript the same links and forms reload the page.
+// Browser notifications (`[data-push]`, settings and notifications page) are
+// turned on per browser; assets/sw.js shows them when no page is in front.
+//
+// Articles: the formatting buttons (`[data-markdown-toolbar]`) write their
+// Markdown around the selection or the word under the cursor, and remove it
+// when pressed again; Ctrl+B, I, U and K work in the text too. Under the
+// text (`[data-article-preview]`), the article as it will be shown.
+//
+// Dashboard: each `[data-chart]` is drawn as a line chart, with a tooltip
+// under the pointer or the arrow keys. Videos count a view after 30 seconds.
 //
 // Replies: "Reply" links (`[data-reply-to]`) fill the comment form in place
 // instead of reloading the page with `?reply_to=`.
@@ -44,6 +54,18 @@
 const Tison = (() => {
     // Same language as the interface, not the browser, so pages don't mix languages.
     const language = document.documentElement.lang || "en";
+
+    // The texts of this file in the page's language, given by the page (see
+    // src/i18n.rs): `t("Show more")`, `tf("Uploading {}: {}%", name, 40)`.
+    const I18N = (() => {
+        try {
+            return JSON.parse(document.getElementById("i18n")?.textContent || "{}");
+        } catch {
+            return {};
+        }
+    })();
+    const t = (text) => I18N[text] ?? text;
+    const tf = (text, ...values) => values.reduce((result, value) => result.replace("{}", value), t(text));
 
     // From the largest unit to the smallest: the first one that fits is used.
     // Months and years are averages, precise enough for "x months ago".
@@ -109,7 +131,7 @@ const Tison = (() => {
         const label = button.textContent;
         try {
             await navigator.clipboard.writeText(url);
-            button.textContent = "Link copied";
+            button.textContent = t("Link copied");
         } catch {
             // Clipboard refused (permissions, or not HTTPS): show the link to copy by hand.
             window.prompt("Copy this link:", url);
@@ -128,7 +150,7 @@ const Tison = (() => {
             }
             button.dataset.shareReady = "true";
             if (navigator.share) {
-                button.textContent = "Share link";
+                button.textContent = t("Share link");
             }
             button.hidden = false;
             button.addEventListener("click", () => shareLink(button));
@@ -152,12 +174,12 @@ const Tison = (() => {
             const button = document.createElement("button");
             button.type = "button";
             button.className = "action show-more";
-            button.textContent = "Show more";
+            button.textContent = t("Show more");
             button.setAttribute("aria-expanded", "false");
             button.setAttribute("aria-controls", text.id);
             button.addEventListener("click", () => {
                 const collapsed = text.classList.toggle("collapsed");
-                button.textContent = collapsed ? "Show more" : "Show less";
+                button.textContent = collapsed ? "Show more" : t("Show less");
                 button.setAttribute("aria-expanded", String(!collapsed));
             });
             text.after(button);
@@ -299,6 +321,676 @@ const Tison = (() => {
         open();
     }
 
+    const pushSupported = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+    /** Set when turned off with the button. */
+    const PUSH_OFF = "tison-push-off";
+    /** When "Not now" was chosen. */
+    const PUSH_ASKED = "tison-push-asked";
+    const PUSH_ASK_AGAIN_DAYS = 30;
+
+    /** localStorage, which private windows may refuse: then nothing is remembered. */
+    function remembered(key) {
+        try {
+            return localStorage.getItem(key);
+        } catch {
+            return null;
+        }
+    }
+
+    function remember(key, value) {
+        try {
+            if (value === null) {
+                localStorage.removeItem(key);
+            } else {
+                localStorage.setItem(key, value);
+            }
+        } catch {
+            // Asked again next time.
+        }
+    }
+
+    /** This browser's push subscription, `null` when there is none. */
+    async function pushSubscription() {
+        const registration = await navigator.serviceWorker.getRegistration("/");
+        return registration ? registration.pushManager.getSubscription() : null;
+    }
+
+    function postJson(url, body) {
+        return fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+        });
+    }
+
+    function base64UrlBytes(text) {
+        const binary = atob(text.replace(/-/g, "+").replace(/_/g, "/"));
+        return Uint8Array.from(binary, (letter) => letter.charCodeAt(0));
+    }
+
+    function sameBytes(buffer, bytes) {
+        const other = new Uint8Array(buffer || []);
+        return other.length === bytes.length && other.every((byte, index) => byte === bytes[index]);
+    }
+
+    /** Asks for the permission, subscribes with the server's key, and tells the server. */
+    async function turnPushOn() {
+        if ((await Notification.requestPermission()) !== "granted") {
+            return;
+        }
+        const keyResponse = await fetch("/push/key");
+        if (!keyResponse.ok) {
+            throw new Error(`no server key (${keyResponse.status})`);
+        }
+        const key = base64UrlBytes(await keyResponse.text());
+        await navigator.serviceWorker.register("/sw.js", { scope: "/" });
+        const registration = await navigator.serviceWorker.ready;
+        let subscription = await registration.pushManager.getSubscription();
+        // Made with another key: a browser keeps one subscription per site.
+        if (subscription && !sameBytes(subscription.options.applicationServerKey, key)) {
+            await subscription.unsubscribe();
+            subscription = null;
+        }
+        subscription ||= await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+        const response = await postJson("/push/subscribe", subscription.toJSON());
+        if (!response.ok) {
+            throw new Error(`refused by the server (${response.status})`);
+        }
+        remember(PUSH_OFF, null);
+    }
+
+    /** `byUser`: with the button, so they aren't turned back on by themselves. */
+    async function turnPushOff(byUser) {
+        if (byUser) {
+            remember(PUSH_OFF, "1");
+        }
+        const subscription = await pushSubscription();
+        if (subscription) {
+            await postJson("/push/unsubscribe", { endpoint: subscription.endpoint });
+            await subscription.unsubscribe();
+        }
+    }
+
+    /** "on", "off", "blocked" (refused in the browser) or "unsupported". */
+    async function pushState() {
+        if (!pushSupported) {
+            return "unsupported";
+        }
+        if (Notification.permission === "denied") {
+            return "blocked";
+        }
+        const subscription = await pushSubscription();
+        if (!subscription || Notification.permission !== "granted") {
+            return "off";
+        }
+        // Another account may have turned them on in this browser since.
+        const response = await postJson("/push/status", { endpoint: subscription.endpoint });
+        return response.ok && (await response.json()).on ? "on" : "off";
+    }
+
+    const PUSH_STATUS = {
+        on: t("On in this browser."),
+        off: t("Off in this browser."),
+        busy: "…",
+        blocked: t("Blocked: allow notifications for this site in the browser's settings."),
+        failed: t("This browser couldn't turn them on: its push service may be off."),
+    };
+    // Brave turns off the push service it borrows from Google.
+    if (navigator.brave) {
+        PUSH_STATUS.failed = t("Brave's push service is off: turn on \"Use Google services for push messaging\" in brave://settings/privacy, relaunch Brave, then try again.");
+    }
+
+    /**
+     * Browser notifications (see src/push.rs and assets/sw.js): every
+     * `[data-push]` gets a `[data-push-toggle]` button turning them on or off
+     * in this browser (labels in its `data-on` and `data-off`), and
+     * optionally a `[data-push-status]` text. Hidden when unsupported.
+     *
+     * Asked automatically: when the browser already allows them (after
+     * signing out and in again), they're turned on without a question;
+     * otherwise the `[data-push-ask]` banner asks, at most every 30 days
+     * after "Not now". Never after "Turn off", or when the browser blocks
+     * them. Signing out turns them off in this browser.
+     */
+    function setupPush() {
+        const logout = document.querySelector('form[action="/logout"]');
+        if (!pushSupported || !logout) {
+            return;
+        }
+        logout.addEventListener("submit", async (event) => {
+            event.preventDefault();
+            // At most 3 seconds: signing out comes first.
+            const timeout = new Promise((resolve) => setTimeout(resolve, 3000));
+            await Promise.race([turnPushOff(false).catch(() => {}), timeout]);
+            logout.submit();
+        });
+        const controls = document.querySelectorAll("[data-push]");
+        const refresh = setupPushControls(controls);
+        if (remembered(PUSH_OFF)) {
+            return;
+        }
+        if (Notification.permission === "granted") {
+            pushSubscription().then(async (subscription) => {
+                // Not tried again in this tab after failing: a browser
+                // without push service fails every time.
+                let failed = false;
+                try {
+                    failed = sessionStorage.getItem(PUSH_ASKED) !== null;
+                } catch {
+                    // Tried on each page then.
+                }
+                if (subscription || failed) {
+                    return;
+                }
+                try {
+                    await turnPushOn();
+                } catch (error) {
+                    console.warn("browser notifications:", error);
+                    try {
+                        sessionStorage.setItem(PUSH_ASKED, "1");
+                    } catch {
+                        // Tried on each page then.
+                    }
+                }
+                refresh();
+            });
+        } else if (Notification.permission === "default" && controls.length === 0) {
+            const asked = Number(remembered(PUSH_ASKED)) || 0;
+            if (Date.now() - asked > PUSH_ASK_AGAIN_DAYS * 24 * 3600 * 1000) {
+                askForPush();
+            }
+        }
+    }
+
+    /** Shows the banner asking to turn them on. */
+    function askForPush() {
+        const banner = document.querySelector("[data-push-ask]");
+        if (!banner) {
+            return;
+        }
+        const yes = banner.querySelector("[data-push-ask-yes]");
+        const later = banner.querySelector("[data-push-ask-later]");
+        banner.hidden = false;
+        later.addEventListener("click", () => {
+            remember(PUSH_ASKED, String(Date.now()));
+            banner.hidden = true;
+        });
+        yes.addEventListener("click", async () => {
+            yes.disabled = later.disabled = true;
+            try {
+                await turnPushOn();
+            } catch (error) {
+                console.warn("browser notifications:", error);
+                banner.querySelector("[data-push-ask-text]").textContent = PUSH_STATUS.failed;
+                later.textContent = t("Close");
+                later.disabled = false;
+                return;
+            }
+            // Refused in the browser's question: not asked again for a while.
+            if (Notification.permission !== "granted") {
+                remember(PUSH_ASKED, String(Date.now()));
+            }
+            banner.hidden = true;
+        });
+    }
+
+    /** The on/off buttons, returns what updates them. */
+    function setupPushControls(controls) {
+        if (controls.length === 0) {
+            return () => {};
+        }
+        let current = "unsupported";
+        const render = (state) => {
+            controls.forEach((control) => {
+                control.hidden = state === "unsupported";
+                const button = control.querySelector("[data-push-toggle]");
+                button.textContent = current === "on" ? button.dataset.on : button.dataset.off;
+                button.disabled = state === "busy" || state === "blocked";
+                const test = control.querySelector("[data-push-test]");
+                if (test) {
+                    test.hidden = current !== "on";
+                }
+                const status = control.querySelector("[data-push-status]");
+                if (status) {
+                    status.textContent = PUSH_STATUS[state] || "";
+                } else {
+                    button.title = PUSH_STATUS[state] || "";
+                }
+            });
+        };
+        const refresh = async () => {
+            current = await pushState().catch(() => "off");
+            render(current);
+        };
+        controls.forEach((control) => {
+            // Goes through the push service like a real one, shown even with the page in front.
+            const test = control.querySelector("[data-push-test]");
+            const status = control.querySelector("[data-push-status]");
+            test?.addEventListener("click", async () => {
+                test.disabled = true;
+                try {
+                    const response = await fetch("/push/test", { method: "POST" });
+                    const result = response.ok ? await response.json() : null;
+                    status.textContent = !result
+                        ? "Failed to send the test."
+                        : result.accepted === result.browsers
+                            ? "Test sent: it should appear in a few seconds."
+                            : tf("Sent to {} of {} browsers: the others turned them off (removed now) or their push service refused it (see the server's log).", result.accepted, result.browsers);
+                } catch {
+                    status.textContent = t("Failed to send the test.");
+                }
+                test.disabled = false;
+            });
+            control.querySelector("[data-push-toggle]").addEventListener("click", async () => {
+                const wasOn = current === "on";
+                render("busy");
+                let failed = false;
+                try {
+                    await (wasOn ? turnPushOff(true) : turnPushOn());
+                } catch (error) {
+                    console.warn("browser notifications:", error);
+                    failed = true;
+                }
+                await refresh();
+                if (failed) {
+                    render("failed");
+                }
+            });
+        });
+        refresh();
+        return refresh;
+    }
+
+    // --- Article formatting (see the `markdown_toolbar` macro and src/markdown.rs) ---
+
+    /** Marks put around text: [marker, text written when nothing is selected]. */
+    const INLINE_FORMATS = {
+        bold: ["**", "bold"],
+        italic: ["*", "italic"],
+        underline: ["++", "underlined"],
+        strike: ["~~", "struck"],
+        code: ["`", "code"],
+    };
+
+    /**
+     * Replaces `start`..`end` of the textarea with `text`, then selects
+     * `selectStart`..`selectEnd` (offsets in `text`). Through `insertText`
+     * when possible, so Ctrl+Z undoes it.
+     */
+    function replaceText(area, start, end, text, selectStart, selectEnd) {
+        area.focus();
+        area.setSelectionRange(start, end);
+        let inserted = false;
+        try {
+            inserted = document.execCommand("insertText", false, text);
+        } catch {
+            // Not supported: replaced directly below.
+        }
+        if (!inserted || area.value.slice(start, start + text.length) !== text) {
+            area.setRangeText(text, start, end, "end");
+            area.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+        area.setSelectionRange(start + selectStart, start + selectEnd);
+    }
+
+    /** How many times `letter` repeats going left from `index` (or right with `step` 1). */
+    function run(value, index, letter, step) {
+        let count = 0;
+        let at = step < 0 ? index - 1 : index;
+        while (at >= 0 && at < value.length && value[at] === letter) {
+            count += 1;
+            at += step;
+        }
+        return count;
+    }
+
+    /** Whether runs of `marker`'s letter around text are this marker (`*` vs `**`: 3 is both). */
+    function marks(marker, before, after) {
+        const [length, both] = [marker.length, marker[0] === "*"];
+        const fits = (count) => (both ? count === length || count === 3 : count >= length);
+        return fits(before) && fits(after);
+    }
+
+    /** Bold, italic...: around the selection, the word under the cursor, or new text. Again to remove. */
+    function toggleInline(area, format) {
+        const [marker, placeholder] = INLINE_FORMATS[format];
+        const value = area.value;
+        let [start, end] = [area.selectionStart, area.selectionEnd];
+        // Spaces stay outside the marks: `** bold**` isn't bold.
+        while (start < end && /\s/.test(value[start])) start += 1;
+        while (end > start && /\s/.test(value[end - 1])) end -= 1;
+        if (start === end) {
+            // The word around the cursor.
+            while (start > 0 && /[\p{L}\p{N}_'-]/u.test(value[start - 1])) start -= 1;
+            while (end < value.length && /[\p{L}\p{N}_'-]/u.test(value[end])) end += 1;
+        }
+        const letter = marker[0];
+        // Already marked around the selection: removed.
+        if (start !== end && marks(marker, run(value, start, letter, -1), run(value, end, letter, 1))) {
+            const text = value.slice(start, end);
+            replaceText(area, start - marker.length, end + marker.length, text, 0, text.length);
+            return;
+        }
+        // The marks are inside the selection: removed.
+        const selected = value.slice(start, end);
+        if (selected.length > 2 * marker.length && marks(marker, run(selected, 0, letter, 1), run(selected, selected.length, letter, -1))) {
+            const text = selected.slice(marker.length, -marker.length);
+            replaceText(area, start, end, text, 0, text.length);
+            return;
+        }
+        // Several lines of code: a block.
+        if (format === "code" && selected.includes("\n")) {
+            const [from, to] = lineBounds(value, start, end);
+            const block = value.slice(from, to);
+            const text = `\`\`\`\n${block}\n\`\`\``;
+            replaceText(area, from, to, text, 4, 4 + block.length);
+            return;
+        }
+        const text = selected || placeholder;
+        replaceText(area, start, end, marker + text + marker, marker.length, marker.length + text.length);
+    }
+
+    /** Start and end of the whole lines from `start` to `end`. */
+    function lineBounds(value, start, end) {
+        const from = value.lastIndexOf("\n", start - 1) + 1;
+        let to = value.indexOf("\n", end > start && value[end - 1] === "\n" ? end - 1 : end);
+        if (to === -1) to = value.length;
+        return [from, to];
+    }
+
+    /** Headings, quotes and lists: on each line of the selection. Again to remove. */
+    function toggleLines(area, format) {
+        const value = area.value;
+        const [from, to] = lineBounds(value, area.selectionStart, area.selectionEnd);
+        const lines = value.slice(from, to).split("\n");
+        const strip = {
+            heading: /^#{1,6}\s+/,
+            quote: /^>\s?/,
+            bullets: /^\s*[-*+]\s+/,
+            numbers: /^\s*\d{1,9}[.)]\s+/,
+        };
+        let changed;
+        if (format === "heading") {
+            // ## → ### → none: the title is the article's biggest heading.
+            const level = (lines[0].match(/^(#{1,6})\s/)?.[1] || "").length;
+            const next = level === 0 ? "## " : level === 2 ? "### " : "";
+            changed = lines.map((line) => (line.trim() ? next + line.replace(strip.heading, "") : line));
+        } else {
+            const filled = lines.filter((line) => line.trim());
+            const all = filled.length > 0 && filled.every((line) => strip[format].test(line));
+            let number = 0;
+            changed = lines.map((line) => {
+                if (!line.trim()) {
+                    return line;
+                }
+                // Another kind of line becomes this one.
+                const bare = Object.values(strip).reduce((text, mark) => text.replace(mark, ""), line);
+                if (all) {
+                    return bare;
+                }
+                number += 1;
+                return { quote: "> ", bullets: "- ", numbers: `${number}. ` }[format] + bare;
+            });
+        }
+        const text = changed.join("\n");
+        // A single line keeps its cursor after the mark; several are selected.
+        if (lines.length === 1) {
+            const shift = text.length - lines[0].length;
+            const cursor = Math.max(0, area.selectionEnd - from + shift);
+            replaceText(area, from, to, text, Math.min(cursor, text.length), Math.min(cursor, text.length));
+        } else {
+            replaceText(area, from, to, text, 0, text.length);
+        }
+    }
+
+    /** `[words](https://)`, or `![description](https://)`, the part to write next selected. */
+    function insertLink(area, picture) {
+        const value = area.value;
+        const [start, end] = [area.selectionStart, area.selectionEnd];
+        const selected = value.slice(start, end).trim();
+        const prefix = picture ? "!" : "";
+        if (/^https?:\/\/\S+$/i.test(selected)) {
+            const words = picture ? "description" : "words";
+            replaceText(area, start, end, `${prefix}[${words}](${selected})`, prefix.length + 1, prefix.length + 1 + words.length);
+            return;
+        }
+        const words = selected || (picture ? "description" : "words");
+        const text = `${prefix}[${words}](https://)`;
+        const address = text.length - "https://)".length;
+        replaceText(area, start, end, text, address, address + "https://".length);
+    }
+
+    /** `---` on its own line after the cursor's line. */
+    function insertLine(area) {
+        const value = area.value;
+        let at = value.indexOf("\n", area.selectionEnd);
+        if (at === -1) at = value.length;
+        const before = value.slice(0, at).trim() ? "\n\n" : "";
+        const text = `${before}---\n\n`;
+        replaceText(area, at, at, text, text.length, text.length);
+    }
+
+    function applyFormat(area, format) {
+        if (format in INLINE_FORMATS) {
+            toggleInline(area, format);
+        } else if (format === "link" || format === "picture") {
+            insertLink(area, format === "picture");
+        } else if (format === "line") {
+            insertLine(area);
+        } else {
+            toggleLines(area, format);
+        }
+    }
+
+    const PICTURE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
+    let uploadCount = 0;
+
+    /** Sends one picture to /articles/pictures: its address, or throws the message to show. */
+    function sendPicture(file, onProgress) {
+        return new Promise((resolve, reject) => {
+            const form = new FormData();
+            form.append("image", file);
+            const request = new XMLHttpRequest();
+            request.open("POST", "/articles/pictures");
+            request.responseType = "json";
+            request.upload.addEventListener("progress", (event) => {
+                if (event.lengthComputable) {
+                    onProgress(Math.round((event.loaded / event.total) * 100));
+                }
+            });
+            request.addEventListener("load", () => {
+                const answer = request.response || {};
+                if (request.status === 200 && answer.url) {
+                    resolve(answer.url);
+                } else {
+                    reject(new Error(answer.error || (request.status === 413 ? "This picture is too big: 10 MB at most." : "Failed to upload the picture.")));
+                }
+            });
+            request.addEventListener("error", () => reject(new Error("Lost the connection while uploading the picture.")));
+            request.send(form);
+        });
+    }
+
+    /**
+     * Uploads pictures into the article: each gets a line where the cursor
+     * is, `![Uploading…]()` until its address is known, then
+     * `![description](address)` with "description" selected to write it.
+     */
+    async function uploadPictures(area, files, status) {
+        const pictures = [...files].filter((file) => PICTURE_TYPES.includes(file.type));
+        if (pictures.length === 0) {
+            status.textContent = t("Only JPEG, PNG, GIF and WebP pictures can be added.");
+            return;
+        }
+        const marks = pictures.map((file) => {
+            uploadCount += 1;
+            return `![Uploading ${file.name.replace(/[[\]]/g, "")} (${uploadCount})…]()`;
+        });
+        // On their own lines: a picture is a paragraph.
+        const value = area.value;
+        const at = area.selectionEnd;
+        const before = at > 0 && value[at - 1] !== "\n" ? "\n\n" : "";
+        const after = at < value.length && value[at] !== "\n" ? "\n\n" : "";
+        const text = before + marks.join("\n\n") + after;
+        replaceText(area, area.selectionStart, at, text, text.length, text.length);
+
+        // The first error stays shown, progress goes when all are done.
+        let failed = false;
+        await Promise.all(pictures.map(async (file, index) => {
+            const mark = marks[index];
+            let replacement = "";
+            try {
+                const url = await sendPicture(file, (percent) => {
+                    if (!failed) {
+                        status.textContent = tf("Uploading {}: {}%", file.name, percent);
+                    }
+                });
+                replacement = `![description](${url})`;
+            } catch (error) {
+                if (!failed) {
+                    status.textContent = `${file.name}: ${error.message}`;
+                }
+                failed = true;
+            }
+            // Found again: the text may have changed meanwhile.
+            const start = area.value.indexOf(mark);
+            if (start === -1) {
+                return;
+            }
+            const select = replacement ? [2, 2 + "description".length] : [0, 0];
+            replaceText(area, start, start + mark.length, replacement, ...select);
+        }));
+        if (!failed) {
+            status.textContent = "";
+        }
+    }
+
+    /**
+     * Each `[data-article-preview]`: the article as it will be shown, made
+     * by the server (/articles/preview) a moment after each change.
+     */
+    function setupArticlePreviews() {
+        document.querySelectorAll("[data-article-preview]").forEach((preview) => {
+            const area = document.getElementById(preview.dataset.articlePreview);
+            const title = document.getElementById(preview.dataset.title);
+            if (!area) {
+                return;
+            }
+            const body = preview.querySelector("[data-preview-body]");
+            const empty = preview.querySelector("[data-preview-empty]");
+            const heading = preview.querySelector("[data-preview-title]");
+            preview.hidden = false;
+            let timer = null;
+            let pending = null;
+            let shown = null;
+            const render = async () => {
+                const text = area.value;
+                if (text === shown) {
+                    return;
+                }
+                pending?.abort();
+                if (text.trim() === "") {
+                    body.innerHTML = "";
+                    empty.hidden = false;
+                    shown = text;
+                    return;
+                }
+                pending = new AbortController();
+                try {
+                    // The pages of legal/ have their own, see handlers/moderation.rs.
+                    const response = await fetch(preview.dataset.previewUrl || "/articles/preview", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ body: text }),
+                        signal: pending.signal,
+                    });
+                    if (!response.ok) {
+                        return;
+                    }
+                    // Made by src/markdown.rs, which escapes everything.
+                    body.innerHTML = (await response.json()).html;
+                    shown = text;
+                    empty.hidden = text.trim() !== "";
+                } catch {
+                    // Aborted by a newer change, or offline: the next change retries.
+                }
+            };
+            const showTitle = () => {
+                heading.textContent = title?.value.trim() || "";
+                heading.hidden = heading.textContent === "";
+            };
+            area.addEventListener("input", () => {
+                clearTimeout(timer);
+                timer = setTimeout(render, 300);
+            });
+            title?.addEventListener("input", showTitle);
+            showTitle();
+            render();
+        });
+    }
+
+    /** Shows each `[data-markdown-toolbar]` and connects it to its textarea, with Ctrl+B, I, U and K. */
+    function setupMarkdownToolbars() {
+        document.querySelectorAll("[data-markdown-toolbar]").forEach((toolbar) => {
+            const area = document.getElementById(toolbar.dataset.markdownToolbar);
+            if (!area) {
+                return;
+            }
+            toolbar.hidden = false;
+            // Uploaded pictures: the button, or pasted or dropped in the text.
+            const file = toolbar.querySelector("[data-picture-file]");
+            const status = toolbar.querySelector("[data-picture-status]");
+            if (file) {
+                toolbar.querySelector('[data-format="upload"]').addEventListener("click", () => file.click());
+                file.addEventListener("change", () => {
+                    uploadPictures(area, file.files, status);
+                    file.value = "";
+                });
+                area.addEventListener("paste", (event) => {
+                    const pasted = [...(event.clipboardData?.files || [])];
+                    if (pasted.some((item) => item.type.startsWith("image/"))) {
+                        event.preventDefault();
+                        uploadPictures(area, pasted, status);
+                    }
+                });
+                area.addEventListener("dragover", (event) => {
+                    if (event.dataTransfer?.types.includes("Files")) {
+                        event.preventDefault();
+                    }
+                });
+                area.addEventListener("drop", (event) => {
+                    const dropped = [...(event.dataTransfer?.files || [])];
+                    if (dropped.length > 0) {
+                        event.preventDefault();
+                        uploadPictures(area, dropped, status);
+                    }
+                });
+            }
+            // Keeps the selection in the textarea while clicking.
+            toolbar.addEventListener("mousedown", (event) => {
+                if (event.target.closest("button")) {
+                    event.preventDefault();
+                }
+            });
+            toolbar.addEventListener("click", (event) => {
+                const button = event.target.closest("[data-format]");
+                if (button) {
+                    applyFormat(area, button.dataset.format);
+                }
+            });
+            area.addEventListener("keydown", (event) => {
+                if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) {
+                    return;
+                }
+                const format = { b: "bold", i: "italic", u: "underline", k: "link" }[event.key.toLowerCase()];
+                if (format) {
+                    event.preventDefault();
+                    applyFormat(area, format);
+                }
+            });
+        });
+    }
+
     /**
      * Notifications page: actions sent in the background, applied at once
      * (the server confirms through the WebSocket), and older notifications
@@ -435,7 +1127,7 @@ const Tison = (() => {
         function toggle(open) {
             root.classList.toggle("menu-open", open);
             button.setAttribute("aria-expanded", String(open));
-            button.setAttribute("aria-label", open ? "Close the menu" : "Open the menu");
+            button.setAttribute("aria-label", open ? "Close the menu" : t("Open the menu"));
             if (open) {
                 menu.querySelector("nav a")?.focus();
             }
@@ -584,9 +1276,9 @@ const Tison = (() => {
         function show() {
             const dark = current() === "dark";
             // The button names the theme it switches to.
-            button.querySelector("[data-theme-label]").textContent = dark ? "Light mode" : "Dark mode";
+            button.querySelector("[data-theme-label]").textContent = dark ? t("Light mode") : t("Dark mode");
             button.setAttribute("aria-pressed", String(dark));
-            button.title = dark ? "Switch to the light theme" : "Switch to the dark theme";
+            button.title = dark ? t("Switch to the light theme") : t("Switch to the dark theme");
         }
 
         function apply(theme) {
@@ -684,7 +1376,7 @@ const Tison = (() => {
 
         function show(text, found) {
             list.replaceChildren();
-            for (const [label, items] of [["People", found.users], ["Communities", found.communities]]) {
+            for (const [label, items] of [[t("People"), found.users], [t("Communities"), found.communities]]) {
                 if (!items.length) {
                     continue;
                 }
@@ -702,7 +1394,7 @@ const Tison = (() => {
             all.href = "/search?q=" + encodeURIComponent(text);
             all.className = "all";
             all.setAttribute("role", "option");
-            all.textContent = `All results for “${text}”`;
+            all.textContent = tf("All results for “{}”", text);
             const row = document.createElement("li");
             row.append(all);
             list.append(row);
@@ -802,7 +1494,7 @@ const Tison = (() => {
     /**
      * Forms with `data-confirm="Question?"` ask before deleting something, in
      * a dialog of the site. The confirming button says what the form's button
-     * says ("Delete", "Remove"), or `data-confirm-label`. One listener for the
+     * says ("Delete", t("Remove")), or `data-confirm-label`. One listener for the
      * page: forms added later (live messages) ask too.
      */
     function setupConfirmations() {
@@ -831,7 +1523,7 @@ const Tison = (() => {
             const dialog = confirmDialog();
             dialog.querySelector(".confirm-dialog-text").textContent = form.dataset.confirm;
             dialog.querySelector("[data-confirm-ok]").textContent =
-                form.dataset.confirmLabel || submitter?.textContent.trim() || "Confirm";
+                form.dataset.confirmLabel || submitter?.textContent.trim() || t("Confirm");
             dialog.returnValue = "";
             dialog.addEventListener(
                 "close",
@@ -925,7 +1617,7 @@ const Tison = (() => {
                 previews.replaceChildren();
                 const files = Array.from(input.files);
                 if (files.length > max) {
-                    hint.textContent = `At most ${max} photos: choose again.`;
+                    hint.textContent = tf("At most {} photos: choose again.", max);
                     hint.classList.add("error");
                     input.value = "";
                     files.length = 0;
@@ -943,12 +1635,12 @@ const Tison = (() => {
                     const alt = document.createElement("textarea");
                     alt.name = "alt";
                     alt.maxLength = 1500;
-                    alt.placeholder = "Describe it for people who can't see it (alt text)";
-                    alt.setAttribute("aria-label", `Description of photo ${index + 1}`);
+                    alt.placeholder = t("Describe it for people who can't see it (alt text)");
+                    alt.setAttribute("aria-label", tf("Description of photo {}", index + 1));
                     const remove = document.createElement("button");
                     remove.type = "button";
                     remove.className = "action danger";
-                    remove.textContent = "Remove";
+                    remove.textContent = t("Remove");
                     remove.addEventListener("click", () => {
                         // Alt texts written for the others are kept.
                         const kept = Array.from(previews.querySelectorAll("textarea")).map((field) => field.value);
@@ -1105,7 +1797,7 @@ const Tison = (() => {
         return (choice, playing) => {
             current.textContent = choice === "auto" ? "Auto" : `${playing.lines}p`;
             autoDetail.textContent = choice === "auto" ? ` (${playing.lines}p)` : "";
-            button.setAttribute("aria-label", `Quality: ${choice === "auto" ? `Auto, ${playing.lines}p` : `${playing.lines}p`}`);
+            button.setAttribute("aria-label", tf("Quality: {}", choice === "auto" ? tf("Auto, {}", `${playing.lines}p`) : `${playing.lines}p`));
         };
     }
 
@@ -1374,9 +2066,9 @@ const Tison = (() => {
                 button.disabled = true;
                 button.classList.add("uploading");
                 if (label) {
-                    label.textContent = "Uploading";
+                    label.textContent = t("Uploading");
                 }
-                showing(0, "Starting the upload…");
+                showing(0, t("Starting the upload…"));
                 const started = performance.now();
                 request.upload.addEventListener("progress", (progress) => {
                     if (progress.lengthComputable) {
@@ -1389,15 +2081,15 @@ const Tison = (() => {
                 });
                 request.upload.addEventListener("load", () => {
                     if (label) {
-                        label.textContent = "Saving";
+                        label.textContent = t("Saving");
                     }
-                    showing(null, "Uploaded, saving…");
+                    showing(null, t("Uploaded, saving…"));
                 });
                 request.addEventListener("load", () => {
                     window.location.href = request.responseURL || form.action;
                 });
                 request.addEventListener("error", () => {
-                    showing(0, "The upload failed: check your connection, or the size of the file, and try again.");
+                    showing(0, t("The upload failed: check your connection, or the size of the file, and try again."));
                     button.disabled = false;
                     button.classList.remove("uploading");
                     if (label) {
@@ -1436,12 +2128,12 @@ const Tison = (() => {
                 setRing(ring, 100);
                 box.classList.add(ready ? "ready" : "failed");
                 if (!inList) {
-                    say(ready ? "Ready, opening it…" : "The conversion failed.", "");
+                    say(ready ? "Ready, opening it…" : t("The conversion failed."), "");
                     setTimeout(() => window.location.reload(), 600);
                 } else {
-                    say("", ready ? "Ready to watch" : "The conversion failed");
+                    say("", ready ? "Ready to watch" : t("The conversion failed"));
                     if (open && ready) {
-                        open.textContent = "Watch";
+                        open.textContent = t("Watch");
                         open.href += "?play";
                     }
                 }
@@ -1461,13 +2153,13 @@ const Tison = (() => {
                     if (progress.state === "waiting") {
                         setRing(ring, null);
                         if (progress.own) {
-                            say("Waiting for your other upload to finish converting…", "Waiting for your other upload…");
+                            say("Waiting for your other upload to finish converting…", t("Waiting for your other upload…"));
                         } else {
-                            say("Waiting for a free converter: other uploads are converting…", "Waiting for a free converter…");
+                            say("Waiting for a free converter: other uploads are converting…", t("Waiting for a free converter…"));
                         }
                     } else if (progress.state === "converting") {
                         setRing(ring, progress.percent);
-                        say("Converting with ffmpeg in every quality…", `Converting… ${progress.percent}%`);
+                        say("Converting with ffmpeg in every quality…", tf("Converting… {}%", progress.percent));
                     } else {
                         finish(progress.state === "ready");
                     }
@@ -1480,7 +2172,7 @@ const Tison = (() => {
                     // text keep what they showed meanwhile.
                     failures += 1;
                     if (failures > 12) {
-                        say("The server can't be reached for now. Reload the page later to check the conversion.", "Server unreachable");
+                        say("The server can't be reached for now. Reload the page later to check the conversion.", t("Server unreachable"));
                         return;
                     }
                     setTimeout(connect, Math.min(30, 2 ** Math.min(failures, 5)) * 1000);
@@ -1554,7 +2246,7 @@ const Tison = (() => {
             form.querySelector("[data-timezone]").value = viewerZone;
             const help = form.querySelector("[data-timezone-help]");
             if (help) {
-                help.textContent = `Times are in your time zone (${viewerZone.replace(/_/g, " ")}); everyone sees them in theirs.`;
+                help.textContent = tf("Times are in your time zone ({}); everyone sees them in theirs.", viewerZone.replace(/_/g, " "));
             }
             form.addEventListener("submit", () => {
                 for (const offset of form.querySelectorAll("[data-offset-for]")) {
@@ -1572,6 +2264,244 @@ const Tison = (() => {
     // the time, sound and level, quality (`setupVideoQualities`) and full
     // screen; a big play button in the middle while paused. The controls
     // hide while playing and come back when the mouse moves.
+    // --- Charts of the creator dashboard (see templates/macros/dashboard.html) ---
+
+    const SVG_NS = "http://www.w3.org/2000/svg";
+
+    function svgNode(name, attributes) {
+        const node = document.createElementNS(SVG_NS, name);
+        for (const [key, value] of Object.entries(attributes)) {
+            node.setAttribute(key, value);
+        }
+        return node;
+    }
+
+    /** A round top for the y axis and its 3 or 4 steps; counts are whole numbers. */
+    function niceScale(max) {
+        if (max <= 0) {
+            return { top: 1, ticks: [0, 1] };
+        }
+        const rough = max / 3;
+        const power = 10 ** Math.floor(Math.log10(rough));
+        const step = Math.max(1, [1, 2, 2.5, 5, 10].map((factor) => factor * power).find((candidate) => candidate >= rough));
+        const top = step * Math.ceil(max / step);
+        const ticks = [];
+        for (let tick = 0; tick <= top + step / 2; tick += step) {
+            ticks.push(Math.round(tick * 100) / 100);
+        }
+        return { top, ticks };
+    }
+
+    /** 980, 1.2K, 12K, 4.2M. */
+    function compactNumber(value) {
+        const short = (number, unit) => `${number.toFixed(number < 10 ? 1 : 0).replace(/\.0$/, "")}${unit}`;
+        if (value >= 1e6) return short(value / 1e6, "M");
+        if (value >= 1e3) return short(value / 1e3, "K");
+        return String(value);
+    }
+
+    /** "Nov 1", for the UTC day `2026-11-01`. */
+    function chartDay(iso, withYear) {
+        const options = { month: "short", day: "numeric", timeZone: "UTC" };
+        if (withYear) options.year = "numeric";
+        return new Date(`${iso}T00:00:00Z`).toLocaleDateString(language, options);
+    }
+
+    /**
+     * One line chart (`[data-chart]`): drawn at the width it has, again when
+     * it changes. Hover, touch or the arrow keys show each day's value in a
+     * tooltip under a crosshair; the table below the chart has them all.
+     */
+    function setupChart(figure) {
+        const data = JSON.parse(figure.dataset.chart);
+        const points = data.points;
+        const plot = figure.querySelector("[data-chart-plot]");
+        if (!plot || points.length === 0) {
+            return;
+        }
+        const tooltip = document.createElement("div");
+        tooltip.className = "chart-tooltip";
+        tooltip.hidden = true;
+        const tooltipValue = document.createElement("strong");
+        const tooltipDay = document.createElement("span");
+        tooltip.append(tooltipValue, tooltipDay);
+        let geometry = null;
+        let shownWidth = 0;
+        let current = null;
+
+        const draw = () => {
+            const width = Math.round(plot.clientWidth);
+            if (!width || width === shownWidth) {
+                return;
+            }
+            shownWidth = width;
+            const height = 180;
+            const margin = { top: 14, right: 14, bottom: 26, left: 40 };
+            const innerWidth = width - margin.left - margin.right;
+            const innerHeight = height - margin.top - margin.bottom;
+            const { top, ticks } = niceScale(Math.max(...points.map((point) => point[1])));
+            const x = (index) => margin.left + (points.length === 1 ? innerWidth / 2 : (index * innerWidth) / (points.length - 1));
+            const y = (value) => margin.top + innerHeight - (value / top) * innerHeight;
+            const base = y(0);
+
+            const svg = svgNode("svg", { width, height, viewBox: `0 0 ${width} ${height}`, "aria-hidden": "true", focusable: "false" });
+            for (const tick of ticks) {
+                svg.append(svgNode("line", { x1: margin.left, x2: width - margin.right, y1: y(tick), y2: y(tick), class: "chart-gridline" }));
+                const label = svgNode("text", { x: margin.left - 8, y: y(tick), class: "chart-axis", "text-anchor": "end", "dominant-baseline": "middle" });
+                label.textContent = compactNumber(tick);
+                svg.append(label);
+            }
+            const middle = Math.floor((points.length - 1) / 2);
+            const dayIndexes = [...new Set([0, middle, points.length - 1])];
+            dayIndexes.forEach((index, position) => {
+                const anchor = dayIndexes.length === 1 ? "middle" : position === 0 ? "start" : position === dayIndexes.length - 1 ? "end" : "middle";
+                const label = svgNode("text", { x: x(index), y: height - 6, class: "chart-axis", "text-anchor": anchor });
+                // By month (years): the month and year tell where the line is.
+                label.textContent = data.per !== "month" ? chartDay(points[index][0], false)
+                    : new Date(`${points[index][0]}T00:00:00Z`).toLocaleDateString(language, { month: "short", year: "numeric", timeZone: "UTC" });
+                svg.append(label);
+            });
+            const path = points.map((point, index) => `${index ? "L" : "M"}${x(index).toFixed(1)},${y(point[1]).toFixed(1)}`).join("");
+            svg.append(svgNode("path", { d: `${path}L${x(points.length - 1).toFixed(1)},${base}L${x(0).toFixed(1)},${base}Z`, class: "chart-area" }));
+            svg.append(svgNode("path", { d: path, class: "chart-line" }));
+            // The end: its value labelled, the one number the line leads to.
+            const last = points.length - 1;
+            svg.append(svgNode("circle", { cx: x(last), cy: y(points[last][1]), r: 4, class: "chart-dot" }));
+            const endY = y(points[last][1]);
+            const endLabel = svgNode("text", {
+                x: x(last) - 8,
+                y: endY - 10 < margin.top ? endY + 18 : endY - 10,
+                class: "chart-end-label",
+                "text-anchor": "end",
+            });
+            endLabel.textContent = compactNumber(points[last][1]);
+            svg.append(endLabel);
+            const crosshair = svgNode("line", { y1: margin.top, y2: base, class: "chart-crosshair", visibility: "hidden" });
+            const hoverDot = svgNode("circle", { r: 4, class: "chart-dot", visibility: "hidden" });
+            svg.append(crosshair, hoverDot);
+            plot.replaceChildren(svg, tooltip);
+            geometry = { x, y, crosshair, hoverDot, margin, innerWidth, width };
+            if (current !== null) {
+                show(current);
+            }
+        };
+
+        const show = (index) => {
+            if (!geometry) return;
+            current = Math.max(0, Math.min(points.length - 1, index));
+            const [day, value] = points[current];
+            const cx = geometry.x(current);
+            geometry.crosshair.setAttribute("x1", cx);
+            geometry.crosshair.setAttribute("x2", cx);
+            geometry.crosshair.setAttribute("visibility", "visible");
+            geometry.hoverDot.setAttribute("cx", cx);
+            geometry.hoverDot.setAttribute("cy", geometry.y(value));
+            geometry.hoverDot.setAttribute("visibility", "visible");
+            tooltipValue.textContent = `${value.toLocaleString()} ${data.unit}`;
+            tooltipDay.textContent = data.per === "week"
+                ? tf("Week of {}", chartDay(day, true))
+                : data.per === "month"
+                    ? new Date(`${day}T00:00:00Z`).toLocaleDateString(language, { month: "long", year: "numeric", timeZone: "UTC" })
+                    : chartDay(day, true);
+            tooltip.hidden = false;
+            const left = Math.max(0, Math.min(geometry.width - tooltip.offsetWidth, cx - tooltip.offsetWidth / 2));
+            tooltip.style.left = `${left}px`;
+        };
+        const hide = () => {
+            current = null;
+            tooltip.hidden = true;
+            geometry?.crosshair.setAttribute("visibility", "hidden");
+            geometry?.hoverDot.setAttribute("visibility", "hidden");
+        };
+        // The nearest day to the pointer: readers aim at a date, not a 2px line.
+        const nearest = (event) => {
+            const box = plot.getBoundingClientRect();
+            const offset = event.clientX - box.left - geometry.margin.left;
+            const ratio = points.length === 1 ? 0 : offset / geometry.innerWidth;
+            return Math.round(ratio * (points.length - 1));
+        };
+        plot.addEventListener("pointermove", (event) => geometry && show(nearest(event)));
+        plot.addEventListener("pointerdown", (event) => geometry && show(nearest(event)));
+        plot.addEventListener("pointerleave", hide);
+        plot.addEventListener("focus", () => show(current ?? points.length - 1));
+        plot.addEventListener("blur", hide);
+        plot.addEventListener("keydown", (event) => {
+            const moves = { ArrowLeft: -1, ArrowRight: 1, Home: -Infinity, End: Infinity };
+            if (event.key in moves) {
+                event.preventDefault();
+                const step = moves[event.key];
+                show(Number.isFinite(step) ? (current ?? points.length - 1) + step : step < 0 ? 0 : points.length - 1);
+            } else if (event.key === "Escape") {
+                hide();
+            }
+        });
+        new ResizeObserver(draw).observe(plot);
+        draw();
+    }
+
+    /** The language picker of the menu: chosen at once, its button only without JavaScript. */
+    function setupLanguagePicker() {
+        const form = document.querySelector("[data-language-picker]");
+        if (!form) {
+            return;
+        }
+        form.querySelector("[data-language-submit]").hidden = true;
+        form.querySelector("select").addEventListener("change", () => form.submit());
+    }
+
+    function setupCharts() {
+        document.querySelectorAll("[data-chart]").forEach(setupChart);
+    }
+
+    /**
+     * A view of a video (`data-view` on its frame), like PeerTube's: told to
+     * the server once it played 30 seconds, or half of a shorter one.
+     * Seeking doesn't count, only time played. Visitors send a random id kept
+     * by their browser so a reload isn't a new view (see src/entities/views.rs).
+     */
+    function countView(frame, video) {
+        const address = frame.dataset.view;
+        if (!address) {
+            return;
+        }
+        let played = 0;
+        let last = null;
+        const tick = () => {
+            const now = video.currentTime;
+            // Small steps only: a jump is a seek, not watching.
+            if (last !== null && !video.paused && now > last && now - last < 1.5) {
+                played += now - last;
+            }
+            last = now;
+            const needed = Number.isFinite(video.duration) && video.duration > 0 ? Math.min(30, video.duration / 2) : 30;
+            if (played >= needed) {
+                video.removeEventListener("timeupdate", tick);
+                // `randomUUID` only exists on https (and localhost) pages.
+                const fresh = () => (crypto.randomUUID
+                    ? crypto.randomUUID()
+                    : Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, "0")).join(""));
+                let viewer = null;
+                try {
+                    viewer = localStorage.getItem("tison-viewer");
+                    if (!viewer) {
+                        viewer = fresh();
+                        localStorage.setItem("tison-viewer", viewer);
+                    }
+                } catch {
+                    viewer = fresh();
+                }
+                fetch(address, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ viewer }),
+                    keepalive: true,
+                }).catch(() => {});
+            }
+        };
+        video.addEventListener("timeupdate", tick);
+        video.addEventListener("seeking", () => (last = null));
+    }
+
     function setupPlayers() {
         const clock = (seconds) => {
             const whole = Math.max(0, Math.floor(seconds || 0));
@@ -1595,6 +2525,7 @@ const Tison = (() => {
                 continue;
             }
             frame.dataset.playerReady = "true";
+            countView(frame, video);
             const get = (name) => frame.querySelector(`[data-player-${name}]`);
             const play = get("play");
             const bigPlay = get("big-play");
@@ -1621,7 +2552,7 @@ const Tison = (() => {
             const showState = () => {
                 const paused = video.paused || video.ended;
                 frame.classList.toggle("playing", !paused);
-                play.setAttribute("aria-label", paused ? "Play" : "Pause");
+                play.setAttribute("aria-label", paused ? "Play" : t("Pause"));
                 bigPlay.hidden = !paused;
             };
             play.addEventListener("click", toggle);
@@ -1674,7 +2605,7 @@ const Tison = (() => {
                 const silent = video.muted || video.volume === 0;
                 frame.classList.toggle("muted", silent);
                 frame.classList.toggle("quiet", !silent && video.volume < 0.5);
-                mute.setAttribute("aria-label", silent ? "Sound on" : "Mute");
+                mute.setAttribute("aria-label", silent ? "Sound on" : t("Mute"));
                 level.value = silent ? 0 : video.volume;
                 level.style.setProperty("--level", `${(silent ? 0 : video.volume) * 100}%`);
             };
@@ -1721,7 +2652,7 @@ const Tison = (() => {
                 document.addEventListener("fullscreenchange", () => {
                     const full = document.fullscreenElement === frame;
                     frame.classList.toggle("full", full);
-                    fullscreen.setAttribute("aria-label", full ? "Leave full screen" : "Full screen");
+                    fullscreen.setAttribute("aria-label", full ? "Leave full screen" : t("Full screen"));
                 });
             } else if (video.webkitEnterFullscreen) {
                 // iPhone: only the video itself goes full screen.
@@ -1872,9 +2803,9 @@ const Tison = (() => {
                 for (const item of choices) {
                     item.setAttribute("aria-checked", String(item === (file || choices[0])));
                 }
-                current.textContent = file ? file.firstChild.textContent : "Auto";
+                current.textContent = file ? file.firstChild.textContent : t("Auto");
                 autoDetail.textContent = file ? "" : ` (${playing.firstChild.textContent})`;
-                button.setAttribute("aria-label", `Quality: ${file ? file.firstChild.textContent : `Auto, ${playing.firstChild.textContent}`}`);
+                button.setAttribute("aria-label", tf("Quality: {}", file ? file.firstChild.textContent : tf("Auto, {}", playing.firstChild.textContent)));
             };
 
             const open = (shown) => {
@@ -1960,7 +2891,7 @@ const Tison = (() => {
     }
 
     // "Copy" next to a value to paste elsewhere (the stream key, the RSS
-    // feed), and "Show" for a hidden one.
+    // feed), and t("Show") for a hidden one.
     function setupCopyButtons() {
         for (const button of document.querySelectorAll("button[data-copy]")) {
             button.hidden = false;
@@ -1968,7 +2899,7 @@ const Tison = (() => {
                 const label = button.textContent;
                 try {
                     await navigator.clipboard.writeText(button.dataset.copy);
-                    button.textContent = "Copied";
+                    button.textContent = t("Copied");
                     setTimeout(() => (button.textContent = label), 2000);
                 } catch {
                     const field = button.parentElement.querySelector("input");
@@ -1988,7 +2919,7 @@ const Tison = (() => {
             button.addEventListener("click", () => {
                 const shown = field.type === "text";
                 field.type = shown ? "password" : "text";
-                button.textContent = shown ? "Show" : "Hide";
+                button.textContent = shown ? "Show" : t("Hide");
             });
         }
     }
@@ -2016,6 +2947,11 @@ const Tison = (() => {
         setupCopyButtons();
         setupReplies();
         setupNotificationsPage();
+        setupMarkdownToolbars();
+        setupArticlePreviews();
+        setupCharts();
+        setupLanguagePicker();
+        setupPush();
         connectNotifications();
         // Often enough for "x seconds ago" to move, cheap even with many posts.
         setInterval(refreshTimes, 10 * 1000);

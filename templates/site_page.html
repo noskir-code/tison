@@ -1,0 +1,19 @@
+{% extends "base.html" %} {% block content %}
+{# See entities/site_page.rs: a file of legal/, written by the creator. #}
+<article class="box content article site-page">
+    {% if !page.has_own_title() %}
+    <h1 class="article-title">{{ title|t }}</h1>
+    {% endif %}
+    {% if page.is_written() %}
+    <div class="article-body">{{ html|safe }}</div>
+    {% if let Some(date) = page.updated_label() %}
+    <p class="post-username site-page-updated">{{ "Last updated: {}"|tf(date) }}</p>
+    {% endif %}
+    {% else %}
+    <p class="empty">{{ "The creator of this site hasn't written this page yet."|t }}</p>
+    {% endif %}
+    {% if can_edit %}
+    <p class="site-page-edit"><a href="/moderation/configuration/pages/{{ page.kind.slug() }}" class="button">{{ "Edit this page"|t }}</a></p>
+    {% endif %}
+</article>
+{% endblock %}

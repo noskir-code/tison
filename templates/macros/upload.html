@@ -22,7 +22,7 @@
         <path d="M12 16V4M7 9l5-5 5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
         <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
     </svg>
-    <strong data-upload-drop-name>{{ label }}</strong>
+    <strong data-upload-drop-name>{{ label|t }}</strong>
     <span class="field-help" data-upload-drop-help>{{ help }}</span>
 </label>
 {% endmacro %}
@@ -33,7 +33,7 @@
 <div class="upload-send">
     <button type="submit" class="button upload-button" data-upload-button>
         {% call ring() %}{% endcall %}
-        <span data-upload-label>{{ label }}</span>
+        <span data-upload-label>{{ label|t }}</span>
     </button>
     <p class="field-help" data-upload-status aria-live="polite" hidden></p>
 </div>

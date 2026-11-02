@@ -8,9 +8,11 @@ use tower_sessions::Session;
 
 use crate::{
     AppState,
-    entities::{notification, user::User},
+    entities::{notification, site_page, user::User},
     handlers::session::signed_in,
 };
+/// `|t` and `|tf` in the templates, see `i18n`.
+use crate::i18n::filters;
 
 /// Data needed by `base.html` on every page.
 #[derive(Default)]
@@ -25,6 +27,9 @@ pub struct Layout {
     pub open_reports: i64,
     /// Kept in the search bar of every page, set by the search page.
     pub search: String,
+    /// The viewer's email isn't verified yet, and a link can be sent: a
+    /// banner asks to, see `handlers::verify_email`.
+    pub email_unverified: bool,
 }
 
 impl Layout {
@@ -60,12 +65,14 @@ impl Layout {
             }),
             None => 0,
         };
+        let email_unverified = state.mailer.is_some() && viewer.as_ref().is_some_and(|viewer| !viewer.email_verified);
         Self {
             viewer,
             unread_notifications,
             unread_messages,
             open_reports,
             search: String::new(),
+            email_unverified,
         }
     }
 
@@ -144,4 +151,56 @@ pub fn local_path(raw: Option<&String>, fallback: &str) -> String {
 pub async fn not_found(State(state): State<AppState>, session: Session) -> Response {
     let layout = Layout::load(&state, &session).await;
     error_page(layout, StatusCode::NOT_FOUND, "This page does not exist.")
+}
+
+#[derive(Template)]
+#[template(path = "site_page.html")]
+struct SitePageTemplate {
+    title: String,
+    layout: Layout,
+    page: site_page::SitePage,
+    /// The page's file as HTML, see `SitePage::html`.
+    html: String,
+    can_edit: bool,
+}
+
+/// Terms of Use, Privacy Policy, Cookies or Server rules: a file of `legal/`
+/// (see `entities::site_page`), written by the creator.
+pub async fn site_page(State(state): State<AppState>, session: Session, uri: axum::http::Uri) -> Response {
+    let layout = Layout::load(&state, &session).await;
+    let Some(kind) = site_page::Kind::parse(uri.path().trim_start_matches('/')) else {
+        return error_page(layout, StatusCode::NOT_FOUND, "This page doesn't exist.");
+    };
+    let page = site_page::read(kind);
+    render_template(&SitePageTemplate {
+        title: kind.title().to_string(),
+        html: page.html(&state.instance_name, &state.public_base_url),
+        can_edit: layout.viewer.as_ref().is_some_and(User::is_admin),
+        layout,
+        page,
+    })
+}
+
+/// The language picker of the menu: `lang` kept a year in a cookie, then
+/// back to the page it was chosen on (from `Referer`, this site only).
+pub async fn set_language(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    axum::Form(form): axum::Form<std::collections::HashMap<String, String>>,
+) -> Response {
+    let back = headers
+        .get(axum::http::header::REFERER)
+        .and_then(|referer| referer.to_str().ok())
+        .and_then(|referer| referer.strip_prefix(state.public_base_url.trim_end_matches('/')).or(Some(referer)))
+        .map(str::to_string);
+    let back = local_path(back.as_ref(), "/");
+    let mut response = axum::response::Redirect::to(&back).into_response();
+    if let Some(lang) = form.get("lang").and_then(|lang| crate::i18n::Lang::parse(lang)) {
+        let secure = if state.secure_cookies { "; Secure" } else { "" };
+        let cookie = format!("lang={}; Max-Age=31536000; Path=/; SameSite=Lax{secure}", lang.code());
+        if let Ok(value) = axum::http::HeaderValue::from_str(&cookie) {
+            response.headers_mut().append(axum::http::header::SET_COOKIE, value);
+        }
+    }
+    response
 }

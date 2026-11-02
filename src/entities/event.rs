@@ -318,16 +318,16 @@ impl EventDetails {
 
     /// Shown without JavaScript, which writes it in the viewer's time.
     pub fn starts_label(&self) -> String {
-        self.starts_at.format("%a %b %-d, %Y · %H:%M UTC").to_string()
+        crate::i18n::weekday_date_time(self.starts_at)
     }
 
     pub fn ends_label(&self) -> Option<String> {
-        self.ends_at.map(|end| end.format("%a %b %-d, %Y · %H:%M UTC").to_string())
+        self.ends_at.map(crate::i18n::weekday_date_time)
     }
 
     /// `NOV`, `7`: the date block of cards, in UTC (system.js redoes it).
     pub fn month_label(&self) -> String {
-        self.starts_at.format("%b").to_string().to_uppercase()
+        crate::i18n::month_short_upper(self.starts_at.date_naive())
     }
 
     pub fn day_label(&self) -> String {
@@ -371,7 +371,7 @@ impl EventDetails {
     pub fn repeat_label(&self) -> Option<String> {
         let (_, frequency, until) = self.series.as_ref()?;
         let frequency = Frequency::parse(frequency)?;
-        Some(format!("{} until {}", frequency.label(), until.format("%b %-d, %Y")))
+        Some(crate::i18n::tf2("{} until {}", crate::i18n::t(frequency.label()), crate::i18n::date(until.date_naive())))
     }
 }
 

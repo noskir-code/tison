@@ -1,7 +1,7 @@
 {% extends "base.html" %} {% block content %}
 <section class="box content">
-    <h1>{{ title }}</h1>
-    <p>{{ message }}</p>
-    <a href="/" class="button">Back to home</a>
+    <h1>{{ title|t }}</h1>
+    <p>{{ message|t }}</p>
+    <a href="/" class="button">{{ "Back to home"|t }}</a>
 </section>
 {% endblock %}
