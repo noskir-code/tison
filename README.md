@@ -1,4 +1,4 @@
-# Tison
+https://github.com/noskir-code/tison/blob/242927a671d76ecf84e0ca07daef50fd2d206b63/public/logo.png # Tison
 Multi-typed Fediverse protocol written in Rust, created to make any kind of services or combine them for only one account usage.
 
 
