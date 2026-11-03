@@ -78,4 +78,4 @@ https://instavox.social/
 
  ## Legal pages
  Modify the files in legal to your local laws.
- The model given is not final and/or usable and is for an example only and mostly based on laws of the province of Québec, Canada.
+ The model given is not final and/nor usable and is for an example only and mostly based on laws of the province of Québec, Canada.
