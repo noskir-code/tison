@@ -21,7 +21,12 @@
         </div>
         {% else %}
         <label for="edit-body" class="visually-hidden">{{ "Text"|t }}</label>
+        {% if let Some(max) = post_max_chars %}
+        <textarea id="edit-body" name="body" maxlength="{{ body_max_chars }}" rows="8"{% if photos.is_empty() %} required{% endif %} data-mastodon-counter="{{ max }}" aria-describedby="edit-body-count">{{ body }}</textarea>
+        <p class="char-counter" id="edit-body-count" data-counter-for="edit-body" aria-live="polite">{{ max }}</p>
+        {% else %}
         <textarea id="edit-body" name="body" maxlength="{{ body_max_chars }}" rows="8" required>{{ body }}</textarea>
+        {% endif %}
         {% endif %}
         {% if !photos.is_empty() %}
         {# Each one cropped again, alone (see handlers::post::crop_photo). #}
@@ -45,6 +50,9 @@
             <option value="{{ id }}"{% if Some(*id) == *current %} selected{% endif %}>{{ name|t }}</option>
             {% endfor %}
         </select>
+        {% endif %}
+        {% if let Some(labels) = labels %}
+        {% call post_ui::label_fields("edit", labels.content_warning, labels.ai_generated, labels.sponsored) %}{% endcall %}
         {% endif %}
         <div class="flex center space-between">
             <a href="{{ back }}" class="action">{{ "Cancel"|t }}</a>

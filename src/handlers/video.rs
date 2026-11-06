@@ -135,6 +135,14 @@ impl Upload {
         self.fields.get(name).map(String::as_str).unwrap_or_default()
     }
 
+    /// The content warning and labels, see `handlers::post::save_labels`.
+    pub fn label_fields(&self) -> HashMap<String, String> {
+        ["content_warning", "ai_generated", "sponsored"]
+            .into_iter()
+            .filter_map(|name| self.fields.get(name).map(|value| (name.to_string(), value.clone())))
+            .collect()
+    }
+
     pub fn file(&self, name: &str) -> Option<&PathBuf> {
         self.files.get(name)
     }
@@ -271,7 +279,7 @@ struct VideoUploadTemplate {
     title: String,
     layout: Layout,
     error: Option<String>,
-    visibilities: [Visibility; 2],
+    visibilities: [Visibility; 3],
     max_mb: usize,
     title_max_chars: usize,
     description_max_chars: usize,
@@ -307,6 +315,11 @@ pub async fn upload(State(state): State<AppState>, session: Session, mut multipa
         Ok(upload) => upload,
         Err(error) => return Redirect::to(&format!("/videos/upload?error={}", error.code())).into_response(),
     };
+    // Only what others see counts for a bot's limit (Server rules, 7).
+    if upload.field("visibility") != Visibility::Private.as_str() && crate::handlers::post::bot_over_limit(&pool, &me).await {
+        upload.discard().await;
+        return crate::handlers::post::bot_limit_page(Layout::load(&state, &session).await);
+    }
     let checked = (|| {
         let source = upload.file("video").ok_or(MediaError::NoFile)?;
         let title = validate_title(upload.field("title"), video::TITLE_MAX_CHARS)?;
@@ -351,6 +364,7 @@ pub async fn upload(State(state): State<AppState>, session: Session, mut multipa
     };
     match post::create_media(&pool, me.id, &media).await {
         Ok(post_id) => {
+            crate::handlers::post::save_labels(&pool, post_id, &upload.label_fields()).await;
             tracing::info!("@{} uploaded video {}", me.username, post_id);
             jobs::enqueue(state.clone(), post_id);
             Redirect::to(&format!("/posts/{post_id}")).into_response()

@@ -56,7 +56,7 @@ previews, object storage, email provider) before publishing.
 
 **Effective date:** {{EFFECTIVE_DATE}}
 **Version:** {{VERSION}} — [changelog]({{CHANGELOG_URL}})
-**Version française :** [Politique de confidentialité]({{FRENCH_PRIVACY_URL}})
+**Version française :** [Politique de confidentialité]({{PRIVACY_URL}}?lang=fr) · **Versión en español:** [Política de privacidad]({{PRIVACY_URL}}?lang=es)
 
 > **Plain-language summary (not a substitute for the full policy):**
 > We collect only what we need to run a Fediverse server. We do not sell your
@@ -141,7 +141,8 @@ Direct messages are **not end-to-end encrypted**. They are stored on this
 server and on the recipients' servers. Our administrators can technically
 access them. We access them only when necessary to investigate a report you
 or the recipient filed, to comply with a legal obligation, or to protect the
-security of the service. Do not use them to share sensitive information.
+security of the service. A reported message is shown to the moderators with
+the report. Do not use them to share sensitive information.
 
 ### 3.5. Information about people on other servers
 
@@ -198,8 +199,14 @@ you turn them on** in your settings:
 
 - Allowing search engines to index your profile;
 - Including your account and posts in discovery features (suggestions,
-  trending, public full-text search);
+  trending);
 - {{OTHER_OPTIONAL_FEATURES}}.
+
+**Post search (on by default).** Your public posts can be found by the
+search of this Instance and of other servers that respect the `indexable`
+setting (like Mastodon). You can turn this off at any time in your settings;
+your posts then only show in search results to you and to people who
+interacted with them.
 
 [OPTIONAL] **Translation.** If you use the "translate" button, the text of the
 post is sent to {{TRANSLATION_PROVIDER}} ({{PROVIDER_LOCATION}}) to be
@@ -216,7 +223,10 @@ for {{MEDIA_CACHE_DAYS}} days.
 
 As described in sections 2 and 3.3, your content and public profile are
 delivered to other servers in accordance with your visibility settings. Those
-servers may be located anywhere in the world (see section 7).
+servers may be located anywhere in the world (see section 7). Public posts
+(not unlisted, followers-only or direct ones) are also sent to the relays the
+Instance follows or serves, which forward them to other servers (the list is
+kept by the administrators).
 
 ### 6.2. Service providers
 
@@ -273,7 +283,8 @@ visibility and by locking your account.
 | Information | Retention |
 |---|---|
 | Account data and your content | As long as your account exists, until you delete it |
-| Deleted posts and media | Removed from the live database immediately; purged from backups within {{BACKUP_RETENTION_DAYS}} days |
+| Posts and media you delete | Removed from the live database immediately; purged from backups within {{BACKUP_RETENTION_DAYS}} days |
+| Posts and comments removed by moderators | Hidden from everyone at once, kept {{REMOVED_CONTENT_DAYS}} days so an appeal can restore them, then erased with their media |
 | Deleted account | {{DELETION_DELAY}}, then deleted, except your username, which is kept permanently (without other data) to prevent impersonation |
 | IP addresses | See section 3.2 |
 | Moderation records (reports, actions, appeals) | {{MODERATION_RETENTION}} (recommended: 2 years after the last action), to handle repeat abuse and appeals |

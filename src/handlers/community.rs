@@ -530,6 +530,11 @@ pub async fn cancel_request(State(state): State<AppState>, session: Session, Pat
         Err(response) => return response,
     };
     let url = format!("/community/{}", loaded.community.slug);
+    if let Some(viewer) = loaded.viewer()
+        && crate::handlers::post::bot_over_limit(&loaded.pool, viewer).await
+    {
+        return crate::handlers::post::bot_limit_page(Layout::load(&state, &session).await);
+    }
     let me = loaded.viewer().map(|viewer| viewer.id).unwrap_or_default();
     let result = async {
         if community::remove_request(&loaded.pool, loaded.community.id, me).await? {
@@ -659,6 +664,7 @@ pub async fn create_post(
     .await;
     match result {
         Ok(post_id) => {
+            crate::handlers::post::save_labels(&loaded.pool, post_id, &form).await;
             notifier::post_created(&state, &loaded.pool, post_id).await;
             state.previews.notify_one();
             Redirect::to(&format!("{url}?sort=new#post-{post_id}")).into_response()

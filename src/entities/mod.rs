@@ -1,24 +1,32 @@
 pub mod article_picture;
 pub mod author;
+pub mod block;
 pub mod comment;
 pub mod creator_stats;
+pub mod data_export;
 pub mod email_domain;
 pub mod community;
 pub mod event;
 pub mod federation;
+pub mod hashtag_follow;
 pub mod follow;
 pub mod friend;
+pub mod incident;
 pub mod media;
+pub mod mention;
 pub mod message;
+pub mod notice;
 pub mod notification;
 pub mod password_reset;
 pub mod podcast;
 pub mod post;
 pub mod preview;
 pub mod push;
+pub mod relay;
 pub mod report;
 pub mod schema;
 pub mod session;
+pub mod spam;
 pub mod site_page;
 pub mod statistics;
 pub mod two_factor;
@@ -43,6 +51,7 @@ pub(crate) use service_on;
 pub const TABLES: &[&schema::Table] = &[
     &user::TABLE,
     &federation::ACTORS_TABLE,
+    &federation::INSTANCE_KEYS_TABLE,
     &community::TABLE,
     &podcast::TABLE,
     &post::TABLE,
@@ -56,6 +65,7 @@ pub const TABLES: &[&schema::Table] = &[
     &post::SHARES_TABLE,
     &comment::TABLE,
     &comment::LIKES_TABLE,
+    &mention::TABLE,
     &community::MEMBERS_TABLE,
     &community::MODERATORS_TABLE,
     &community::RULES_TABLE,
@@ -64,6 +74,8 @@ pub const TABLES: &[&schema::Table] = &[
     &media::MEDIA_TABLE,
     &follow::TABLE,
     &friend::TABLE,
+    &block::TABLE,
+    &hashtag_follow::TABLE,
     &session::TABLE,
     &two_factor::TABLE,
     &two_factor::RECOVERY_TABLE,
@@ -74,12 +86,16 @@ pub const TABLES: &[&schema::Table] = &[
     &federation::REACTIONS_TABLE,
     &federation::DELIVERIES_TABLE,
     &federation::INSTANCES_TABLE,
+    &relay::RELAYS_TABLE,
+    &relay::SUBSCRIBERS_TABLE,
     &notification::TABLE,
     &views::DAILY_TABLE,
     &views::MARKS_TABLE,
     &article_picture::TABLE,
     &push::TABLE,
     &email_domain::TABLE,
+    &data_export::TABLE,
+    &incident::TABLE,
     &push::KEYS_TABLE,
     &message::CONVERSATIONS_TABLE,
     &message::MESSAGES_TABLE,
@@ -87,4 +103,6 @@ pub const TABLES: &[&schema::Table] = &[
     &media::ATTACHMENTS_TABLE,
     &preview::TABLE,
     &report::TABLE,
+    &spam::TABLE,
+    &notice::TABLE,
 ];

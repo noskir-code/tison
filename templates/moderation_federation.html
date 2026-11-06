@@ -2,7 +2,7 @@
 <section class="box content moderation federation">
     {% call moderation_ui::tabs(sections) %}{% endcall %}
     <p class="post-username">
-        {{ "The servers of the Fediverse this site has met, from the accounts it knows."|t }}
+        {{ "The servers this server has met."|t }}
         <strong>{{ "Limit"|t }}</strong>{{ ": their posts and notifications only reach the people following their accounts."|t }}
         <strong>{{ "Ban"|t }}</strong>{{ ": what came from them is deleted, nothing goes to them, what they send is ignored."|t }}
     </p>
@@ -53,7 +53,7 @@
                     <td>
                         {% match instance.policy %}
                         {% when Some(policy) %}
-                        <span class="instance-status {{ policy.as_str() }}"{% if !instance.reason.is_empty() %} title="{{ instance.reason }}"{% endif %}>{% if policy.as_str() == "banned" %}{{ "Banned"|t }}{% else %}{{ "Limited"|t }}{% endif %}</span>
+                        <span class="instance-status {{ policy.as_str() }}"{% if !instance.reason.is_empty() %} title="{{ instance.reason }}"{% endif %}>{{ policy.label()|t }}</span>
                         {% when None %}
                         <span class="post-meta">{{ "Normal"|t }}</span>
                         {% endmatch %}
@@ -61,22 +61,16 @@
                     <td class="instance-actions">
                         {% match instance.policy %}
                         {% when Some(policy) %}
-                        {% if policy.as_str() == "limited" %}
                         <form action="/moderation/federation" method="post">
                             <input type="hidden" name="domain" value="{{ instance.domain }}" />
                             <input type="hidden" name="policy" value="none" />
-                            <button type="submit" class="action">{{ "Unlimit"|t }}</button>
+                            <button type="submit" class="action">{% if policy.is_banned() %}{{ "Unban"|t }}{% else %}{{ "Back to normal"|t }}{% endif %}</button>
                         </form>
+                        {% if !policy.is_banned() %}
                         <form action="/moderation/federation" method="post" data-confirm="{{ "Ban {}? What came from it is deleted, and it can't be brought back."|tf(instance.domain) }}" data-confirm-label="{{ "Ban"|t }}">
                             <input type="hidden" name="domain" value="{{ instance.domain }}" />
                             <input type="hidden" name="policy" value="banned" />
                             <button type="submit" class="action danger">{{ "Ban"|t }}</button>
-                        </form>
-                        {% else %}
-                        <form action="/moderation/federation" method="post">
-                            <input type="hidden" name="domain" value="{{ instance.domain }}" />
-                            <input type="hidden" name="policy" value="none" />
-                            <button type="submit" class="action">{{ "Unban"|t }}</button>
                         </form>
                         {% endif %}
                         {% when None %}
@@ -84,6 +78,11 @@
                             <input type="hidden" name="domain" value="{{ instance.domain }}" />
                             <input type="hidden" name="policy" value="limited" />
                             <button type="submit" class="action">{{ "Limit"|t }}</button>
+                        </form>
+                        <form action="/moderation/federation" method="post">
+                            <input type="hidden" name="domain" value="{{ instance.domain }}" />
+                            <input type="hidden" name="policy" value="media" />
+                            <button type="submit" class="action">{{ "Reject media"|t }}</button>
                         </form>
                         <form action="/moderation/federation" method="post" data-confirm="{{ "Ban {}? What came from it is deleted, and it can't be brought back."|tf(instance.domain) }}" data-confirm-label="{{ "Ban"|t }}">
                             <input type="hidden" name="domain" value="{{ instance.domain }}" />
@@ -105,10 +104,11 @@
     <form action="/moderation/federation" method="post" class="instance-form">
         <label for="instance-domain" class="visually-hidden">{{ "Domain"|t }}</label>
         <input id="instance-domain" type="text" name="domain" placeholder="{{ "Domain, like spam.example"|t }}" required autocomplete="off" />
-        <label for="instance-reason" class="visually-hidden">{{ "Reason (optional, for the staff)"|t }}</label>
-        <input id="instance-reason" type="text" name="reason" placeholder="{{ "Reason (optional, for the staff)"|t }}" maxlength="500" autocomplete="off" />
+        <label for="instance-reason" class="visually-hidden">{{ "Reason (optional, shown on the public Moderation page)"|t }}</label>
+        <input id="instance-reason" type="text" name="reason" placeholder="{{ "Reason (optional, shown on the public Moderation page)"|t }}" maxlength="500" autocomplete="off" />
         <select name="policy" aria-label="{{ "Rule"|t }}">
             <option value="limited">{{ "Limit"|t }}</option>
+            <option value="media">{{ "Reject media"|t }}</option>
             <option value="banned">{{ "Ban"|t }}</option>
         </select>
         <button type="submit" class="button primary">{{ "Apply"|t }}</button>

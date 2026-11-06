@@ -127,11 +127,25 @@ pub fn check_url(url: &Url, allow_insecure: bool) -> Result<(), String> {
 fn is_public(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(ip) => is_public_v4(ip),
-        IpAddr::V6(ip) => match ip.to_ipv4_mapped() {
+        IpAddr::V6(ip) => match ip.to_ipv4_mapped().or_else(|| embedded_v4(ip)) {
             Some(mapped) => is_public_v4(mapped),
             None => is_public_v6(ip),
         },
     }
+}
+
+/// The IPv4 address inside a NAT64 (64:ff9b::/96) or 6to4 (2002::/16)
+/// address: it reaches that IPv4 machine, maybe a private one.
+fn embedded_v4(ip: Ipv6Addr) -> Option<Ipv4Addr> {
+    let segments = ip.segments();
+    let octets = ip.octets();
+    if segments[..6] == [0x64, 0xFF9B, 0, 0, 0, 0] {
+        return Some(Ipv4Addr::new(octets[12], octets[13], octets[14], octets[15]));
+    }
+    if segments[0] == 0x2002 {
+        return Some(Ipv4Addr::new(octets[2], octets[3], octets[4], octets[5]));
+    }
+    None
 }
 
 fn is_public_v4(ip: Ipv4Addr) -> bool {
@@ -746,6 +760,7 @@ pub fn parse_actor(document: &Value) -> Result<NewRemoteActor, String> {
         key_id: text(key, "id").ok_or("key without id")?,
         public_key_pem: text(key, "publicKeyPem").ok_or("key without publicKeyPem")?,
         kind: text(document, "type").filter(|kind| kind.len() <= 32).unwrap_or_else(|| "Person".to_string()),
+        indexable: document.get("indexable").and_then(Value::as_bool).unwrap_or(true),
         actor_id,
     })
 }
@@ -769,6 +784,7 @@ pub async fn local_key(federation: &Federation, pool: &PgPool, signer: Signer) -
         key_id: match signer {
             Signer::User(_) => federation.key_id(public_id),
             Signer::Community(_) => federation.community_key_id(public_id),
+            Signer::Instance => federation.instance_key_id(),
         },
         private_key,
     })
@@ -888,6 +904,15 @@ async fn deliver(federation: &Federation, pool: &PgPool, delivery: Delivery) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn ipv6_forms_of_private_ipv4_addresses_are_refused() {
+        assert!(!is_public("64:ff9b::7f00:1".parse().unwrap()));
+        assert!(!is_public("2002:c0a8:0101::1".parse().unwrap()));
+        assert!(!is_public("::ffff:10.0.0.1".parse().unwrap()));
+        assert!(is_public("64:ff9b::808:808".parse().unwrap()));
+        assert!(is_public("2606:4700::1111".parse().unwrap()));
+    }
+
     use super::*;
 
     #[test]

@@ -39,6 +39,10 @@ pub fn routes() -> Router<AppState> {
         .route("/.well-known/nodeinfo", get(nodeinfo_links))
         .route("/nodeinfo/2.1", get(nodeinfo))
         .route("/ap/inbox", post(inbox))
+        // The site's own actor, for relays (see `relay`).
+        .route("/ap/actor", get(super::relay::instance_actor))
+        .route("/ap/actor/inbox", post(inbox))
+        .route("/ap/actor/followers", get(super::relay::instance_followers))
         .route("/ap/users/{public_id}", get(actor))
         .route("/ap/users/{public_id}/inbox", post(inbox))
         .route("/ap/users/{public_id}/outbox", get(outbox))
@@ -67,6 +71,11 @@ fn json_response(content_type: &'static str, value: &Value) -> Response {
 
 fn activity_response(value: &Value) -> Response {
     json_response(ACTIVITY_JSON, value)
+}
+
+/// `activity_response`, for `relay`.
+pub(crate) fn activity_json(value: &Value) -> Response {
+    activity_response(value)
 }
 
 /// Federation off, or no database.
@@ -246,7 +255,7 @@ async fn community_outbox(State(state): State<AppState>, uri: Uri, Path(public_i
         Ok(None) => return not_found(),
         Err(response) => return response,
     };
-    let count: Result<i64, _> = sqlx::query_scalar("SELECT COUNT(*) FROM posts WHERE community_id = $1")
+    let count: Result<i64, _> = sqlx::query_scalar("SELECT COUNT(*) FROM posts WHERE community_id = $1 AND removed_at IS NULL")
         .bind(community.id)
         .fetch_one(pool)
         .await;
@@ -445,6 +454,11 @@ async fn inbox(State(state): State<AppState>, method: Method, uri: Uri, headers:
             Ok(false) => {}
             Err(err) => return server_error("failed to check the server's policy", err),
         }
+    }
+
+    // The instance actor's inbox: relays, see `relay`.
+    if uri.path() == super::relay::INBOX_PATH {
+        return super::relay::receive(federation, pool, &method, &uri, &headers, &body, &activity).await;
     }
 
     // Only activities Tison acts on are checked, the others are accepted and

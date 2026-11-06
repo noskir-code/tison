@@ -80,6 +80,52 @@ async fn queue(federation: &Federation, pool: &PgPool, signer: Signer, audience:
     }
 }
 
+/// Queues `activity` for `audience` and the inboxes of `extra` (the
+/// accounts a post mentions), each once.
+async fn queue_with(federation: &Federation, pool: &PgPool, signer: Signer, audience: &Audience, extra: &[String], activity: &Value) {
+    match audience.inboxes(pool).await {
+        Ok(mut inboxes) => {
+            for inbox in extra {
+                if !inboxes.contains(inbox) {
+                    inboxes.push(inbox.clone());
+                }
+            }
+            queue_to(federation, pool, signer, &inboxes, activity).await;
+        }
+        Err(err) => tracing::warn!("failed to load Fediverse followers: {}", err),
+    }
+}
+
+/// Adds the people the post mentions to its Note (see
+/// `activities::add_mentions`), and gives their inboxes: it goes to them too,
+/// and to the relays for a public post (see `relay_inboxes`).
+async fn with_mentions(federation: &Federation, pool: &PgPool, post: &Post, note: &mut Value) -> Vec<String> {
+    let mut inboxes = match crate::entities::mention::for_post(pool, post.id, &format!("{}/ap/users/", federation.base_url), &federation.domain).await {
+        Ok(mentions) => {
+            activities::add_mentions(federation, note, &mentions);
+            mentions.into_iter().filter_map(|mentioned| mentioned.inbox).collect()
+        }
+        Err(err) => {
+            tracing::warn!("failed to load the mentions of post {}: {}", post.id, err);
+            Vec::new()
+        }
+    };
+    inboxes.extend(relay_inboxes(pool, post).await);
+    inboxes
+}
+
+/// The relays followed and the servers relayed for, for a public post
+/// written here (not unlisted: relays share with everyone), see `API::relay`.
+async fn relay_inboxes(pool: &PgPool, post: &Post) -> Vec<String> {
+    if post.visibility != post::Visibility::Public || post.author.local().is_none() {
+        return Vec::new();
+    }
+    crate::entities::relay::outgoing_inboxes(pool).await.unwrap_or_else(|err| {
+        tracing::warn!("failed to load the relays: {}", err);
+        Vec::new()
+    })
+}
+
 /// The post if it can go to the Fediverse: visible to visitors (public, not
 /// in a private or banned community) or followers-only from another server,
 /// and if written here, by a federated user.
@@ -220,14 +266,15 @@ pub async fn post_created(state: &AppState, pool: &PgPool, post_id: i64) {
     let Some(post) = federable_post(pool, post_id).await else {
         return;
     };
-    let (Some(author), Some(note)) = (post.author.local(), activities::post_note(federation, &post)) else {
+    let (Some(author), Some(mut note)) = (post.author.local(), activities::post_note(federation, &post)) else {
         return;
     };
+    let mentioned = with_mentions(federation, pool, &post, &mut note).await;
     let audience = Audience {
         users: vec![author.id],
         ..Audience::default()
     };
-    queue(federation, pool, Signer::User(author.id), &audience, &activities::create(&note)).await;
+    queue_with(federation, pool, Signer::User(author.id), &audience, &mentioned, &activities::create(&note)).await;
 
     // In a community: also shared by it with its followers.
     if let Some(community) = &post.community {
@@ -285,11 +332,12 @@ pub async fn post_updated(state: &AppState, pool: &PgPool, post_id: i64) {
     let Some(post) = federable_post(pool, post_id).await else {
         return;
     };
-    let (Some(author), Some(note)) = (post.author.local(), activities::post_note(federation, &post)) else {
+    let (Some(author), Some(mut note)) = (post.author.local(), activities::post_note(federation, &post)) else {
         return;
     };
+    let mentioned = with_mentions(federation, pool, &post, &mut note).await;
     let audience = post_audience(pool, &post, author).await;
-    queue(federation, pool, Signer::User(author.id), &audience, &activities::update(&note)).await;
+    queue_with(federation, pool, Signer::User(author.id), &audience, &mentioned, &activities::update(&note)).await;
 }
 
 pub async fn comment_created(state: &AppState, pool: &PgPool, comment_id: i64) {
@@ -378,6 +426,11 @@ async fn post_deletions(state: &AppState, pool: &PgPool, post_id: i64, unshare: 
     if let (Some(author), Some(note)) = (post.author.local(), activities::post_note(federation, &post)) {
         let audience = post_audience(pool, &post, author).await;
         let delete = activities::delete(&federation.actor_url(author.public_id), &activities::note_id(federation, &post), &note["to"], &note["cc"]);
+        // The relays it went to forget it too.
+        let relays = relay_inboxes(pool, &post).await;
+        if !relays.is_empty() {
+            deletions.activities.push((Signer::User(author.id), relays, delete.clone()));
+        }
         deletions.add(pool, Signer::User(author.id), &audience, delete).await;
     }
     if unshare && let Some(community) = &post.community {
@@ -582,6 +635,17 @@ pub async fn unfollow(federation: &Federation, pool: &PgPool, user: &User, actor
         queue_to(federation, pool, Signer::User(user.id), std::slice::from_ref(&actor.inbox), &undo).await;
     }
     Ok(())
+}
+
+/// A local user blocks (or unblocks) an account of another server: it's sent
+/// a Block (or its Undo), see `activities::block`.
+pub async fn block_changed(federation: &Federation, pool: &PgPool, user: &User, actor: &RemoteActor, blocked: bool) {
+    if !user.is_federated() {
+        return;
+    }
+    let block = activities::block(federation, user, &actor.actor_id, actor.id);
+    let activity = if blocked { block } else { activities::undo(&block) };
+    queue_to(federation, pool, Signer::User(user.id), std::slice::from_ref(&actor.inbox), &activity).await;
 }
 
 /// A private message written here to an account of another server: sent to

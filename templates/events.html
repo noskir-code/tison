@@ -14,7 +14,7 @@
         {% for post in mine %}{% call posts_ui::event_row(post) %}{% endcall %}{% endfor %}
     </ul>
     {% endif %}
-    {% if !series %}<h2>{% if past %}{{ "Over"|t }}{% else %}{{ "Coming up"|t }}{% endif %}</h2>{% endif %}
+    {% if !series %}<h2>{% if past %}{{ "Events over"|t }}{% else %}{{ "Events coming up"|t }}{% endif %}</h2>{% endif %}
     <ul class="event-list">
         {% for post in events %}
         {% call posts_ui::event_row(post) %}{% endcall %}

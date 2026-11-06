@@ -1,0 +1,14 @@
+{{ "Hello @{},"|tf(username) }}
+
+{% if answered %}{{ "The moderators of {} answered your appeal."|tf(crate::settings::instance_name()) }}
+
+{{ notice.appeal_status.label()|t }}{% if !notice.answer.is_empty() %}
+{{ notice.answer }}{% endif %}{% else %}{{ "The moderators of {} acted on your account."|tf(crate::settings::instance_name()) }}
+
+{{ notice.action.label()|t }}: {{ notice.action.explanation()|t }}{% if let Some(until) = notice.until_label() %} {{ "Until {}."|tf(until) }}{% endif %}
+{{ "Rule broken:"|t }} {{ notice.reason.label()|t }}{% if !notice.note.is_empty() %}
+{{ notice.note }}{% endif %}
+
+{{ "You can read the details and appeal once, even if your account is suspended, by signing in:"|t }}{% endif %}
+
+{{ link }}

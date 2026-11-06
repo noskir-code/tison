@@ -1,0 +1,37 @@
+{% extends "base.html" %} {% import "macros/moderation.html" as moderation_ui %}
+{# The appeals of moderation notices waiting for an answer, oldest first,
+   see handlers::notice. #}
+{% block content %}
+<section class="box content moderation appeals">
+    {% call moderation_ui::tabs(sections) %}{% endcall %}
+    {% if let Some(text) = message %}<p class="saved" role="status">{{ text|t }}</p>{% endif %}
+    <p class="post-username">{{ "People appeal what the moderators did. Accepting reverses it: suspension, ban, limit, content warning, and posts or comments removed less than {} days ago, which come back (some other servers, like Mastodon, may not show them again). Better answered by another moderator than the one who decided."|tf(crate::settings::removed_content_days()) }}</p>
+    {% if appeals.is_empty() %}
+    <p class="empty">{{ "No appeal waiting."|t }}</p>
+    {% endif %}
+    <ol class="notice-list">
+        {% for notice in appeals %}
+        <li class="notice-card" id="appeal-{{ notice.id }}">
+            <header class="notice-header">
+                <strong>{{ notice.action.label()|t }}</strong>
+                <span class="post-meta"><a href="/user/{{ notice.username }}">@{{ notice.username }}</a> · {{ notice.created_label() }}</span>
+            </header>
+            <p><span class="field-label">{{ "Rule broken:"|t }}</span> {{ notice.reason.label()|t }}</p>
+            {% if !notice.note.is_empty() %}<p><span class="field-label">{{ "Note sent:"|t }}</span> {{ notice.note }}</p>{% endif %}
+            {% if !notice.excerpt.is_empty() %}<p class="report-excerpt">{{ notice.excerpt }}</p>{% endif %}
+            {% if let Some(link) = notice.link() %}<a href="{{ link }}" class="action">{{ "Open"|t }}</a>{% endif %}
+            <p><span class="field-label">{{ "Their appeal:"|t }}</span>{% if let Some(at) = notice.appealed_label() %} <span class="post-meta">{{ at }}</span>{% endif %}</p>
+            <blockquote class="notice-note">{{ notice.appeal }}</blockquote>
+            <form action="/moderation/appeals/{{ notice.id }}" method="post" class="appeal-answer">
+                <label for="answer-{{ notice.id }}">{{ "Answer for the person"|t }}</label>
+                <textarea id="answer-{{ notice.id }}" name="answer" rows="2" maxlength="{{ text_max_chars }}"></textarea>
+                <div class="flex center">
+                    <button type="submit" name="decision" value="accept" class="button primary">{{ "Accept and reverse"|t }}</button>
+                    <button type="submit" name="decision" value="reject" class="button">{{ "Reject"|t }}</button>
+                </div>
+            </form>
+        </li>
+        {% endfor %}
+    </ol>
+</section>
+{% endblock %}

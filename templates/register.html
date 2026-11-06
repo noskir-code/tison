@@ -93,6 +93,15 @@
             required
         />
         {% call form::message("password_confirm", self.error_for("password_confirm")) %}{% endcall %}
+        {# What is collected and where it goes, then consent (Law 25 art. 8 and 14, GDPR art. 7 and 13). #}
+        <p class="field-help signup-notice">
+            {{ "Your profile, your username and what you publish publicly can be seen by everyone and are sent to other servers of the Fediverse. Your email and birthday stay here, never shown. You can download your data or delete your account at any time in your settings."|t }}
+        </p>
+        <label class="checkbox-line">
+            <input type="checkbox" name="accept_terms" value="yes" required {% call form::invalid("accept_terms", self.error_for("accept_terms")) %}{% endcall %} />
+            <span>{{ "I have read and accept the"|t }} <a href="/terms-of-use" target="_blank">{{ "Terms of Use"|t }}</a>, {{ "the"|t }} <a href="/privacy-policy" target="_blank">{{ "Privacy Policy"|t }}</a> {{ "and the"|t }} <a href="/rules" target="_blank">{{ "Server rules"|t }}</a>.</span>
+        </label>
+        {% call form::message("accept_terms", self.error_for("accept_terms")) %}{% endcall %}
         <button type="submit" class="button">{{ "Create account"|t }}</button>
     </form>
     <p>{{ "Already have an account?"|t }} <a href="/login">{{ "Login"|t }}</a></p>

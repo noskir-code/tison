@@ -37,7 +37,7 @@
     <p class="article-live-preview-label" aria-hidden="true">{{ "Preview"|t }}</p>
     <h1 class="article-title" data-preview-title></h1>
     <div class="article-body" data-preview-body aria-live="off"></div>
-    <p class="empty" data-preview-empty>{{ "Your article shows here as you write it."|t }}</p>
+    <p class="empty" data-preview-empty>{{ "Your article preview shows here."|t }}</p>
 </section>
 {% endmacro %}
 
@@ -45,8 +45,9 @@
    on WriteFreely. `composer` is `handlers::post::Composer`. The tabs are
    radio buttons, so they work without JavaScript. #}
 {% macro composer(composer) %}
+{% if composer.posts || composer.articles %}
 <section class="box content composer">
-    {% if composer.articles %}
+    {% if composer.articles && composer.posts %}
     <h2 class="visually-hidden">{{ "Create"|t }}</h2>
     <input type="radio" name="composer-kind" id="compose-post" class="composer-switch visually-hidden"{% if !composer.article_open %} checked{% endif %} />
     <input type="radio" name="composer-kind" id="compose-article" class="composer-switch visually-hidden"{% if composer.article_open %} checked{% endif %} />
@@ -54,32 +55,39 @@
         <label for="compose-post">{{ "Post"|t }}</label>
         <label for="compose-article">{{ "Article"|t }}</label>
     </div>
+    {% else if composer.articles %}
+    <h2>{{ "Write an article"|t }}</h2>
     {% else %}
     <h2>{{ "Create a post"|t }}</h2>
     {% endif %}
     {% if let Some(message) = composer.error %}
     <p class="error">{{ message|t }}</p>
     {% endif %}
+    {% if composer.posts %}
     <form action="/posts" method="post" enctype="multipart/form-data" class="composer-post" data-photo-composer data-upload-progress>
         <input type="hidden" name="page" value="{{ composer.page }}" />
         <label for="post-body" class="visually-hidden">{{ "Post"|t }}</label>
+        {# Counted like Mastodon, see mention::mastodon_length and the counter in system.js. #}
         <textarea
             id="post-body"
             name="body"
-            placeholder="{{ "What do you want to share?"|t }}"
+            placeholder="{% if composer.text_posts %}{{ "Share something..."|t }}{% else %}{{ "Write a caption..."|t }}{% endif %}"
             maxlength="{{ composer.body_max_chars }}"
             rows="4"
+            data-mastodon-counter="{{ composer.post_max_chars }}"
+            aria-describedby="post-body-count"
             {% if !composer.photos %}required{% endif %}
         ></textarea>
+        <p class="char-counter" id="post-body-count" data-counter-for="post-body" aria-live="polite">{{ composer.post_max_chars }}</p>
         {# Photos, like on Pixelfed: system.js shows them with a field for
            their alt text. Without JavaScript they go without one. #}
         {% if composer.photos %}
         <div class="photo-picker">
             <label class="button photo-add">
                 {{ "Add photos"|t }}
-                <input type="file" name="photos" accept="image/jpeg,image/png,image/gif,image/webp" multiple data-max="{{ composer.max_photos }}" />
+                <input type="file" name="photos" accept="image/jpeg,image/png,image/gif,image/webp" multiple data-max="{{ composer.max_photos }}"{% if !composer.text_posts %} required{% endif %} />
             </label>
-            <span class="post-username" data-photo-hint>{{ "Up to {} photos: JPEG, PNG, GIF or WebP. Their location and camera details are removed."|tf(composer.max_photos) }}</span>
+            <span class="post-username" data-photo-hint>{% if composer.text_posts %}{{ "Up to {} photos: JPEG, PNG, GIF or WebP."|tf(composer.max_photos) }}{% else %}{{ "1 to {} photos: JPEG, PNG, GIF or WebP."|tf(composer.max_photos) }}{% endif %}</span>
             <ul class="photo-previews" data-photo-previews hidden></ul>
             <label class="photo-sensitive" data-photo-sensitive hidden>
                 <input type="checkbox" name="sensitive" value="on" /> {{ "Sensitive: blur the photos until clicked"|t }}
@@ -88,6 +96,7 @@
             <p class="post-username" data-upload-status hidden></p>
         </div>
         {% endif %}
+        {% call label_fields("post", "", false, false) %}{% endcall %}
         {# Emojis, see macros/emoji.html. #}
         <div class="composer-tools">
             {% call emoji_ui::emoji_button("post-body") %}{% endcall %}
@@ -97,7 +106,7 @@
                 {{ "Who can see it"|t }}
                 <select name="visibility">
                     {% for visibility in composer.visibilities %}
-                    <option value="{{ visibility.as_str() }}">{{ visibility.label()|t }}</option>
+                    <option value="{{ visibility.as_str() }}"{% if *visibility == composer.default_visibility %} selected{% endif %}>{{ visibility.label()|t }}</option>
                     {% endfor %}
                 </select>
             </label>
@@ -119,6 +128,7 @@
             <button type="submit" class="button">{{ "Publish"|t }}</button>
         </div>
     </form>
+    {% endif %}
     {% if composer.articles %}
     <form action="/posts" method="post" enctype="multipart/form-data" class="composer-article">
         <input type="hidden" name="page" value="{{ composer.page }}" />
@@ -132,7 +142,7 @@
                 <textarea
                     id="article-body"
                     name="body"
-                    placeholder="{{ "Write your article. Markdown works: **bold**, *italic*, ## Heading, [link](https://...)"|t }}"
+                    placeholder="{{ "Write an article."|t }}"
                     maxlength="{{ composer.article_max_chars }}"
                     rows="14"
                     required
@@ -152,14 +162,14 @@
                 <dt><code>`code`</code>, <code>```</code> {{ "on its own line"|t }}</dt><dd>{{ "Code, in a line or as a block"|t }}</dd>
                 <dt><code>---</code></dt><dd>{{ "A separating line"|t }}</dd>
             </dl>
-            <p class="post-username">{{ "An empty line starts a new paragraph. Articles are shared with the Fediverse like on WriteFreely: Mastodon shows their title and a link."|t }}</p>
         </details>
+        {% call label_fields("article", "", false, false) %}{% endcall %}
         <div class="flex center space-between">
             <label>
                 {{ "Who can see it"|t }}
                 <select name="visibility">
                     {% for visibility in composer.visibilities %}
-                    <option value="{{ visibility.as_str() }}">{{ visibility.label()|t }}</option>
+                    <option value="{{ visibility.as_str() }}"{% if *visibility == composer.default_visibility %} selected{% endif %}>{{ visibility.label()|t }}</option>
                     {% endfor %}
                 </select>
             </label>
@@ -183,6 +193,7 @@
     </form>
     {% endif %}
 </section>
+{% endif %}
 {% endmacro %}
 
 {# Pictures, videos and sounds of a post or comment, under its text like on
@@ -231,6 +242,7 @@
             <span>
                 <strong>{{ post.author.display_name() }}</strong>
                 {% if let Some(badge) = post.author.role_badge() %}<span class="role-badge {{ post.author.role_name() }}">{{ badge|t }}</span>{% endif %}
+                {% if let Some(badge) = post.author.kind_badge() %}<span class="kind-badge" title="{{ post.author.kind_badge_title()|t }}">{{ badge|t }}</span>{% endif %}
                 <span class="post-username">{{ post.author.handle() }}</span>
             </span>
         </a>
@@ -241,6 +253,38 @@
             {% if let Some(edited) = post.edited_at_iso() %} · <span title="{{ edited }}">{{ "edited"|t }}</span>{% endif %}
         </a>
     </header>
+{% endmacro %}
+
+{# What the author said about the post (Server rules, 4 and 7): made with
+   AI, sponsored, and its content warning, which hides what follows it in
+   the post until clicked (style.css, `.cw-reveal`), without JavaScript. #}
+{% macro post_labels(post) %}
+{% if post.ai_generated || post.sponsored %}
+<p class="post-labels">
+    {% if post.ai_generated %}<span class="label-badge ai" title="{{ "The author says it was created or modified by AI"|t }}">{{ "AI-generated"|t }}</span>{% endif %}
+    {% if post.sponsored %}<span class="label-badge sponsored" title="{{ "Paid for: an advertisement or a partnership"|t }}">{{ "Sponsored"|t }}</span>{% endif %}
+</p>
+{% endif %}
+{% if !post.content_warning.is_empty() %}
+<input type="checkbox" id="cw-{{ post.id }}" class="cw-reveal visually-hidden" />
+<label for="cw-{{ post.id }}" class="cw-bar">
+    <span class="cw-text"><span aria-hidden="true">⚠</span> {{ post.content_warning }}</span>
+    <span class="cw-toggle"><span class="cw-show">{{ "Show"|t }}</span><span class="cw-hide">{{ "Hide"|t }}</span></span>
+</label>
+{% endif %}
+{% endmacro %}
+
+{# The content warning and labels of a form (posts, videos, episodes,
+   events), `id` making the ids of its fields unique on the page. #}
+{% macro label_fields(id, warning, ai, sponsored) %}
+<fieldset class="label-fields">
+    <legend>{{ "Content warning and labels"|t }}</legend>
+    <label for="{{ id }}-warning">{{ "Content warning"|t }}</label>
+    <input type="text" id="{{ id }}-warning" name="content_warning" value="{{ warning }}" maxlength="{{ crate::entities::post::WARNING_MAX_CHARS }}" placeholder="{{ "Violence, spoilers, politics..."|t }}" />
+    <label class="checkbox-line"><input type="checkbox" name="ai_generated" value="on"{% if ai %} checked{% endif %} /> {{ "Created or modified by AI (picture, sound, video or text)"|t }}</label>
+    <label class="checkbox-line"><input type="checkbox" name="sponsored" value="on"{% if sponsored %} checked{% endif %} /> {{ "Sponsored: advertisement or partnership"|t }}</label>
+    <p class="post-username form-hint">{{ "The server rules ask to label them. Other servers see them as #AIGenerated and #Ad."|t }}</p>
+</fieldset>
 {% endmacro %}
 
 {# Like, comments, share and the others, see `post_card`. #}
@@ -376,6 +420,7 @@
     <p class="post-shared-by">{{ "Shared by"|t }} <a href="{{ sharer.url }}">@{{ sharer.name }}</a></p>
     {% endif %}
     {% call post_header(post) %}{% endcall %}
+    {% call post_labels(post) %}{% endcall %}
     <a href="/posts/{{ post.id }}" class="event-card{% if event.is_cancelled() %} cancelled{% endif %}">
         {% if let Some(banner) = post.poster() %}<img src="{{ banner }}" alt="" class="event-banner" loading="lazy" />{% endif %}
         <span class="event-card-body">
@@ -407,6 +452,7 @@
             <p class="post-meta">{{ "Organized by"|t }} {% if let Some(community) = post.community %}<a href="/community/{{ community.slug }}">{{ community.name }}</a> · <a href="{{ post.author.profile_url() }}">{{ post.author.display_name() }}</a>{% else %}<a href="{{ post.author.profile_url() }}">{{ post.author.display_name() }}</a>{% endif %}{% if post.author.is_remote() %} {{ "on"|t }} {{ post.author.host() }}{% endif %}</p>
         </div>
     </div>
+    {% call post_labels(post) %}{% endcall %}
     {% if event.is_cancelled() %}
     <p class="event-status cancelled">{{ "This event is cancelled."|t }}</p>
     {% else if event.is_tentative() %}
@@ -438,9 +484,14 @@
         <dt>{{ "Going"|t }}</dt>
         <dd>{{ event.going }}{% if let Some(capacity) = event.capacity %} {{ "of {} places"|tf(capacity) }}{% if let Some(left) = event.places_left() %} · {{ "{} left"|tf(left) }}{% endif %}{% endif %}{% if event.needs_approval() %} {{ "· the organizer accepts participants"|t }}{% endif %}</dd>
     </dl>
-    {# OpenStreetMap's map, a pin on the place (see `geocode`). #}
+    {# OpenStreetMap's map, a pin on the place (see `geocode`): loaded only
+       when asked, since OpenStreetMap then gets the visitor's IP address
+       (GDPR art. 6, Law 25 art. 8). See `setupMapConsent` in system.js. #}
     {% if let Some(map) = event.map_embed_url() %}
-    <iframe class="event-map" src="{{ map }}" title="{{ "Map of {}"|tf(event.where_label()) }}" loading="lazy" referrerpolicy="no-referrer"></iframe>
+    <div class="event-map event-map-consent" data-map-src="{{ map }}" data-map-title="{{ "Map of {}"|tf(event.where_label()) }}">
+        <p>{{ "The map comes from OpenStreetMap: showing it sends them your IP address."|t }}</p>
+        <button type="button" class="button" data-map-load hidden>{{ "Show the map"|t }}</button>
+    </div>
     {% endif %}
 
     <div class="event-join" id="event">
@@ -587,7 +638,7 @@
 {# Live through a WebSocket, like the notifications (see system.js). #}
 <div class="media-state conversion" data-conversion="/posts/{{ post.id }}/progress">
     <span class="conversion-ring" data-conversion-ring hidden>{% call upload_ui::ring() %}{% endcall %}</span>
-    <p data-conversion-text>{{ "Converting with ffmpeg… It appears in feeds when it's ready; only you see it until then. Reload the page to check."|t }}</p>
+    <p data-conversion-text>{{ "Converting… It appears in feeds when it's ready; only you see it until it's ready. Reload the page to check."|t }}</p>
 </div>
 {% else if post.has_failed() %}
 <p class="media-state failed">{{ "This file couldn't be converted: it may not be a"|t }} {% if post.is_episode() %}{{ "sound"|t }}{% else %}{{ "video"|t }}{% endif %} {{ "ffmpeg reads. Delete it and try another file."|t }}</p>
@@ -637,6 +688,7 @@
     <p class="post-shared-by">{{ "Shared by"|t }} <a href="{{ sharer.url }}">@{{ sharer.name }}</a></p>
     {% endif %}
     {% call post_header(post) %}{% endcall %}
+    {% call post_labels(post) %}{% endcall %}
     {% if post.is_episode() %}
     <div class="episode-head">
         {% if let Some(cover) = post.poster() %}
@@ -707,6 +759,7 @@
     <p class="post-shared-by">{{ "Shared by"|t }} <a href="{{ sharer.url }}">@{{ sharer.name }}</a></p>
     {% endif %}
     {% call post_header(post) %}{% endcall %}
+    {% call post_labels(post) %}{% endcall %}
     {% if let Some(community) = post.community %}
     <p class="post-community">{{ "in"|t }} <a href="/community/{{ community.slug }}">{{ community.name }}</a>{% if !community.is_public %} · <span class="only-you">{{ "Members only"|t }}</span>{% endif %}</p>
     {% endif %}
@@ -736,6 +789,7 @@
     <p class="post-shared-by">{{ "Shared by"|t }} <a href="{{ sharer.url }}">@{{ sharer.name }}</a></p>
     {% endif %}
     {% call post_header(post) %}{% endcall %}
+    {% call post_labels(post) %}{% endcall %}
     {% if let Some(community) = post.community %}
     <p class="post-community">{{ "in"|t }} <a href="/community/{{ community.slug }}">{{ community.name }}</a>{% if !community.is_public %} · <span class="only-you">{{ "Members only"|t }}</span>{% endif %}</p>
     {% endif %}
@@ -777,6 +831,7 @@
     <p class="post-shared-by">{{ "Shared by"|t }} <a href="{{ sharer.url }}">@{{ sharer.name }}</a></p>
     {% endif %}
     {% call post_header(post) %}{% endcall %}
+    {% call post_labels(post) %}{% endcall %}
     {% if let Some(community) = post.community %}
     <p class="post-community">{{ "in"|t }} <a href="/community/{{ community.slug }}">{{ community.name }}</a>{% if !community.is_public %} · <span class="only-you">{{ "Members only"|t }}</span>{% endif %}</p>
     {% endif %}
@@ -793,6 +848,7 @@
     <p class="post-shared-by">{{ "Shared by"|t }} <a href="{{ sharer.url }}">@{{ sharer.name }}</a></p>
     {% endif %}
     {% call post_header(post) %}{% endcall %}
+    {% call post_labels(post) %}{% endcall %}
     {% if let Some(community) = post.community %}
     <p class="post-community">{{ "in"|t }} <a href="/community/{{ community.slug }}">{{ community.name }}</a>{% if !community.is_public %} · <span class="only-you">{{ "Members only"|t }}</span>{% endif %}</p>
     {% endif %}

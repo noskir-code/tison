@@ -1,13 +1,17 @@
+pub mod account;
 pub mod article_picture;
 pub mod auth;
+pub mod block;
 pub mod comment;
 pub mod community;
 pub mod dashboard;
 pub mod event;
 pub mod image;
 pub mod media;
+pub mod mention;
 pub mod messenger;
 pub mod moderation;
+pub mod notice;
 pub mod notification;
 pub mod notifier;
 pub mod password;

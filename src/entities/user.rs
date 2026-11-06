@@ -15,7 +15,6 @@ pub const EMAIL_MAX_LEN: usize = 254;
 pub const PASSWORD_MIN_CHARS: usize = 10;
 /// Argon2 accepts more, this only stops absurdly long inputs.
 pub const PASSWORD_MAX_CHARS: usize = 128;
-pub const MIN_AGE_YEARS: u32 = 13;
 pub const MAX_AGE_YEARS: u32 = 130;
 
 const EMAIL_INDEX: &str = "users_email_lower_idx";
@@ -35,7 +34,8 @@ macro_rules! user_columns {
             $prefix, "birthday_public, ",
             $prefix, "photo_url, ", $prefix, "background_url, ", $prefix, "created_at, ",
             $prefix, "session_version, ", $prefix, "public_id, ",
-            $prefix, "federation_enabled, ", $prefix, "role, ", $prefix, "suspended_at, ", $prefix, "suspended_until, ", $prefix, "team, ",
+            $prefix, "federation_enabled, ", $prefix, "role, ", $prefix, "suspended_at, ", $prefix, "suspended_until, ", $prefix, "team, ", $prefix, "search_indexing, ", $prefix, "indexable, ",
+            $prefix, "account_kind, ", $prefix, "bot_contact, ", $prefix, "limited_at, ",
             $prefix, "email_verified"
         )
     };
@@ -60,7 +60,28 @@ pub const TABLE: Table = Table {
         Column::new("bio", "TEXT").default("''"),
         // Privacy: who sees the first and last name, see `NameVisibility`.
         Column::new("names_visibility", "TEXT").default("'public'"),
-        Column::new("birthday_public", "BOOLEAN").default("TRUE"),
+        // Private by default (Law 25 art. 9.1: the most private settings
+        // first); accounts made before keep theirs.
+        Column::new("birthday_public", "BOOLEAN").default("FALSE"),
+        // Consent to the Terms of Use and Privacy Policy: when, and which
+        // versions (see `site_page::consent_version`).
+        Column::new("terms_accepted_at", "TIMESTAMPTZ").nullable(),
+        Column::new("terms_version", "TEXT").default("''"),
+        // Search engines may show the profile and posts: off by default,
+        // `noindex` on the pages otherwise.
+        Column::new("search_indexing", "BOOLEAN").default("FALSE"),
+        // Mastodon's `indexable`: the public posts may be found by the
+        // search, here and on other servers. On unless turned off.
+        Column::new("indexable", "BOOLEAN").default("TRUE"),
+        // The language they last used (`en`, `fr`...), for the emails sent
+        // without a request of theirs: moderation notices.
+        Column::new("language", "TEXT").default("''"),
+        // `person`, `bot` or `parody`, see `AccountKind` (the rules ask to
+        // label them); a bot names the human answering for it.
+        Column::new("account_kind", "TEXT").default("'person'"),
+        Column::new("bot_contact", "TEXT").default("''"),
+        // Limited by the moderators: only their followers see what they post.
+        Column::new("limited_at", "TIMESTAMPTZ").nullable(),
         // `user`, `moderator` or `admin`, see `Role`. The first account made
         // is the admin, see `create_account`.
         Column::new("role", "TEXT").default("'user'"),
@@ -150,7 +171,7 @@ impl NameVisibility {
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::Public => "Everyone, here and on the Fediverse",
+            Self::Public => "Everyone, here and on other servers",
             Self::Followers => "Your followers and friends here",
             Self::Friends => "Your friends here",
             Self::Private => "Only you",
@@ -225,6 +246,66 @@ impl Role {
     }
 }
 
+/// What an account is, shown as a badge by its name (Server rules, 7).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum AccountKind {
+    #[default]
+    Person,
+    /// Posts by itself: a `Service` for other servers, Mastodon's "bot".
+    Bot,
+    /// A parody, fan or commentary account.
+    Parody,
+}
+
+impl AccountKind {
+    pub const ALL: [Self; 3] = [Self::Person, Self::Bot, Self::Parody];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Person => "person",
+            Self::Bot => "bot",
+            Self::Parody => "parody",
+        }
+    }
+
+    pub fn parse(value: &str) -> Self {
+        match value {
+            "bot" => Self::Bot,
+            "parody" => Self::Parody,
+            _ => Self::Person,
+        }
+    }
+
+    /// For the choice in the settings.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Person => "A person or an organization",
+            Self::Bot => "A bot: it posts automatically",
+            Self::Parody => "A parody, fan or commentary account",
+        }
+    }
+
+    /// Shown next to the name, `None` for people.
+    pub fn badge(self) -> Option<&'static str> {
+        match self {
+            Self::Person => None,
+            Self::Bot => Some("Bot"),
+            Self::Parody => Some("Parody"),
+        }
+    }
+
+    pub fn badge_title(self) -> &'static str {
+        match self {
+            Self::Person => "",
+            Self::Bot => "An automated account",
+            Self::Parody => "A parody, fan or commentary account: not who it imitates",
+        }
+    }
+}
+
+/// Longest contact of a bot's human.
+pub const BOT_CONTACT_MAX_CHARS: usize = 200;
+
 #[derive(Clone, Debug)]
 pub struct User {
     pub id: i32,
@@ -257,6 +338,16 @@ pub struct User {
     pub suspended_until: Option<DateTime<Utc>>,
     /// The account of the moderation team, see `sync_team_account`.
     pub team: bool,
+    /// Search engines may show the profile and posts (`noindex` otherwise).
+    pub search_indexing: bool,
+    /// Mastodon's `indexable`: the public posts may be found by the search.
+    pub indexable: bool,
+    /// A person, a bot or a parody, see `AccountKind`.
+    pub account_kind: AccountKind,
+    /// For a bot: who answers for it (`@alice` or an email).
+    pub bot_contact: String,
+    /// Limited by the moderators, see `set_limited`.
+    pub limited_at: Option<DateTime<Utc>>,
     /// The link sent to the email was opened, see `handlers::verify_email`.
     pub email_verified: bool,
 }
@@ -284,6 +375,11 @@ impl User {
             suspended_at: row.try_get("suspended_at")?,
             suspended_until: row.try_get("suspended_until")?,
             team: row.try_get("team")?,
+            search_indexing: row.try_get("search_indexing")?,
+            indexable: row.try_get("indexable")?,
+            account_kind: AccountKind::parse(&row.try_get::<String, _>("account_kind")?),
+            bot_contact: row.try_get("bot_contact")?,
+            limited_at: row.try_get("limited_at")?,
             email_verified: row.try_get("email_verified")?,
         })
     }
@@ -347,6 +443,19 @@ impl User {
     /// Banned, or suspended and not yet at its end.
     pub fn is_suspended(&self) -> bool {
         self.suspended_at.is_some() && self.suspended_until.is_none_or(|until| until > Utc::now())
+    }
+
+    /// The end of a suspension, for the person; `None` for a ban.
+    pub fn suspension_end_label(&self) -> Option<String> {
+        self.suspended_until.map(crate::i18n::date_time)
+    }
+
+    pub fn is_bot(&self) -> bool {
+        self.account_kind == AccountKind::Bot
+    }
+
+    pub fn is_limited(&self) -> bool {
+        self.limited_at.is_some()
     }
 
     /// `@alice@tison.social`: the username with the site's domain.
@@ -464,11 +573,12 @@ pub fn validate_password(password: &str) -> bool {
 }
 
 /// Parses a `YYYY-MM-DD` date (what `<input type="date">` sends) and checks
-/// the user is at least `MIN_AGE_YEARS` old and the date is plausible.
-pub fn validate_birthday(raw: &str, today: NaiveDate) -> Option<NaiveDate> {
+/// the user is at least `min_age` old (`settings::minimum_age`) and the date
+/// is plausible.
+pub fn validate_birthday(raw: &str, today: NaiveDate, min_age: u32) -> Option<NaiveDate> {
     let birthday = NaiveDate::parse_from_str(raw.trim(), "%Y-%m-%d").ok()?;
     let age = today.years_since(birthday)?;
-    (MIN_AGE_YEARS..=MAX_AGE_YEARS)
+    (min_age..=MAX_AGE_YEARS)
         .contains(&age)
         .then_some(birthday)
 }
@@ -483,6 +593,8 @@ pub struct NewAccount {
     pub lastname: String,
     pub names_visibility: NameVisibility,
     pub birthday: NaiveDate,
+    /// The versions of the Terms and Privacy Policy accepted at signup.
+    pub terms_version: String,
 }
 
 #[derive(Debug)]
@@ -496,8 +608,10 @@ pub async fn create_account(pool: &PgPool, account: &NewAccount) -> Result<User,
     // Not a community's name either: they share the Fediverse names. The
     // first account of the site is its admin, whoever installed it.
     let result = sqlx::query(concat!(
-        "INSERT INTO users (username, email, password_hash, firstname, lastname, birthday, role, names_visibility)
-         SELECT $1, $2, $3, $4, $5, $6, CASE WHEN EXISTS (SELECT 1 FROM users WHERE NOT team) THEN 'user' ELSE 'admin' END, $7
+        "INSERT INTO users (username, email, password_hash, firstname, lastname, birthday, role, names_visibility,
+                            terms_accepted_at, terms_version)
+         SELECT $1, $2, $3, $4, $5, $6, CASE WHEN EXISTS (SELECT 1 FROM users WHERE NOT team) THEN 'user' ELSE 'admin' END, $7,
+                NOW(), $8
          WHERE NOT EXISTS (SELECT 1 FROM communities WHERE LOWER(slug) = LOWER($1))
          RETURNING ",
         user_columns!()
@@ -509,6 +623,7 @@ pub async fn create_account(pool: &PgPool, account: &NewAccount) -> Result<User,
     .bind(&account.lastname)
     .bind(account.birthday)
     .bind(account.names_visibility.as_str())
+    .bind(&account.terms_version)
     .fetch_optional(pool)
     .await;
 
@@ -689,6 +804,139 @@ pub async fn sync_team_account(pool: &PgPool, instance_name: &str, active: bool)
         }
         None => {}
     }
+    Ok(())
+}
+
+/// The versions of the Terms and Privacy Policy the user accepted last,
+/// and when.
+pub async fn consent(pool: &PgPool, id: i32) -> Result<(String, Option<DateTime<Utc>>), sqlx::Error> {
+    Ok(sqlx::query_as("SELECT terms_version, terms_accepted_at FROM users WHERE id = $1")
+        .bind(id)
+        .fetch_optional(pool)
+        .await?
+        .unwrap_or_default())
+}
+
+/// The user accepts the Terms and Privacy Policy of `version`.
+pub async fn accept_terms(pool: &PgPool, id: i32, version: &str) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE users SET terms_accepted_at = NOW(), terms_version = $2 WHERE id = $1").bind(id).bind(version).execute(pool).await?;
+    Ok(())
+}
+
+/// The language of the user's emails, see the `language` column.
+pub async fn set_language(pool: &PgPool, id: i32, code: &str) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE users SET language = $2 WHERE id = $1 AND language <> $2").bind(id).bind(code).execute(pool).await?;
+    Ok(())
+}
+
+/// The email and language of a user, for the emails sent to them.
+pub async fn email_and_language(pool: &PgPool, id: i32) -> Result<Option<(String, String)>, sqlx::Error> {
+    let row: Option<(Option<String>, String)> = sqlx::query_as("SELECT email, language FROM users WHERE id = $1").bind(id).fetch_optional(pool).await?;
+    Ok(row.and_then(|(email, language)| email.map(|email| (email, language))))
+}
+
+/// A person, a bot (with the human answering for it) or a parody.
+pub async fn set_account_kind(pool: &PgPool, id: i32, kind: AccountKind, bot_contact: &str) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE users SET account_kind = $2, bot_contact = $3 WHERE id = $1")
+        .bind(id)
+        .bind(kind.as_str())
+        .bind(bot_contact)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// Whether the bot `bot` may comment on the post `post_id` (answering its
+/// comment `parent_id`, if given): only someone who interacts with it
+/// (Server rules, 7): on its own post (commenting there is talking to it),
+/// to its own comment, someone following it, or a text mentioning it.
+pub async fn bot_may_reply(pool: &PgPool, bot: &User, post_id: i64, parent_id: Option<i64>) -> Result<bool, sqlx::Error> {
+    let row: Option<(Option<i32>, Option<i32>, Option<i64>, String)> = sqlx::query_as(
+        "SELECT p.user_id, COALESCE(c.user_id, CASE WHEN $2::bigint IS NULL THEN p.user_id END),
+                COALESCE(c.remote_actor_id, CASE WHEN $2::bigint IS NULL THEN p.remote_actor_id END),
+                COALESCE(c.body, CASE WHEN $2::bigint IS NULL THEN COALESCE(p.title, '') || ' ' || p.body END, '')
+         FROM posts p LEFT JOIN comments c ON c.id = $2 AND c.post_id = p.id
+         WHERE p.id = $1",
+    )
+    .bind(post_id)
+    .bind(parent_id)
+    .fetch_optional(pool)
+    .await?;
+    let Some((post_author, user_id, actor_id, text)) = row else {
+        return Ok(false);
+    };
+    if post_author == Some(bot.id) || user_id == Some(bot.id) || mentions(&text, &bot.username) {
+        return Ok(true);
+    }
+    follows_bot(pool, bot.id, user_id, actor_id).await
+}
+
+/// Whether the bot may write to this person in the messenger: someone
+/// following it, or who already wrote to it there (Server rules, 7).
+pub async fn bot_may_message(pool: &PgPool, bot_id: i32, conversation_id: i64, user_id: Option<i32>, actor_id: Option<i64>) -> Result<bool, sqlx::Error> {
+    let wrote: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM messages WHERE conversation_id = $1
+            AND (sender_user_id = $2 OR sender_actor_id = $3))",
+    )
+    .bind(conversation_id)
+    .bind(user_id)
+    .bind(actor_id)
+    .fetch_one(pool)
+    .await?;
+    Ok(wrote || follows_bot(pool, bot_id, user_id, actor_id).await?)
+}
+
+async fn follows_bot(pool: &PgPool, bot_id: i32, user_id: Option<i32>, actor_id: Option<i64>) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM user_follows WHERE followed_id = $1 AND follower_id = $2)
+             OR EXISTS (SELECT 1 FROM federation_followers WHERE user_id = $1 AND actor_id = $3)",
+    )
+    .bind(bot_id)
+    .bind(user_id)
+    .bind(actor_id)
+    .fetch_one(pool)
+    .await
+}
+
+/// `@name` in `text`, alone (not `@namesake`), any case, with or without
+/// its server (`@name@tison.social`).
+pub fn mentions(text: &str, username: &str) -> bool {
+    let lower = text.to_lowercase();
+    let wanted = format!("@{}", username.to_lowercase());
+    lower.match_indices(&wanted).any(|(at, _)| {
+        let before_ok = lower[..at].chars().next_back().is_none_or(|letter| !(letter.is_alphanumeric() || letter == '_'));
+        let after_ok = lower[at + wanted.len()..].chars().next().is_none_or(|letter| !(letter.is_alphanumeric() || letter == '_'));
+        before_ok && after_ok
+    })
+}
+
+/// Public posts of the user in the last hour, for the bots' limit.
+pub async fn posts_last_hour(pool: &PgPool, id: i32) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar("SELECT COUNT(*) FROM posts WHERE user_id = $1 AND visibility <> 'private' AND created_at > NOW() - INTERVAL '1 hour'")
+        .bind(id)
+        .fetch_one(pool)
+        .await
+}
+
+/// Limits the account (Server rules, enforcement): only their followers,
+/// friends and the staff see what they post, see `post_visible!`.
+pub async fn set_limited(pool: &PgPool, id: i32, limited: bool) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE users SET limited_at = CASE WHEN $2 THEN COALESCE(limited_at, NOW()) END WHERE id = $1")
+        .bind(id)
+        .bind(limited)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// Whether the public posts of the user may be found by the search.
+pub async fn set_indexable(pool: &PgPool, id: i32, indexable: bool) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE users SET indexable = $2 WHERE id = $1").bind(id).bind(indexable).execute(pool).await?;
+    Ok(())
+}
+
+pub async fn set_search_indexing(pool: &PgPool, id: i32, allowed: bool) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE users SET search_indexing = $2 WHERE id = $1").bind(id).bind(allowed).execute(pool).await?;
     Ok(())
 }
 
@@ -998,6 +1246,25 @@ fn is_unique_violation(err: &sqlx::Error) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn mentions_are_whole_names() {
+        assert!(mentions("hi @Weatherbot, rain?", "weatherbot"));
+        assert!(mentions("@weatherbot@tison.social today", "weatherbot"));
+        assert!(!mentions("hi @weatherbots", "weatherbot"));
+        assert!(!mentions("mail me at x@weatherbot", "weatherbot"));
+        assert!(!mentions("nothing", "weatherbot"));
+    }
+
+    #[test]
+    fn account_kinds_parse_and_badge() {
+        for kind in AccountKind::ALL {
+            assert_eq!(AccountKind::parse(kind.as_str()), kind);
+        }
+        assert_eq!(AccountKind::parse("robot"), AccountKind::Person);
+        assert_eq!(AccountKind::Bot.badge(), Some("Bot"));
+        assert_eq!(AccountKind::Person.badge(), None);
+    }
+
     use super::*;
 
     #[test]
@@ -1030,6 +1297,11 @@ mod tests {
             suspended_at: None,
             suspended_until: None,
             team: false,
+            search_indexing: false,
+            indexable: true,
+            account_kind: AccountKind::Person,
+            bot_contact: String::new(),
+            limited_at: None,
             email_verified: true,
         }
     }

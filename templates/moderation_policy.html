@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{# Public: who moderates and how (Server rules, parts C and D), see
+   handlers::system::moderation_policy. #}
+{% block content %}
+<section class="box content moderation-policy">
+    <h1>{{ "Moderation"|t }}</h1>
+    <p>{{ "The moderators act on reports with the server rules, from a reminder to a suspension. The person is told what was done and why, and can appeal."|t }} <a href="/rules">{{ "Read the server rules"|t }}</a></p>
+
+    <h2>{{ "The moderators"|t }}</h2>
+    <ul class="account-list">
+        {% for member in staff %}
+        <li>
+            <a href="/user/{{ member.username }}">{{ member.display_name() }}</a> <span class="post-username">@{{ member.username }}</span>
+            {% if let Some(badge) = member.role.badge() %}<span class="role-badge {{ member.role.as_str() }}">{{ badge|t }}</span>{% endif %}
+        </li>
+        {% endfor %}
+    </ul>
+
+    <h2>{{ "Reporting"|t }}</h2>
+    <p>{{ "Use Report on a post, a comment or a profile. Reports are confidential: the person reported doesn't know who reported them. Other servers can report their members' content here too."|t }}</p>
+    {% if !crate::settings::privacy_email().is_empty() %}
+    <p>{{ "For personal data, write to"|t }} <a href="mailto:{{ crate::settings::privacy_email() }}">{{ crate::settings::privacy_email() }}</a>.</p>
+    {% endif %}
+
+    <h2>{{ "Notices and appeals"|t }}</h2>
+    <p>{{ "When the moderators act on an account or on what it posted, its owner gets a notice naming the rule broken. Each decision can be appealed once, even by a suspended account, by signing in."|t }}</p>
+
+    <h2>{{ "Labels"|t }}</h2>
+    <p>{% if bot_posts_per_hour == 1 %}{{ "Bots and parody accounts carry a badge by their name; a bot names the human answering for it, and publishes at most one post an hour. Posts made with AI or sponsored carry a label, and sensitive posts a content warning."|t }}{% else %}{{ "Bots and parody accounts carry a badge by their name; a bot names the human answering for it, and publishes at most {} posts an hour. Posts made with AI or sponsored carry a label, and sensitive posts a content warning."|tf(bot_posts_per_hour) }}{% endif %}</p>
+
+    <h2>{{ "Moderated servers"|t }}</h2>
+    {% if servers.is_empty() %}
+    <p class="empty">{{ "No server is limited or banned."|t }}</p>
+    {% else %}
+    <div class="instance-table-wrap">
+        <table class="instance-table">
+            <thead><tr><th>{{ "Server"|t }}</th><th>{{ "Rule"|t }}</th><th>{{ "Reason"|t }}</th></tr></thead>
+            <tbody>
+                {% for (domain, policy, reason) in servers %}
+                <tr>
+                    <td>{{ domain }}</td>
+                    <td><span class="instance-status {{ policy.as_str() }}" title="{{ policy.explanation()|t }}">{{ policy.label()|t }}</span></td>
+                    <td>{{ reason }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+</section>
+{% endblock %}

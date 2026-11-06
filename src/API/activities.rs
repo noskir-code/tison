@@ -56,10 +56,95 @@ pub fn text_to_html(text: &str) -> String {
         .collect()
 }
 
-/// Hashtag links of `linkify` point to `/tags/…` on this site: absolute for
-/// other servers.
+/// The links of `linkify` point to this site (`/tags/…`, `/user/…`,
+/// `/search?q=…` for mentions): absolute for other servers.
 fn absolute_tags(html: &str, base_url: &str) -> String {
-    html.replace("href=\"/tags/", &format!("href=\"{base_url}/tags/"))
+    html.replace("href=\"/", &format!("href=\"{base_url}/"))
+}
+
+/// The people a post mentions, as Mastodon sends them: a `Mention` tag each
+/// (which also delivers it to them), in `cc`, and their links in the text
+/// pointing to their account rather than to this site's search.
+pub fn add_mentions(federation: &Federation, note: &mut Value, mentions: &[crate::entities::mention::Mentioned]) {
+    if mentions.is_empty() {
+        return;
+    }
+    let base = &federation.base_url;
+    if let Some(content) = note["content"].as_str() {
+        let mut content = content.to_string();
+        for mentioned in mentions {
+            let Some((user, domain)) = mentioned.handle.trim_start_matches('@').split_once('@') else {
+                continue;
+            };
+            // As `linkify::mention_href` writes them.
+            let link = match domain.eq_ignore_ascii_case(&federation.domain) {
+                true => format!("{base}/user/{}", user.to_lowercase()),
+                false => format!("{base}/search?q=%40{}%40{}", user.to_lowercase(), domain.to_ascii_lowercase()),
+            };
+            content = content.replace(&format!("href=\"{}\"", crate::linkify::escape(&link)), &format!("href=\"{}\"", crate::linkify::escape(&mentioned.actor_url)));
+        }
+        note["content"] = json!(content);
+    }
+    let mut tags = match note["tag"].take() {
+        Value::Array(existing) => existing,
+        _ => Vec::new(),
+    };
+    let mut cc = match note["cc"].take() {
+        Value::Array(existing) => existing,
+        _ => Vec::new(),
+    };
+    for mentioned in mentions {
+        tags.push(json!({ "type": "Mention", "href": mentioned.actor_url, "name": mentioned.handle }));
+        if !cc.iter().any(|id| id.as_str() == Some(&mentioned.actor_url)) {
+            cc.push(json!(mentioned.actor_url));
+        }
+    }
+    note["tag"] = json!(tags);
+    note["cc"] = json!(cc);
+}
+
+/// Mastodon's HTML shows a mention as `@bob` alone: written back as
+/// `@bob@mastodon.social` from its `Mention` tag, so it isn't taken for
+/// someone of this server (see `linkify::mention_href`). Mentions of people
+/// here (`site_domain`) stay `@alice`.
+fn full_mentions(text: &str, note: &Value, site_domain: &str) -> String {
+    let Value::Array(tags) = &note["tag"] else {
+        return text.to_string();
+    };
+    let known: Vec<(String, String)> = tags
+        .iter()
+        .filter(|tag| tag["type"] == "Mention")
+        .filter_map(|tag| {
+            let name = tag["name"].as_str()?.trim_start_matches('@');
+            match name.split_once('@') {
+                Some((user, domain)) => Some((user.to_string(), domain.to_ascii_lowercase())),
+                None => Some((name.to_string(), crate::entities::author::host_of(tag["href"].as_str()?).to_ascii_lowercase())),
+            }
+        })
+        .filter(|(user, domain)| !user.is_empty() && !domain.is_empty())
+        .collect();
+    if known.is_empty() {
+        return text.to_string();
+    }
+    let mut written = String::with_capacity(text.len() + 32);
+    let mut position = 0;
+    for handle in crate::mention::spans(text) {
+        if handle.domain.is_some() {
+            continue;
+        }
+        let Some((_, domain)) = known.iter().find(|(user, _)| user.eq_ignore_ascii_case(&handle.user)) else {
+            continue;
+        };
+        if domain.eq_ignore_ascii_case(site_domain) {
+            continue;
+        }
+        written.push_str(&text[position..handle.end]);
+        written.push('@');
+        written.push_str(domain);
+        position = handle.end;
+    }
+    written.push_str(&text[position..]);
+    written
 }
 
 /// The `tag` of an object for its hashtags, as Mastodon and Pixelfed send
@@ -74,6 +159,21 @@ fn hashtag_tags(base_url: &str, tags: &[String], with_sign: bool) -> Vec<Value> 
             })
         })
         .collect()
+}
+
+/// The post's hashtags, with `#AIGenerated` and `#Ad` for its labels (Server
+/// rules, 7): what other servers show of them, Mastodon's in its hashtag bar.
+fn label_hashtags(post: &Post) -> Vec<String> {
+    use crate::entities::post::{AI_TAGS, SPONSORED_TAGS};
+    let mut tags = post.hashtags();
+    let has = |tags: &[String], list: &[&str]| tags.iter().any(|tag| list.contains(&tag.to_lowercase().as_str()));
+    if post.ai_generated && !has(&tags, &AI_TAGS) {
+        tags.push("AIGenerated".to_string());
+    }
+    if post.sponsored && !has(&tags, &SPONSORED_TAGS) {
+        tags.push("Ad".to_string());
+    }
+    tags
 }
 
 /// Adds the hashtags to the `tag` of `note` (after its mentions), and makes
@@ -242,7 +342,16 @@ fn audience(object: &Value) -> Vec<&str> {
 
 /// Public, or "home" on Misskey (unlisted): addressed to everyone.
 /// Followers-only and direct notes are never published in a community.
-fn is_public(object: &Value) -> bool {
+/// Whether `field` (`to`, `cc`) of an object names one of `ids`.
+fn is_addressed_to(object: &Value, field: &str, ids: &[&str]) -> bool {
+    match &object[field] {
+        Value::Array(items) => items.iter().filter_map(Value::as_str).any(|id| ids.contains(&id)),
+        Value::String(id) => ids.contains(&id.as_str()),
+        _ => false,
+    }
+}
+
+pub(crate) fn is_public(object: &Value) -> bool {
     audience(object)
         .iter()
         .any(|id| matches!(*id, PUBLIC | "as:Public" | "Public"))
@@ -269,7 +378,7 @@ fn is_message(object: &Value, sender: &RemoteActor) -> bool {
 
 /// Types of objects Tison shows as posts: Mastodon's polls are Questions,
 /// Lemmy's posts Pages.
-fn is_note(object: &Value) -> bool {
+pub(crate) fn is_note(object: &Value) -> bool {
     matches!(object["type"].as_str(), Some("Note" | "Page" | "Article" | "Question" | "Video" | "Audio" | "Event"))
 }
 
@@ -299,10 +408,17 @@ pub fn person(federation: &Federation, user: &User, public_key_pem: &str) -> Val
                 "manuallyApprovesFollowers": "as:manuallyApprovesFollowers",
                 "toot": "http://joinmastodon.org/ns#",
                 "suspended": "toot:suspended",
+                "indexable": "toot:indexable",
+                "schema": "http://schema.org#",
+                "PropertyValue": "schema:PropertyValue",
+                "value": "schema:value",
             },
         ],
         "id": id,
-        "type": "Person",
+        // Its public posts may be found by search, like Mastodon's.
+        "indexable": user.indexable,
+        // A bot is a Service: Mastodon shows "Automated" by its name.
+        "type": if user.is_bot() { "Service" } else { "Person" },
         // Banned or suspended by the staff: Mastodon hides the account.
         "suspended": user.is_suspended(),
         "preferredUsername": user.username,
@@ -328,6 +444,18 @@ pub fn person(federation: &Federation, user: &User, public_key_pem: &str) -> Val
     }
     if let Some(background) = &user.background_url {
         person["image"] = json!({ "type": "Image", "url": federation.absolute_url(background) });
+    }
+    // Profile fields, as Mastodon shows them (Server rules, 7): who answers
+    // for a bot, and that a parody is one.
+    let mut fields = Vec::new();
+    if user.is_bot() && !user.bot_contact.is_empty() {
+        fields.push(json!({ "type": "PropertyValue", "name": "Operator", "value": crate::linkify::to_html(&user.bot_contact) }));
+    }
+    if user.account_kind == crate::entities::user::AccountKind::Parody {
+        fields.push(json!({ "type": "PropertyValue", "name": "Account", "value": "Parody, fan or commentary account" }));
+    }
+    if !fields.is_empty() {
+        person["attachment"] = json!(fields);
     }
     person
 }
@@ -463,6 +591,12 @@ pub fn post_note(federation: &Federation, post: &Post) -> Option<Value> {
         cc.push(group.clone());
         note["audience"] = json!(group);
     }
+    // Unlisted, as Mastodon sends it: to the followers, the public in copy,
+    // so servers show it but keep it out of their public timelines.
+    if post.visibility == crate::entities::post::Visibility::Unlisted {
+        note["to"] = json!([federation.followers_url(author.public_id)]);
+        cc[0] = PUBLIC.to_string();
+    }
     if let Some(title) = post.title.as_ref().filter(|_| post.is_article()) {
         // An article, as WriteFreely sends them: Mastodon shows its title
         // and a link to its page, WriteFreely-like readers all of it.
@@ -487,7 +621,12 @@ pub fn post_note(federation: &Federation, post: &Post) -> Option<Value> {
     }
     // PeerTube writes a video's tags without `#`, the others with.
     let is_video = note["type"] == "Video";
-    add_hashtags(&federation.base_url, &mut note, &post.hashtags(), !is_video);
+    add_hashtags(&federation.base_url, &mut note, &label_hashtags(post), !is_video);
+    // A content warning, as Mastodon sends them: it hides the post.
+    if !post.content_warning.is_empty() {
+        note["summary"] = json!(post.content_warning);
+        note["sensitive"] = json!(true);
+    }
     if is_video
         && let (Some(id), Some(name)) = (post.category, post.category_name())
     {
@@ -738,6 +877,31 @@ struct RemoteMedia {
     file: Option<NewAttachment>,
     poster: Option<String>,
     duration: Option<i32>,
+}
+
+/// The page of an object on its server: its `url` as text, a link, or in a
+/// list of links (PeerTube's: the HTML page among the video files).
+fn original_page(url: &Value) -> Option<String> {
+    match url {
+        Value::String(url) => Some(url.clone()),
+        Value::Array(links) => links
+            .iter()
+            .find(|link| link.as_str().is_some() || link["mediaType"] == "text/html")
+            .and_then(original_page),
+        other => other.get("href").and_then(Value::as_str).map(str::to_string),
+    }
+}
+
+/// A video or episode of a server whose media are rejected (see
+/// `Policy::RejectMedia`): kept with its title, without its file nor its
+/// picture; its page links to the original instead.
+async fn without_rejected_media(pool: &PgPool, actor_id: &str, media: Option<RemoteMedia>) -> Option<RemoteMedia> {
+    let mut media = media?;
+    if store::media_refused(pool, actor_id).await.unwrap_or(false) {
+        media.file = None;
+        media.poster = None;
+    }
+    Some(media)
 }
 
 /// Links of `url`, those inside other links (`tag`) too.
@@ -1013,6 +1177,19 @@ pub fn follow(federation: &Federation, user: &User, target: &str, follow_id: &st
     }))
 }
 
+/// A user here blocks an account of another server (Server rules, 2):
+/// Mastodon then hides them from each other. The id stays the same, so the
+/// Undo of an unblock matches it.
+pub fn block(federation: &Federation, user: &User, target: &str, actor_row_id: i64) -> Value {
+    with_context(json!({
+        "id": format!("{}/blocks/{actor_row_id}", federation.actor_url(user.public_id)),
+        "type": "Block",
+        "actor": federation.actor_url(user.public_id),
+        "object": target,
+        "to": [target],
+    }))
+}
+
 /// Ends the follow `follow_id` of `follower` on the local actor `actor`:
 /// Mastodon and Misskey remove a follower this way.
 pub fn reject_follow(actor: &str, follower: &str, follow_id: &str) -> Value {
@@ -1176,7 +1353,7 @@ pub fn reject_join(actor: &str, join: &Value) -> Value {
     }))
 }
 
-fn accept(actor: &str, follow: &Value) -> Value {
+pub(crate) fn accept(actor: &str, follow: &Value) -> Value {
     with_context(json!({
         "id": format!("{actor}/accepts/{}", Utc::now().timestamp_micros()),
         "type": "Accept",
@@ -1419,6 +1596,31 @@ async fn local_recipients(federation: &Federation, pool: &PgPool, object: &Value
 /// community, the mention of the community starting the text is removed,
 /// see `strip_mention`.
 fn note_text(note: &Value, community: Option<(&str, &str)>) -> String {
+    note_text_with(note, community, true)
+}
+
+/// The content warning of a post of another server, kept apart (see
+/// `post::Labels`): a Note's `summary`. An Article's is an excerpt, unless
+/// it's marked sensitive.
+fn remote_labels(note: &Value) -> crate::entities::post::Labels {
+    let sensitive = note["sensitive"].as_bool().unwrap_or(false);
+    let summary = note["summary"].as_str().filter(|_| sensitive || !matches!(note["type"].as_str(), Some("Article" | "Page")));
+    let summary = summary.map(html_to_text);
+    let tags: Vec<String> = match &note["tag"] {
+        Value::Array(items) => items
+            .iter()
+            .filter(|item| item["type"] == "Hashtag")
+            .filter_map(|item| item["name"].as_str())
+            .map(|name| name.trim_start_matches('#').to_string())
+            .collect(),
+        _ => Vec::new(),
+    };
+    crate::entities::post::Labels::from_remote(summary.as_deref(), &tags)
+}
+
+/// `note_text`, with the content warning first (`⚠ summary`) when
+/// `with_warning`: comments and messages, which don't keep it apart.
+fn note_text_with(note: &Value, community: Option<(&str, &str)>, with_warning: bool) -> String {
     // The original text only when it reads well as plain text: Friendica's
     // is BBCode (`text/bbcode`, "[b]...[/b]"), its HTML is better then.
     let readable_source = note["source"]["mediaType"]
@@ -1434,6 +1636,7 @@ fn note_text(note: &Value, community: Option<(&str, &str)>) -> String {
                 .map(str::to_string)
         })
         .unwrap_or_else(|| html_to_text(note["content"].as_str().unwrap_or_default()));
+    let source = full_mentions(&source, note, crate::settings::site_domain());
     let source = match community {
         Some((slug, domain)) => strip_mention(&source, slug, domain),
         None => source,
@@ -1445,7 +1648,7 @@ fn note_text(note: &Value, community: Option<(&str, &str)>) -> String {
         Some(title) => format!("{title}\n\n{source}"),
         None => source,
     };
-    let text = match note["summary"].as_str().map(str::trim).filter(|summary| !summary.is_empty()) {
+    let text = match note["summary"].as_str().map(str::trim).filter(|summary| !summary.is_empty() && with_warning) {
         // A content warning.
         Some(summary) => format!("⚠ {summary}\n\n{source}"),
         None => source,
@@ -1569,7 +1772,7 @@ fn published(note: &Value) -> Option<DateTime<Utc>> {
 }
 
 /// Queues `activity` signed by `signer` for `inboxes`, and starts sending.
-async fn send(federation: &Federation, pool: &PgPool, signer: Signer, inboxes: &[String], activity: &Value) -> Result<(), String> {
+pub(crate) async fn send(federation: &Federation, pool: &PgPool, signer: Signer, inboxes: &[String], activity: &Value) -> Result<(), String> {
     store::enqueue(pool, signer, inboxes, &activity.to_string())
         .await
         .map_err(|err| format!("failed to queue activity: {err}"))?;
@@ -1588,6 +1791,25 @@ pub async fn receive(
 ) -> Result<(), String> {
     let kind = activity["type"].as_str().unwrap_or_default();
     match (kind, recipient) {
+        // Blocked by the user (Server rules, 2): refused, see `entities::block`.
+        ("Follow", Some((Recipient::User(user), _)))
+            if crate::entities::block::blocks_actor(pool, user.id, sender.id).await.unwrap_or(false) =>
+        {
+            let follow_id = activity["id"].as_str().unwrap_or_default();
+            let reject = reject_follow(&federation.actor_url(user.public_id), &sender.actor_id, follow_id);
+            send(federation, pool, Signer::User(user.id), std::slice::from_ref(&sender.inbox), &reject).await?;
+            tracing::info!("refused the follow of {}, blocked by @{}", sender.actor_id, user.username);
+        }
+        // They blocked the user: they stop following each other, like on Mastodon.
+        ("Block", Some((Recipient::User(user), _))) => {
+            store::remove_follower(pool, user.id, sender)
+                .await
+                .map_err(|err| format!("failed to remove follower: {err}"))?;
+            store::reject_following(pool, sender, user.id)
+                .await
+                .map_err(|err| format!("failed to remove follow: {err}"))?;
+            tracing::info!("{} blocked @{}", sender.actor_id, user.username);
+        }
         ("Follow", Some((Recipient::User(user), _))) => {
             let follow_id = activity["id"].as_str().unwrap_or_default();
             let is_new = store::add_follower(pool, user.id, sender, follow_id)
@@ -1721,7 +1943,7 @@ pub async fn receive(
                 let is_post = matches!(object, RemoteObject::Post(..));
                 // A video, episode or event keeps its title and file or
                 // details: its `name` and `content`.
-                let media = remote_media(note).filter(|_| is_post);
+                let media = without_rejected_media(pool, &sender.actor_id, remote_media(note).filter(|_| is_post)).await;
                 let event = remote_event(note).filter(|_| is_post && crate::settings::services().events);
                 let named = media.is_some() || event.is_some();
                 let (title, text) = match article(note).filter(|_| is_post) {
@@ -1730,11 +1952,13 @@ pub async fn receive(
                         html_to_text(note["content"].as_str().unwrap_or_default()).chars().take(BODY_MAX_CHARS).collect(),
                     ),
                     Some((title, body)) => (Some(title), body),
-                    None => (None, note_text(note, community.as_ref().map(|community| (community.slug.as_str(), federation.domain.as_str())))),
+                    None => (None, note_text_with(note, community.as_ref().map(|community| (community.slug.as_str(), federation.domain.as_str())), !is_post)),
                 };
                 let attachments = match (&media, &event) {
                     (Some(media), _) => media.file.iter().map(|file| NewAttachment::new(file.url.clone(), file.media_type.clone(), "", file.width, file.height)).collect(),
                     (None, Some(_)) => Vec::new(),
+                    // A server whose media are rejected: its posts without them.
+                    (None, None) if store::media_refused(pool, &sender.actor_id).await.unwrap_or(false) => Vec::new(),
                     (None, None) => attachments(note),
                 };
                 if text.is_empty() && attachments.is_empty() && !named {
@@ -1746,6 +1970,11 @@ pub async fn receive(
                 post::update_remote(pool, &object, title.as_deref(), &text, sensitive, &tags, category)
                     .await
                     .map_err(|err| format!("failed to update note: {err}"))?;
+                if let RemoteObject::Post(post_id, _) = &object {
+                    post::set_labels(pool, *post_id, &remote_labels(note))
+                        .await
+                        .map_err(|err| format!("failed to update labels: {err}"))?;
+                }
                 let owner = match object {
                     RemoteObject::Post(id, _) => media::Owner::Post(id),
                     RemoteObject::Comment(id) => media::Owner::Comment(id),
@@ -1893,6 +2122,31 @@ async fn fetch_shared_post(federation: &Federation, pool: &PgPool, url: &str, ke
 
 /// Saves a note of another server as a post, with its media. `None` when it
 /// was already stored, or is empty.
+/// Whether what `sender` sent must be dropped (anti-spam): a flood
+/// (`security::Limit::RemoteContent`), or the same text again (see
+/// `entities::spam`, which reports the account past a threshold).
+async fn refused_as_spam(pool: &PgPool, sender: &RemoteActor, kind: crate::entities::spam::Kind, text: &str, ap_id: &str) -> bool {
+    if !crate::security::hit(crate::security::Limit::RemoteContent, &sender.actor_id) {
+        tracing::info!("dropped {} from {}: too much at once", ap_id, sender.actor_id);
+        return true;
+    }
+    let spam_sender = crate::entities::spam::Sender::Remote(sender.id);
+    match crate::entities::spam::is_repeated(pool, spam_sender, kind, text, Some(ap_id)).await {
+        Ok(true) => {
+            tracing::info!("dropped {} from {}: the same text again", ap_id, sender.actor_id);
+            if let Err(err) = crate::entities::spam::record(pool, spam_sender, kind, text, &sender.actor_id).await {
+                tracing::warn!("failed to record a repeat of {}: {}", sender.actor_id, err);
+            }
+            true
+        }
+        Ok(false) => false,
+        Err(err) => {
+            tracing::warn!("failed to check repeats of {}: {}", sender.actor_id, err);
+            false
+        }
+    }
+}
+
 async fn store_post(
     pool: &PgPool,
     author: &RemoteActor,
@@ -1907,6 +2161,7 @@ async fn store_post(
         Kind::Video => crate::settings::services().video,
         _ => crate::settings::services().podcasts,
     });
+    let media = without_rejected_media(pool, &author.actor_id, media).await;
     // Mobilizon's: without `EVENT-PLANNING`, a post like others.
     let event = remote_event(note).filter(|_| crate::settings::services().events);
     let (title, text) = match (&media, article(note)) {
@@ -1921,12 +2176,14 @@ async fn store_post(
             html_to_text(note["content"].as_str().unwrap_or_default()).chars().take(BODY_MAX_CHARS).collect(),
         ),
         (None, Some((title, body))) => (Some(title), body),
-        (None, None) => (None, note_text(note, community.map(|(community, domain)| (community.slug.as_str(), domain)))),
+        (None, None) => (None, note_text_with(note, community.map(|(community, domain)| (community.slug.as_str(), domain)), false)),
     };
     let attachments = match (&media, &event) {
         (Some(media), _) => media.file.iter().map(|file| NewAttachment::new(file.url.clone(), file.media_type.clone(), "", file.width, file.height)).collect(),
         // The banner is its picture, the online link is in its details.
         (None, Some(_)) => Vec::new(),
+        // A server whose media are rejected: its posts without them.
+        (None, None) if store::media_refused(pool, &author.actor_id).await.unwrap_or(false) => Vec::new(),
         (None, None) => attachments(note),
     };
     let poster = media.as_ref().and_then(|media| media.poster.as_deref()).or(event.as_ref().and_then(|event| event.banner.as_deref()));
@@ -1936,10 +2193,10 @@ async fn store_post(
     if text.is_empty() && attachments.is_empty() && media.is_none() && event.is_none() {
         return Ok(None);
     }
-    let page = note.get("url").and_then(|url| match url {
-        Value::String(url) => Some(url.clone()),
-        other => other.get("href").and_then(Value::as_str).map(str::to_string),
-    });
+    if refused_as_spam(pool, author, crate::entities::spam::Kind::Post, &text, ap_id).await {
+        return Ok(None);
+    }
+    let page = note.get("url").and_then(original_page);
     let remote = RemotePost {
         ap_id,
         ap_url: page.as_deref().filter(|page| page.starts_with("https://") || page.starts_with("http://")),
@@ -1962,6 +2219,9 @@ async fn store_post(
         .await
         .map_err(|err| format!("failed to save post: {err}"))?;
     if let Some(post_id) = created {
+        post::set_labels(pool, post_id, &remote_labels(note))
+            .await
+            .map_err(|err| format!("failed to save labels: {err}"))?;
         media::save_attachments(pool, media::Owner::Post(post_id), &attachments)
             .await
             .map_err(|err| format!("failed to save attachments: {err}"))?;
@@ -2107,6 +2367,82 @@ async fn receive_undo(
 
 /// A note of another server: a post in a community, a comment replying to a
 /// post or comment stored here, or a post of an account followed here.
+/// A public post of another server received through a relay (see
+/// `API::relay`): fetched again from its own server with the site's key
+/// (never trusted as relayed), then stored like the posts of followed
+/// accounts, its author known here from then on. Not replies, nor what a
+/// banned or blocked server or account sends. `None` when not stored.
+pub(crate) async fn store_relayed(federation: &Federation, pool: &PgPool, object_url: &str) -> Result<Option<i64>, String> {
+    if post::find_by_ap_id(pool, object_url).await.map_err(|err| format!("failed to look up {object_url}: {err}"))?.is_some() {
+        return Ok(None);
+    }
+    if store::is_banned(pool, object_url).await.map_err(|err| format!("failed to check {object_url}: {err}"))? {
+        return Ok(None);
+    }
+    let key = linker::local_key(federation, pool, Signer::Instance).await?;
+    let note = linker::fetch(federation, object_url, Some(&key)).await.map_err(|err| format!("failed to fetch {object_url}: {err}"))?;
+    let (Some(id), Some(author_url)) = (note["id"].as_str(), attributed_to(&note)) else {
+        return Ok(None);
+    };
+    // Only what it says it is, written on its own server.
+    if id != object_url || !linker::same_host(id, author_url) || !is_note(&note) || !is_public(&note) || note["inReplyTo"].is_string() {
+        return Ok(None);
+    }
+    let author = linker::fetch_actor(federation, pool, author_url, &key).await?;
+    if author.blocked {
+        return Ok(None);
+    }
+    let visibility = if is_addressed_to(&note, "to", &[PUBLIC, "as:Public", "Public"]) { Visibility::Public } else { Visibility::Unlisted };
+    let stored = store_post(pool, &author, &note, None, visibility).await?;
+    if let Some(post_id) = stored {
+        let mentioned = local_mentions(federation, pool, &note).await;
+        if !mentioned.is_empty() {
+            crate::handlers::mention::save_received(pool, post_id, author.id, &mentioned).await;
+        }
+    }
+    Ok(stored)
+}
+
+/// A post of another server relayed as deleted: removed here when its own
+/// server says it's gone (a relay can't delete what it didn't write).
+pub(crate) async fn delete_relayed(federation: &Federation, pool: &PgPool, object_url: &str) -> Result<(), String> {
+    let Some(post_id) = post::find_by_ap_id(pool, object_url).await.map_err(|err| format!("failed to look up {object_url}: {err}"))? else {
+        return Ok(());
+    };
+    let key = linker::local_key(federation, pool, Signer::Instance).await?;
+    if let Err(linker::FetchError::Gone) = linker::fetch(federation, object_url, Some(&key)).await {
+        post::delete_remote(pool, &post::RemoteObject::Post(post_id, None)).await.map_err(|err| format!("failed to delete {object_url}: {err}"))?;
+        tracing::info!("deleted relayed post {}", object_url);
+    }
+    Ok(())
+}
+
+/// The users here a note mentions (its `Mention` tags naming their actor),
+/// with `BLOGGING` on.
+async fn local_mentions(federation: &Federation, pool: &PgPool, note: &Value) -> Vec<i32> {
+    let Value::Array(tags) = &note["tag"] else {
+        return Vec::new();
+    };
+    if !crate::settings::services().blogging {
+        return Vec::new();
+    }
+    let mut users = Vec::new();
+    let public_ids = tags
+        .iter()
+        .filter(|tag| tag["type"] == "Mention")
+        .filter_map(|tag| federation.local_public_id(tag["href"].as_str()?))
+        .take(crate::entities::mention::MAX_PER_POST);
+    for public_id in public_ids {
+        if let Ok(Some(user)) = user::find_by_public_id(pool, public_id).await
+            && !user.is_suspended()
+            && !users.contains(&user.id)
+        {
+            users.push(user.id);
+        }
+    }
+    users
+}
+
 async fn receive_note(
     federation: &Federation,
     pool: &PgPool,
@@ -2146,6 +2482,10 @@ async fn receive_note(
                 return Ok(());
             };
             tracing::info!("published {} from {} in community {}", ap_id, sender.actor_id, community.slug);
+            let mentioned = local_mentions(federation, pool, note).await;
+            if !mentioned.is_empty() {
+                crate::handlers::mention::save_received(pool, post_id, sender.id, &mentioned).await;
+            }
             // Shared with the community's followers, like its other posts.
             let inboxes = store::community_follower_inboxes(pool, community.id)
                 .await
@@ -2156,14 +2496,19 @@ async fn receive_note(
         tracing::info!("refused post of {} in {}: not a follower", sender.actor_id, community.slug);
     }
 
-    // A post of an account followed here, for the feeds of its followers.
+    // A post of an account followed here, for the feeds of its followers,
+    // or mentioning someone here, like on Mastodon: they're told.
     let followed = store::a_local_follower(pool, &sender.actor_id)
         .await
         .map_err(|err| format!("failed to check followers: {err}"))?;
-    if followed.is_none() {
+    let mentioned = local_mentions(federation, pool, note).await;
+    if followed.is_none() && mentioned.is_empty() {
         return Ok(());
     }
-    let visibility = if is_public(note) {
+    let visibility = if is_public(note) && !is_addressed_to(note, "to", &[PUBLIC, "as:Public", "Public"]) {
+        // Mastodon's unlisted: the public only in copy.
+        Visibility::Unlisted
+    } else if is_public(note) {
         Visibility::Public
     } else if is_for_followers(note, sender) {
         Visibility::Followers
@@ -2172,8 +2517,11 @@ async fn receive_note(
         tracing::debug!("ignored direct note {} from {}", ap_id, sender.actor_id);
         return Ok(());
     };
-    if store_post(pool, sender, note, None, visibility).await?.is_some() {
-        tracing::info!("saved {} from followed account {}", ap_id, sender.actor_id);
+    if let Some(post_id) = store_post(pool, sender, note, None, visibility).await? {
+        tracing::info!("saved {} from {} account {}", ap_id, if followed.is_some() { "followed" } else { "a mentioning" }, sender.actor_id);
+        if !mentioned.is_empty() {
+            crate::handlers::mention::save_received(pool, post_id, sender.id, &mentioned).await;
+        }
     }
     Ok(())
 }
@@ -2282,8 +2630,15 @@ async fn receive_message(federation: &Federation, pool: &PgPool, sender: &Remote
     }
     let kind = if object["type"] == "ChatMessage" { "chat" } else { "note" };
     for user in local_recipients(federation, pool, object).await {
+        // Not to who blocked them (Server rules, 2).
+        if crate::entities::block::blocks_actor(pool, user.id, sender.id).await.unwrap_or(false) {
+            continue;
+        }
         // "@alice@example.com Hello": the mention of the reader goes.
         let text = strip_mention(&note_text(object, None), &user.username, &federation.domain);
+        if refused_as_spam(pool, sender, crate::entities::spam::Kind::Message, &text, ap_id).await {
+            continue;
+        }
         let files = attachments(object);
         if text.is_empty() && files.is_empty() {
             continue;
@@ -2336,6 +2691,9 @@ async fn receive_reply(
         return Ok(());
     }
     let text = note_text(note, None);
+    if refused_as_spam(pool, sender, crate::entities::spam::Kind::Comment, &text, ap_id).await {
+        return Ok(());
+    }
     let attachments = attachments(note);
     if text.is_empty() && attachments.is_empty() {
         return Ok(());
@@ -2366,6 +2724,28 @@ async fn receive_reply(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_original_page_is_found_among_links() {
+        assert_eq!(original_page(&json!("https://a.org/p/1")).as_deref(), Some("https://a.org/p/1"));
+        let peertube = json!([{ "mediaType": "video/mp4", "href": "https://a.org/v.mp4" }, { "mediaType": "text/html", "href": "https://a.org/w/1" }]);
+        assert_eq!(original_page(&peertube).as_deref(), Some("https://a.org/w/1"));
+        assert_eq!(original_page(&json!([{ "mediaType": "video/mp4", "href": "x" }])), None);
+    }
+
+    #[test]
+    fn content_warnings_of_notes_are_kept_apart() {
+        let note = json!({ "type": "Note", "summary": "food", "content": "<p>pasta</p>", "tag": [{ "type": "Hashtag", "name": "#AIGenerated" }] });
+        let labels = remote_labels(&note);
+        assert_eq!(labels.content_warning, "food");
+        assert!(labels.ai_generated);
+        assert_eq!(note_text_with(&note, None, false), "pasta");
+        // An article's summary is its excerpt, not a warning, unless sensitive.
+        let article = json!({ "type": "Article", "summary": "An excerpt", "content": "<p>text</p>" });
+        assert_eq!(remote_labels(&article).content_warning, "");
+        let sensitive = json!({ "type": "Article", "summary": "gore", "sensitive": true, "content": "" });
+        assert_eq!(remote_labels(&sensitive).content_warning, "gore");
+    }
+
     use super::*;
 
     #[test]
@@ -2391,6 +2771,20 @@ mod tests {
         let mut video = json!({});
         add_hashtags(base, &mut video, &["rust".to_string()], false);
         assert_eq!(video["tag"][0]["name"], "rust");
+    }
+
+    #[test]
+    fn mentions_keep_their_server() {
+        let note = json!({ "tag": [
+            { "type": "Mention", "name": "@bob@mastodon.social", "href": "https://mastodon.social/users/bob" },
+            { "type": "Mention", "name": "@carol", "href": "https://pleroma.example/users/carol" },
+            { "type": "Mention", "name": "@alice@tison.example", "href": "https://tison.example/ap/users/1" },
+        ] });
+        assert_eq!(
+            full_mentions("@bob @Carol and @alice, @dan", &note, "tison.example"),
+            "@bob@mastodon.social @Carol@pleroma.example and @alice, @dan"
+        );
+        assert_eq!(full_mentions("@bob@mastodon.social", &note, "tison.example"), "@bob@mastodon.social");
     }
 
     #[test]

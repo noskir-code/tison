@@ -74,11 +74,19 @@ enum PostError {
     NoTitle,
     TitleTooLong,
     ArticleTooLong,
+    /// A bot published `settings::bot_posts_per_hour` posts this hour.
+    BotLimit,
+    /// Text alone, with `BLOGGING` off: a photo is needed.
+    NeedsPhoto,
+    /// The same text as a recent post, see `entities::spam`.
+    Duplicate,
+    /// Too many posts this hour (`security::Limit::Post`).
+    TooMany,
     Server,
 }
 
 impl PostError {
-    const ALL: [Self; 11] = [
+    const ALL: [Self; 15] = [
         Self::Empty,
         Self::TooLong,
         Self::InvalidCharacters,
@@ -89,6 +97,10 @@ impl PostError {
         Self::NoTitle,
         Self::TitleTooLong,
         Self::ArticleTooLong,
+        Self::BotLimit,
+        Self::NeedsPhoto,
+        Self::Duplicate,
+        Self::TooMany,
         Self::Server,
     ];
 
@@ -104,6 +116,10 @@ impl PostError {
             Self::NoTitle => "no-title",
             Self::TitleTooLong => "title-too-long",
             Self::ArticleTooLong => "article-too-long",
+            Self::BotLimit => "bot-limit",
+            Self::NeedsPhoto => "needs-photo",
+            Self::Duplicate => "duplicate",
+            Self::TooMany => "too-many",
             Self::Server => "server",
         }
     }
@@ -115,7 +131,10 @@ impl PostError {
     fn message(self) -> String {
         match self {
             Self::Empty => "Write something or add a photo before publishing.".to_string(),
-            Self::TooLong => format!("A post can be at most {BODY_MAX_CHARS} characters."),
+            Self::TooLong => crate::i18n::tf(
+                "A post can be at most {} characters (a link counts for 23, and @name@server for @name).",
+                crate::settings::services().blogging_max_chars,
+            ),
             Self::InvalidCharacters => "The post contains characters that are not allowed.".to_string(),
             Self::InvalidVisibility => "Choose who can see the post.".to_string(),
             Self::TooManyPhotos => format!("A post can have at most {MAX_PHOTOS} photos."),
@@ -124,6 +143,10 @@ impl PostError {
             Self::NoTitle => "Give the article a title.".to_string(),
             Self::TitleTooLong => format!("A title can be at most {TITLE_MAX_CHARS} characters, on one line."),
             Self::ArticleTooLong => crate::i18n::tf("An article can be at most {} characters.", ARTICLE_MAX_CHARS),
+            Self::BotLimit => bot_limit_message(),
+            Self::NeedsPhoto => crate::i18n::t("Add a photo: this server shares photos, not text alone."),
+            Self::Duplicate => crate::i18n::t("You already posted this text today: repeating it looks like spam."),
+            Self::TooMany => crate::i18n::t("You published a lot this hour: wait a little before publishing again."),
             Self::Server => "Something went wrong, try again later.".to_string(),
         }
     }
@@ -149,8 +172,14 @@ pub const MAX_POST_BYTES: usize = MAX_PHOTOS * MAX_IMAGE_BYTES + 1024 * 1024;
 pub struct Composer {
     pub(crate) page: &'static str,
     pub(crate) error: Option<String>,
-    pub(crate) visibilities: [Visibility; 2],
+    pub(crate) visibilities: [Visibility; 3],
     pub(crate) body_max_chars: usize,
+    /// The Post tab: text posts (`BLOGGING`) or photos (`IMAGESHARING`).
+    pub(crate) posts: bool,
+    /// `BLOGGING`: text alone can be posted, else a photo is needed.
+    pub(crate) text_posts: bool,
+    /// The longest post, counted like Mastodon (`BLOGGING-MAX-CHARS`).
+    pub(crate) post_max_chars: usize,
     /// `IMAGESHARING` in `configs/services.conf`.
     pub(crate) photos: bool,
     pub(crate) max_photos: usize,
@@ -164,6 +193,8 @@ pub struct Composer {
     pub(crate) team: Option<String>,
     /// Always as the team account, without the choice (the Staff tab).
     pub(crate) team_only: bool,
+    /// Chosen at first: unlisted for bots (Server rules, 7), public otherwise.
+    pub(crate) default_visibility: Visibility,
 }
 
 impl Composer {
@@ -171,6 +202,7 @@ impl Composer {
         Self {
             team: None,
             team_only: false,
+            default_visibility: Visibility::Public,
             page: page.as_str(),
             error: query
                 .get("error")
@@ -178,10 +210,16 @@ impl Composer {
                 .map(PostError::message),
             visibilities: Visibility::ALL,
             body_max_chars: BODY_MAX_CHARS,
+            posts: crate::settings::services().blogging || crate::settings::services().image_sharing,
+            text_posts: crate::settings::services().blogging,
+            post_max_chars: crate::settings::services().blogging_max_chars,
             photos: crate::settings::services().image_sharing,
             max_photos: MAX_PHOTOS,
             articles: crate::settings::services().publishing,
-            article_open: crate::settings::services().publishing && query.get("compose").is_some_and(|kind| kind == "article"),
+            // Without the Post tab, articles are all there is.
+            article_open: crate::settings::services().publishing
+                && (query.get("compose").is_some_and(|kind| kind == "article")
+                    || !(crate::settings::services().blogging || crate::settings::services().image_sharing)),
             title_max_chars: TITLE_MAX_CHARS,
             article_max_chars: ARTICLE_MAX_CHARS,
         }
@@ -230,6 +268,9 @@ pub async fn home_page(
     };
     let mut composer = Composer::new(PostPage::Home, &query);
     composer.team = team_for(&state, &layout).await;
+    if layout.viewer.as_ref().is_some_and(crate::entities::user::User::is_bot) {
+        composer.default_visibility = Visibility::Unlisted;
+    }
     render_template(&HomeTemplate {
         title: "Home".to_string(),
         layout,
@@ -253,6 +294,9 @@ pub async fn feed_page(
     let posts = or_empty(post::feed(pool, viewer_id).await);
     let mut composer = Composer::new(PostPage::Feed, &query);
     composer.team = team_for(&state, &layout).await;
+    if layout.viewer.as_ref().is_some_and(crate::entities::user::User::is_bot) {
+        composer.default_visibility = Visibility::Unlisted;
+    }
     render_template(&FeedTemplate {
         title: "Feed".to_string(),
         layout,
@@ -294,6 +338,8 @@ struct PostForm {
     /// `team` to post as the team account (the staff only).
     author: String,
     sensitive: bool,
+    /// Content warning, made with AI, sponsored: see `post::Labels`.
+    fields: HashMap<String, String>,
     photos: Vec<Vec<u8>>,
     /// Alt texts, in the order of the photos.
     alts: Vec<String>,
@@ -343,6 +389,9 @@ async fn read_post_form(multipart: &mut Multipart) -> Result<PostForm, PostError
             "author" => form.author = text,
             "sensitive" => form.sensitive = !text.is_empty(),
             "alt" => form.alts.push(text),
+            "content_warning" | "ai_generated" | "sponsored" => {
+                form.fields.insert(name, text);
+            }
             _ => {}
         }
     }
@@ -395,6 +444,7 @@ pub async fn create_post(State(state): State<AppState>, session: Session, mut mu
     let form = read_post_form(&mut multipart).await;
     let page = PostPage::parse(form.as_ref().map(|form| form.page.as_str()).unwrap_or(""));
     let is_article = form.as_ref().is_ok_and(|form| form.kind == "article");
+    let labels_form = form.as_ref().map(|form| form.fields.clone()).map_err(|_| ());
 
     let result = async {
         let mut form = form?;
@@ -414,6 +464,28 @@ pub async fn create_post(State(state): State<AppState>, session: Session, mut mu
         } else {
             me.id
         };
+        // Only what others see counts (Server rules, 7): private notes don't.
+        let private = Visibility::parse(&form.visibility) == Some(Visibility::Private);
+        if author_id == me.id && !private && bot_over_limit(&pool, &me).await {
+            return Err(PostError::BotLimit);
+        }
+        if !crate::security::hit(crate::security::Limit::Post, &author_id.to_string()) {
+            return Err(PostError::TooMany);
+        }
+        // The same text again: refused, see `entities::spam`.
+        if !private {
+            let text = form.body.clone();
+            let sender = crate::entities::spam::Sender::Local(author_id);
+            if crate::entities::spam::is_repeated(&pool, sender, crate::entities::spam::Kind::Post, &text, None).await.unwrap_or_else(|err| {
+                tracing::warn!("failed to check repeats: {}", err);
+                false
+            }) {
+                if let Err(err) = crate::entities::spam::record(&pool, sender, crate::entities::spam::Kind::Post, &text, &format!("@{}", me.username)).await {
+                    tracing::warn!("failed to record a repeat of @{}: {}", me.username, err);
+                }
+                return Err(PostError::Duplicate);
+            }
+        }
         if is_article {
             if !crate::settings::services().publishing {
                 return Err(PostError::Server);
@@ -425,14 +497,21 @@ pub async fn create_post(State(state): State<AppState>, session: Session, mut mu
                 PostError::Server
             });
         }
-        if !crate::settings::services().image_sharing {
+        let services = crate::settings::services();
+        if !services.image_sharing {
             form.photos.clear();
+        }
+        // Without `BLOGGING`, posts are photos with a caption, like on
+        // Pixelfed (and none at all without photos either).
+        if !services.blogging && form.photos.is_empty() {
+            return Err(if services.image_sharing { PostError::NeedsPhoto } else { PostError::Server });
         }
         // A photo can go without a caption, like on Pixelfed.
         let body = match post::validate_body(&form.body) {
             Err(BodyError::Empty) if !form.photos.is_empty() => String::new(),
             body => body?,
         };
+        check_post_length(&body)?;
         let visibility = Visibility::parse(&form.visibility).ok_or(PostError::InvalidVisibility)?;
         let failed = |err: sqlx::Error| {
             tracing::error!("failed to create post: {}", err);
@@ -452,6 +531,17 @@ pub async fn create_post(State(state): State<AppState>, session: Session, mut mu
     }
     .await;
 
+    if let (Ok(post_id), Ok(form)) = (&result, &labels_form) {
+        save_labels(&pool, *post_id, form).await;
+    }
+    // Mentions of posts (not articles, in Markdown), before the post goes to
+    // other servers: they get them as tags.
+    if let Ok(post_id) = &result
+        && !is_article
+        && crate::settings::services().blogging
+    {
+        save_mentions(&state, &pool, *post_id).await;
+    }
     if let Ok(post_id) = &result {
         notifier::post_created(&state, &pool, *post_id).await;
         state.previews.notify_one();
@@ -465,6 +555,37 @@ pub async fn create_post(State(state): State<AppState>, session: Session, mut mu
         Err(error) => format!("{}?error={}", page.url(), error.code()),
     };
     Redirect::to(&location).into_response()
+}
+
+/// Keeps the mentions of a post written here and tells the people
+/// mentioned, see `handlers::mention`. Its author may be the team account.
+async fn save_mentions(state: &AppState, pool: &sqlx::PgPool, post_id: i64) {
+    let found: Result<Option<(Option<i32>, String)>, sqlx::Error> = sqlx::query_as("SELECT user_id, body FROM posts WHERE id = $1")
+        .bind(post_id)
+        .fetch_optional(pool)
+        .await;
+    let (author_id, body) = match found {
+        Ok(Some((Some(author_id), body))) => (author_id, body),
+        Ok(_) => return,
+        Err(err) => {
+            tracing::error!("failed to load post {} for its mentions: {}", post_id, err);
+            return;
+        }
+    };
+    match crate::entities::user::find_by_id(pool, author_id).await {
+        Ok(Some(author)) => crate::handlers::mention::save(state, pool, &author, post_id, &body).await,
+        Ok(None) => {}
+        Err(err) => tracing::error!("failed to load the author of post {}: {}", post_id, err),
+    }
+}
+
+/// A post at most `BLOGGING-MAX-CHARS` long, counted like Mastodon (see
+/// `mention::mastodon_length`).
+fn check_post_length(body: &str) -> Result<(), PostError> {
+    match crate::mention::mastodon_length(body) > crate::settings::services().blogging_max_chars {
+        true => Err(PostError::TooLong),
+        false => Ok(()),
+    }
 }
 
 /// The title (one line) and Markdown text of an article.
@@ -506,6 +627,11 @@ pub struct EditTemplate {
     /// The photos of a photo post, to crop again (see `crop_photo`): shown,
     /// and their original.
     pub photos: Vec<(String, String)>,
+    /// A post's content warning and labels, `None` for comments.
+    pub labels: Option<post::Labels>,
+    /// For a post (not an article, a video nor a comment): its longest
+    /// length counted like Mastodon, shown by a counter.
+    pub post_max_chars: Option<usize>,
 }
 
 /// The thumbnail of a video being edited (`/posts/{id}/thumbnail`).
@@ -568,7 +694,10 @@ pub async fn edit_page(
             .collect(),
         false => Vec::new(),
     };
+    let labels = post.labels();
+    let post_max_chars = (post.kind == post::Kind::Post && post.title.is_none()).then_some(crate::settings::services().blogging_max_chars);
     render_template(&EditTemplate {
+        post_max_chars,
         title: if post.is_article() {
             "Edit the article"
         } else if post.is_video() {
@@ -587,10 +716,11 @@ pub async fn edit_page(
             .get("error")
             .and_then(|code| PostError::from_code(code))
             .map(PostError::message),
-        federated: state.federation.is_some() && post.visibility == Visibility::Public,
+        federated: state.federation.is_some() && matches!(post.visibility, Visibility::Public | Visibility::Unlisted),
         video_thumbnail,
         video_category,
         photos,
+        labels: Some(labels),
         body: post.body,
     })
 }
@@ -620,7 +750,16 @@ pub async fn update_post(
                 let body = crate::handlers::video::validate_description(field("body"), BODY_MAX_CHARS).map_err(|_| PostError::TooLong)?;
                 (Some(title), body)
             }
-            (false, false) => (None, post::validate_body(field("body"))?),
+            (false, false) => {
+                let body = post::validate_body(field("body"));
+                // A photo post may have no caption.
+                let body = match body {
+                    Err(BodyError::Empty) if !post.attachments.is_empty() => String::new(),
+                    body => body?,
+                };
+                check_post_length(&body)?;
+                (None, body)
+            }
         };
         // The staff edits the posts of the team account too, see `post_select!`.
         let author_id = post.author.local().map_or(me.id, |author| author.id);
@@ -638,11 +777,16 @@ pub async fn update_post(
     }
     .await;
     match result {
-        Ok(_) => {
+        Ok(true) => {
+            save_labels(&pool, post_id, &form).await;
+            if post.kind == post::Kind::Post && post.title.is_none() && crate::settings::services().blogging {
+                save_mentions(&state, &pool, post_id).await;
+            }
             notifier::post_updated(&state, &pool, post_id).await;
             state.previews.notify_one();
             Redirect::to(&format!("/posts/{post_id}")).into_response()
         }
+        Ok(false) => Redirect::to(&format!("/posts/{post_id}/edit?error={}", PostError::Server.code())).into_response(),
         Err(error) => Redirect::to(&format!("/posts/{post_id}/edit?error={}", error.code())).into_response(),
     }
 }
@@ -693,6 +837,8 @@ struct TagTemplate {
     layout: Layout,
     tag: String,
     posts: Vec<Post>,
+    /// Whether the viewer follows it, `None` for visitors.
+    following: Option<bool>,
 }
 
 /// Posts shown on a hashtag's page.
@@ -709,7 +855,45 @@ pub async fn tag_page(State(state): State<AppState>, session: Session, Path(raw)
         Some(pool) => or_empty(post::by_tag(pool, layout.viewer.as_ref().map(|viewer| viewer.id), &tag, TAG_PAGE_SIZE).await),
         None => Vec::new(),
     };
-    render_template(&TagTemplate { title: format!("#{tag}"), layout, tag, posts })
+    let following = match (&state.pool, &layout.viewer) {
+        (Some(pool), Some(viewer)) => Some(crate::entities::hashtag_follow::is_following(pool, viewer.id, &tag).await.unwrap_or(false)),
+        _ => None,
+    };
+    render_template(&TagTemplate { title: format!("#{tag}"), layout, tag, posts, following })
+}
+
+/// Follows (`follow`) or unfollows the hashtag: its public posts show in
+/// the feed, see `entities::hashtag_follow`. Then back to `return`.
+pub async fn follow_tag(
+    State(state): State<AppState>,
+    session: Session,
+    Path((raw, action)): Path<(String, String)>,
+    Form(form): Form<HashMap<String, String>>,
+) -> Response {
+    let (pool, me) = match signed_in_user(&state, &session).await {
+        Ok(signed_in) => signed_in,
+        Err(response) => return response,
+    };
+    let Some(tag) = crate::hashtag::normalize(&raw) else {
+        return error_page(Layout::load(&state, &session).await, StatusCode::NOT_FOUND, "This isn't a hashtag.");
+    };
+    let back = local_path(form.get("return"), &crate::hashtag::path(&tag));
+    let result = match action.as_str() {
+        "follow" => crate::entities::hashtag_follow::follow(&pool, me.id, &tag).await,
+        _ => crate::entities::hashtag_follow::unfollow(&pool, me.id, &tag).await.map(|()| true),
+    };
+    match result {
+        Ok(true) => Redirect::to(&back).into_response(),
+        Ok(false) => error_page(
+            Layout::load(&state, &session).await,
+            StatusCode::BAD_REQUEST,
+            &crate::i18n::tf("You can follow at most {} hashtags.", crate::entities::hashtag_follow::MAX_PER_USER),
+        ),
+        Err(err) => {
+            tracing::error!("failed to change the follow of #{} by @{}: {}", tag, me.username, err);
+            error_page(Layout::load(&state, &session).await, StatusCode::INTERNAL_SERVER_ERROR, "Something went wrong, try again later.")
+        }
+    }
 }
 
 /// A photo of a post cropped again from its original (in the browser, see
@@ -763,4 +947,41 @@ pub async fn crop_photo(
     }
     notifier::post_updated(&state, &pool, post_id).await;
     back("photo-saved")
+}
+
+/// The bot `user` published `settings::bot_posts_per_hour` posts (not
+/// private) in the last hour (Server rules, 7). Always `false` for people.
+pub(crate) async fn bot_over_limit(pool: &sqlx::PgPool, user: &crate::entities::user::User) -> bool {
+    if !user.is_bot() {
+        return false;
+    }
+    match crate::entities::user::posts_last_hour(pool, user.id).await {
+        Ok(count) => count >= i64::from(crate::settings::bot_posts_per_hour()),
+        Err(err) => {
+            tracing::warn!("failed to count the posts of the bot @{}: {}", user.username, err);
+            false
+        }
+    }
+}
+
+pub(crate) fn bot_limit_message() -> String {
+    crate::i18n::plural(
+        crate::settings::bot_posts_per_hour(),
+        "A bot can publish at most one post an hour: try again later.",
+        "A bot can publish at most {} posts an hour: try again later.",
+    )
+}
+
+/// The error page of a bot over its limit, for the forms without a message.
+pub(crate) fn bot_limit_page(layout: Layout) -> Response {
+    error_page(layout, StatusCode::TOO_MANY_REQUESTS, &bot_limit_message())
+}
+
+/// The content warning and labels sent with a post's form (new or edited),
+/// see `post::Labels`.
+pub(crate) async fn save_labels(pool: &sqlx::PgPool, post_id: i64, fields: &HashMap<String, String>) {
+    let labels = post::Labels::from_form(|name| fields.get(name).cloned());
+    if let Err(err) = post::set_labels(pool, post_id, &labels).await {
+        tracing::error!("failed to save the labels of post {}: {}", post_id, err);
+    }
 }

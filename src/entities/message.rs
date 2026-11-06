@@ -39,6 +39,9 @@ pub const CONVERSATIONS_TABLE: Table = Table {
         // When each side last read it.
         Column::new("user_read_at", "TIMESTAMPTZ").nullable(),
         Column::new("other_read_at", "TIMESTAMPTZ").nullable(),
+        // When each side muted it: no push, not counted next to "Messenger".
+        Column::new("user_muted_at", "TIMESTAMPTZ").nullable(),
+        Column::new("other_muted_at", "TIMESTAMPTZ").nullable(),
         // How the other server writes: `note` (Mastodon, Hubzilla...) or
         // `chat` (Pleroma's chats). Answers are sent the same way.
         Column::new("remote_kind", "TEXT").default("'note'"),
@@ -110,6 +113,13 @@ macro_rules! read_at {
     };
 }
 
+/// Whether `$1` muted the conversation `c`. A macro for `concat!`.
+macro_rules! muted {
+    () => {
+        "(CASE WHEN c.user_id = $1 THEN c.user_muted_at ELSE c.other_muted_at END IS NOT NULL)"
+    };
+}
+
 /// A conversation in the list of the messenger.
 pub struct Summary {
     pub id: i64,
@@ -118,6 +128,8 @@ pub struct Summary {
     pub last_is_mine: bool,
     pub last_at: DateTime<Utc>,
     pub unread: bool,
+    /// Muted by the viewer: no push, not counted next to "Messenger".
+    pub muted: bool,
 }
 
 impl Summary {
@@ -140,6 +152,8 @@ pub async fn list(pool: &PgPool, user_id: i32) -> Result<Vec<Summary>, sqlx::Err
                           AND m.created_at > COALESCE(",
         read_at!(),
         ", '-infinity')) AS unread, ",
+        muted!(),
+        " AS muted, ",
         other_columns!(),
         " JOIN LATERAL (SELECT LEFT(m.body, $2) AS body, m.sender_user_id FROM messages m
                         WHERE m.conversation_id = c.id ORDER BY m.id DESC LIMIT 1) last ON TRUE
@@ -159,6 +173,7 @@ pub async fn list(pool: &PgPool, user_id: i32) -> Result<Vec<Summary>, sqlx::Err
             last_is_mine: row.try_get("last_is_mine")?,
             last_at: row.try_get("last_message_at")?,
             unread: row.try_get("unread")?,
+            muted: row.try_get("muted")?,
         })
     })
     .collect()
@@ -168,7 +183,9 @@ pub async fn list(pool: &PgPool, user_id: i32) -> Result<Vec<Summary>, sqlx::Err
 pub async fn unread_count(pool: &PgPool, user_id: i32) -> Result<i64, sqlx::Error> {
     sqlx::query_scalar(concat!(
         "SELECT COUNT(*) FROM conversations c
-         WHERE (c.user_id = $1 OR c.other_user_id = $1)
+         WHERE (c.user_id = $1 OR c.other_user_id = $1) AND NOT ",
+        muted!(),
+        "
            AND EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = c.id
                          AND m.sender_user_id IS DISTINCT FROM $1
                          AND m.created_at > COALESCE(",
@@ -186,12 +203,16 @@ pub struct Conversation {
     pub other: Author,
     /// `chat` when the other server writes Pleroma chat messages.
     pub remote_kind: String,
+    /// Muted by the viewer, see `set_muted`.
+    pub muted: bool,
 }
 
 /// The conversation, if `user_id` is in it.
 pub async fn find(pool: &PgPool, id: i64, user_id: i32) -> Result<Option<Conversation>, sqlx::Error> {
     sqlx::query(concat!(
         "SELECT c.id AS conversation_id, c.remote_kind, ",
+        muted!(),
+        " AS muted, ",
         other_columns!(),
         " WHERE c.id = $2 AND (c.user_id = $1 OR c.other_user_id = $1)"
     ))
@@ -205,6 +226,7 @@ pub async fn find(pool: &PgPool, id: i64, user_id: i32) -> Result<Option<Convers
             id: row.try_get("conversation_id")?,
             other: Author::from_row(row)?,
             remote_kind: row.try_get("remote_kind")?,
+            muted: row.try_get("muted")?,
         })
     })
     .transpose()
@@ -262,6 +284,24 @@ pub async fn local_people(pool: &PgPool, id: i64) -> Result<Vec<i32>, sqlx::Erro
     let mut people = vec![row.try_get::<i32, _>("user_id")?];
     people.extend(row.try_get::<Option<i32>, _>("other_user_id")?);
     Ok(people)
+}
+
+/// Mutes the conversation for `user_id`, or not: no push for its messages,
+/// and it isn't counted next to "Messenger". The other person isn't told.
+pub async fn set_muted(pool: &PgPool, id: i64, user_id: i32, muted: bool) -> Result<bool, sqlx::Error> {
+    Ok(sqlx::query(
+        "UPDATE conversations SET
+            user_muted_at = CASE WHEN user_id = $2 THEN (CASE WHEN $3 THEN NOW() END) ELSE user_muted_at END,
+            other_muted_at = CASE WHEN other_user_id = $2 THEN (CASE WHEN $3 THEN NOW() END) ELSE other_muted_at END
+         WHERE id = $1 AND (user_id = $2 OR other_user_id = $2)",
+    )
+    .bind(id)
+    .bind(user_id)
+    .bind(muted)
+    .execute(pool)
+    .await?
+    .rows_affected()
+        > 0)
 }
 
 pub async fn mark_read(pool: &PgPool, id: i64, user_id: i32) -> Result<(), sqlx::Error> {
@@ -412,6 +452,7 @@ pub async fn claim_push(pool: &PgPool, message_id: i64, recipient_id: i32) -> Re
            AND (c.user_id = $2 OR c.other_user_id = $2)
            AND m.sender_user_id IS DISTINCT FROM $2
            AND COALESCE(CASE WHEN c.user_id = $2 THEN c.user_read_at ELSE c.other_read_at END < m.created_at, TRUE)
+           AND CASE WHEN c.user_id = $2 THEN c.user_muted_at ELSE c.other_muted_at END IS NULL
          RETURNING m.conversation_id",
     )
     .bind(message_id)
@@ -440,6 +481,39 @@ pub async fn find_one(pool: &PgPool, message_id: i64, viewer_id: i32) -> Result<
     .as_ref()
     .map(Message::from_row)
     .transpose()
+}
+
+/// A message of a conversation `viewer_id` is in, with its author: what they
+/// can report.
+pub async fn find_visible(pool: &PgPool, message_id: i64, viewer_id: i32) -> Result<Option<Message>, sqlx::Error> {
+    sqlx::query(concat!(
+        "SELECT m.id AS message_id, m.body, m.created_at AS sent_at, m.edited_at,
+                COALESCE(m.sender_user_id = $1, FALSE) AS is_mine, ",
+        user_columns!("u."),
+        ", ",
+        remote_author_columns!(),
+        " FROM messages m
+          JOIN conversations c ON c.id = m.conversation_id AND (c.user_id = $1 OR c.other_user_id = $1)
+          LEFT JOIN users u ON u.id = m.sender_user_id
+          LEFT JOIN federation_actors ra ON ra.id = m.sender_actor_id
+         WHERE m.id = $2"
+    ))
+    .bind(viewer_id)
+    .bind(message_id)
+    .fetch_optional(pool)
+    .await?
+    .as_ref()
+    .map(Message::from_row)
+    .transpose()
+}
+
+/// The conversation of a message, and the ActivityPub id it was sent with
+/// when written here (`None` for one received): to delete it from a report.
+pub async fn conversation_of(pool: &PgPool, message_id: i64) -> Result<Option<i64>, sqlx::Error> {
+    sqlx::query_scalar("SELECT conversation_id FROM messages WHERE id = $1")
+        .bind(message_id)
+        .fetch_optional(pool)
+        .await
 }
 
 /// Deletes the user's own message. Returns its conversation when it was theirs.

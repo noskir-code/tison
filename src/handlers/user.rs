@@ -45,11 +45,13 @@ enum EditError {
     WrongPassword,
     WeakPassword,
     PasswordMismatch,
+    /// A bot without the human answering for it (Server rules, 7).
+    BotContact,
     Server,
 }
 
 impl EditError {
-    const ALL: [Self; 11] = [
+    const ALL: [Self; 12] = [
         Self::InvalidName,
         Self::InvalidBio,
         Self::InvalidUsername,
@@ -60,6 +62,7 @@ impl EditError {
         Self::WrongPassword,
         Self::WeakPassword,
         Self::PasswordMismatch,
+        Self::BotContact,
         Self::Server,
     ];
 
@@ -75,6 +78,7 @@ impl EditError {
             Self::WrongPassword => "wrong-password",
             Self::WeakPassword => "weak-password",
             Self::PasswordMismatch => "password-mismatch",
+            Self::BotContact => "bot-contact",
             Self::Server => "server",
         }
     }
@@ -97,6 +101,7 @@ impl EditError {
             Self::WrongPassword => "Your current password is wrong.".to_string(),
             Self::WeakPassword => crate::i18n::tf2("The new password must be {} to {} characters, with an uppercase letter, a lowercase letter, a digit and a symbol. Spaces are allowed only one at a time, between words.", PASSWORD_MIN_CHARS, PASSWORD_MAX_CHARS),
             Self::PasswordMismatch => "The two new passwords are different.".to_string(),
+            Self::BotContact => crate::i18n::tf("A bot must name the human answering for it, in at most {} characters.", user::BOT_CONTACT_MAX_CHARS),
             Self::Server => "Something went wrong, try again later.".to_string(),
         }
     }
@@ -295,6 +300,8 @@ struct UserTemplate {
     /// Whether the viewer follows the user, `None` on their own profile and
     /// for visitors.
     viewer_follows: Option<bool>,
+    /// The viewer blocked the user (Server rules, 2), see `entities::block`.
+    viewer_blocks: bool,
     /// Where the viewer and the user are as friends, `None` like `viewer_follows`.
     friendship: Option<FriendState>,
     friend_count: i64,
@@ -321,6 +328,21 @@ struct SettingsTemplate {
     /// kept, else the picture itself.
     photo_crop_source: Option<String>,
     background_crop_source: Option<String>,
+    /// The last copy of the data, see `handlers::account`.
+    export: Option<crate::entities::data_export::DataExport>,
+    /// What happened to the copy or the deletion (`?data=`, `?delete=`).
+    data_message: Option<&'static str>,
+    data_error: bool,
+    /// When the Terms and Privacy Policy were accepted.
+    consent_label: Option<String>,
+    /// Who the user blocked, see `entities::block`.
+    blocked: Vec<crate::entities::block::Blocked>,
+    /// The hashtags the user follows, see `entities::hashtag_follow`.
+    followed_tags: Vec<String>,
+    /// Person, bot or parody, see `user::AccountKind`.
+    account_kinds: [user::AccountKind; 3],
+    bot_contact_max_chars: usize,
+    bot_posts_per_hour: u32,
     user: User,
     error: Option<String>,
     saved: bool,
@@ -431,6 +453,10 @@ pub async fn user_page(
         Some(viewer) if !is_own_profile => Some(follow::is_following(pool, viewer.id, user.id).await.unwrap_or(false)),
         _ => None,
     };
+    let viewer_blocks = match &layout.viewer {
+        Some(viewer) if !is_own_profile => crate::entities::block::blocks_user(pool, viewer.id, user.id).await.unwrap_or(false),
+        _ => false,
+    };
     let dfrn = crate::settings::services().dfrn;
     let friendship = match &layout.viewer {
         Some(viewer) if !is_own_profile && dfrn => Some(friend::state(pool, viewer.id, user.id).await.unwrap_or(FriendState::None)),
@@ -475,6 +501,7 @@ pub async fn user_page(
         accounts,
         counts,
         viewer_follows,
+        viewer_blocks,
         friendship,
         friend_count,
         friends,
@@ -511,6 +538,9 @@ async fn change_follow(state: AppState, session: Session, username: String, form
             return error_page(Layout::load(&state, &session).await, StatusCode::INTERNAL_SERVER_ERROR, "Failed to load this user.");
         }
     };
+    if follow && crate::entities::block::between(&pool, me.id, target.id).await.unwrap_or(false) {
+        return error_page(Layout::load(&state, &session).await, StatusCode::FORBIDDEN, "You can't do this: one of you blocked the other.");
+    }
     let result = async {
         if follow {
             if follow::follow(&pool, me.id, target.id).await? {
@@ -547,6 +577,9 @@ async fn change_friend(state: AppState, session: Session, username: String, form
     // The team account is followed, never a friend.
     if add && other.team {
         return error_page(Layout::load(&state, &session).await, StatusCode::FORBIDDEN, "The moderation team's account can't be added as a friend.");
+    }
+    if add && crate::entities::block::between(&pool, me.id, other.id).await.unwrap_or(false) {
+        return error_page(Layout::load(&state, &session).await, StatusCode::FORBIDDEN, "You can't do this: one of you blocked the other.");
     }
     let result = async {
         if add {
@@ -631,7 +664,44 @@ pub async fn settings_page(
         Some(pool) => user::image_originals(pool, user.id).await.unwrap_or_default(),
         None => (None, None),
     };
+    let (export, consent) = match &state.pool {
+        Some(pool) => (
+            crate::entities::data_export::latest(pool, user.id).await.unwrap_or_default(),
+            user::consent(pool, user.id).await.ok().and_then(|(_, at)| at),
+        ),
+        None => (None, None),
+    };
+    let (data_message, data_error) = match (query.get("data").map(String::as_str), query.get("delete").map(String::as_str)) {
+        (Some("preparing"), _) => (Some("Your copy is being made: it shows here when it's ready, in a few minutes. Reload the page."), false),
+        (Some("too-soon"), _) => (Some("A copy can be asked once a day: download the last one below."), true),
+        (Some("password"), _) | (_, Some("password")) => (Some("Wrong password: nothing was done."), true),
+        (_, Some("confirm")) => (Some("Tick the box to confirm that you want to delete your account."), true),
+        (_, Some("creator")) => (Some("The creator of the site can't delete their account: someone must run the site."), true),
+        (Some(_), _) | (_, Some(_)) => (Some("Something went wrong, try again later."), true),
+        (None, None) => (None, false),
+    };
     let template = SettingsTemplate {
+        export,
+        data_message,
+        data_error,
+        consent_label: consent.map(crate::i18n::date_time),
+        blocked: match &state.pool {
+            Some(pool) => crate::entities::block::list(pool, user.id).await.unwrap_or_else(|err| {
+                tracing::warn!("failed to load the blocks of @{}: {}", user.username, err);
+                Vec::new()
+            }),
+            None => Vec::new(),
+        },
+        followed_tags: match &state.pool {
+            Some(pool) => crate::entities::hashtag_follow::list(pool, user.id).await.unwrap_or_else(|err| {
+                tracing::warn!("failed to load the hashtags of @{}: {}", user.username, err);
+                Vec::new()
+            }),
+            None => Vec::new(),
+        },
+        account_kinds: user::AccountKind::ALL,
+        bot_contact_max_chars: user::BOT_CONTACT_MAX_CHARS,
+        bot_posts_per_hour: crate::settings::bot_posts_per_hour(),
         photo_crop_source: photo_original.or_else(|| user.photo_url.clone()),
         background_crop_source: background_original.or_else(|| user.background_url.clone()),
         email,
@@ -955,4 +1025,30 @@ pub async fn upload_background(
 
 pub async fn remove_background(State(state): State<AppState>, session: Session) -> Response {
     remove_image(state, session, ProfileImage::Background).await
+}
+
+/// A person, a bot or a parody account (Server rules, 7): the badge by the
+/// name, and a `Service` for other servers. A bot names its human.
+pub async fn account_kind(State(state): State<AppState>, session: Session, Form(form): Form<HashMap<String, String>>) -> Response {
+    let (pool, me) = match signed_in_user(&state, &session).await {
+        Ok(signed_in) => signed_in,
+        Err(response) => return response,
+    };
+    let kind = user::AccountKind::parse(form.get("account_kind").map(String::as_str).unwrap_or_default());
+    let contact: String = form
+        .get("bot_contact")
+        .map(|contact| contact.trim().chars().filter(|letter| !letter.is_control()).collect())
+        .unwrap_or_default();
+    if contact.chars().count() > user::BOT_CONTACT_MAX_CHARS || (kind == user::AccountKind::Bot && contact.is_empty()) {
+        return back_to_settings(SettingsTab::Profile, Err(EditError::BotContact));
+    }
+    if me.team && kind != user::AccountKind::Person {
+        return back_to_settings(SettingsTab::Profile, Err(EditError::Server));
+    }
+    if let Err(err) = user::set_account_kind(&pool, me.id, kind, &contact).await {
+        tracing::error!("failed to save the account kind of @{}: {}", me.username, err);
+        return back_to_settings(SettingsTab::Profile, Err(EditError::Server));
+    }
+    profile_changed(&state, &pool, me.id).await;
+    back_to_settings(SettingsTab::Profile, Ok(()))
 }

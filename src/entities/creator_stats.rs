@@ -25,16 +25,16 @@ impl Scope {
     /// Each uses `$3`: Postgres refuses a parameter given but not used.
     fn filter(self) -> &'static str {
         match self {
-            Self::Videos => "p.user_id = $1 AND $3::bigint IS NULL AND p.kind = 'video'",
+            Self::Videos => "p.user_id = $1 AND p.removed_at IS NULL AND $3::bigint IS NULL AND p.kind = 'video'",
             Self::ImagePosts => {
-                "p.user_id = $1 AND $3::bigint IS NULL AND p.kind = 'post'
+                "p.user_id = $1 AND p.removed_at IS NULL AND $3::bigint IS NULL AND p.kind = 'post'
                  AND EXISTS (SELECT 1 FROM attachments a WHERE a.post_id = p.id AND a.media_type LIKE 'image/%')"
             }
             Self::Posts => {
-                "p.user_id = $1 AND $3::bigint IS NULL AND p.kind = 'post'
+                "p.user_id = $1 AND p.removed_at IS NULL AND $3::bigint IS NULL AND p.kind = 'post'
                  AND NOT EXISTS (SELECT 1 FROM attachments a WHERE a.post_id = p.id AND a.media_type LIKE 'image/%')"
             }
-            Self::Post(_) => "p.user_id = $1 AND p.id = $3",
+            Self::Post(_) => "p.user_id = $1 AND p.removed_at IS NULL AND p.id = $3",
         }
     }
 
@@ -196,7 +196,7 @@ pub async fn content(pool: &PgPool, user_id: i32, scope: Scope) -> Result<Vec<Co
                 (SELECT COUNT(*) FROM attachments a WHERE a.post_id = p.id AND a.media_type LIKE 'image/%') AS photos,
                 (SELECT COUNT(*) FROM post_likes l WHERE l.post_id = p.id)
                   + (SELECT COUNT(*) FROM remote_reactions r WHERE r.post_id = p.id AND r.kind = 'like') AS likes,
-                (SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id AND c.user_id IS DISTINCT FROM p.user_id) AS comments,
+                (SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id AND c.user_id IS DISTINCT FROM p.user_id AND c.removed_at IS NULL) AS comments,
                 (SELECT COUNT(*) FROM post_shares s WHERE s.post_id = p.id)
                   + (SELECT COUNT(*) FROM remote_reactions r WHERE r.post_id = p.id AND r.kind = 'share') AS shares
          FROM posts p WHERE {}
@@ -248,7 +248,7 @@ pub async fn content(pool: &PgPool, user_id: i32, scope: Scope) -> Result<Vec<Co
 pub async fn scope_of(pool: &PgPool, user_id: i32, post_id: i64) -> Result<Option<Scope>, sqlx::Error> {
     let row = sqlx::query(
         "SELECT p.kind, EXISTS (SELECT 1 FROM attachments a WHERE a.post_id = p.id AND a.media_type LIKE 'image/%') AS images
-         FROM posts p WHERE p.id = $1 AND p.user_id = $2",
+         FROM posts p WHERE p.id = $1 AND p.user_id = $2 AND p.removed_at IS NULL",
     )
     .bind(post_id)
     .bind(user_id)

@@ -1,5 +1,7 @@
 {% extends "base.html" %} {% import "macros/post.html" as posts_ui %} {% import "macros/account.html" as accounts_ui %}
-{% block head %}{% if let Some(url) = activitypub_url %}
+{% block head %}{# Search engines: only when the user chose it (Settings > Profile). #}
+{% if !user.search_indexing %}<meta name="robots" content="noindex, noarchive" />{% endif %}
+{% if let Some(url) = activitypub_url %}
 <link rel="alternate" type="application/activity+json" href="{{ url }}" />
 {% endif %}{% endblock %}
 {% block content %}
@@ -19,8 +21,11 @@
             <div class="flex center">
                 <h1 class="profile-name">{{ profile_name }}</h1>
                 {% if let Some(badge) = user.role.badge() %}<span class="role-badge {{ user.role.as_str() }}" title="{% if user.is_admin() %}{{ "Created this site"|t }}{% else %}{{ "Moderates this site"|t }}{% endif %}">{{ badge|t }}</span>{% endif %}
+                {% if let Some(badge) = user.account_kind.badge() %}<span class="kind-badge" title="{{ user.account_kind.badge_title()|t }}">{{ badge|t }}</span>{% endif %}
                 <p class="profile-username">{{ user.handle() }}</p>
             </div>
+            {# Server rules, 7: a bot names the human answering for it. #}
+            {% if user.is_bot() && !user.bot_contact.is_empty() %}<p class="profile-bot-contact">{{ "Run by"|t }} {{ user.bot_contact }}</p>{% endif %}
             <p class="profile-counts">
                 <a href="/user/{{ user.username }}?tab=followers"{% if tab.slug() == "followers" %} class="active" aria-current="page"{% endif %}><strong>{{ counts.followers }}</strong> {% if counts.followers == 1 %}{{ "follower"|t }}{% else %}{{ "followers"|t }}{% endif %}</a>
                 <a href="/user/{{ user.username }}?tab=following"{% if tab.slug() == "following" %} class="active" aria-current="page"{% endif %}><strong>{{ counts.following }}</strong> {{ "following"|t }}</a>
@@ -29,6 +34,15 @@
         </div>
         {% if is_own_profile %}
         <a href="/settings" class="button profile-edit-link">{{ "Edit profile"|t }}</a>
+        {% else if viewer_blocks %}
+        {# Blocked by the viewer: nothing but unblocking, see handlers::block. #}
+        <div class="profile-actions profile-edit-link">
+            <span class="post-username">{{ "You blocked @{}."|tf(user.username) }}</span>
+            <form action="/user/{{ user.username }}/unblock" method="post">
+                <input type="hidden" name="return" value="/user/{{ user.username }}" />
+                <button type="submit" class="button">{{ "Unblock"|t }}</button>
+            </form>
+        </div>
         {% else if let Some(follows) = viewer_follows %}
         <div class="profile-actions profile-edit-link">
             {# The team account is followed, never a friend, see entities::user::sync_team_account. #}
@@ -69,6 +83,10 @@
                 <button type="submit" class="button">{{ "Message"|t }}</button>
             </form>
             {% endif %}
+            <form action="/user/{{ user.username }}/block" method="post" data-confirm="{{ "Block @{}? You stop following each other and being friends, and you can't see or reach each other anymore."|tf(user.username) }}" data-confirm-label="{{ "Block"|t }}">
+                <input type="hidden" name="return" value="/user/{{ user.username }}" />
+                <button type="submit" class="button">{{ "Block"|t }}</button>
+            </form>
             {% if !user.is_staff() %}
             <a href="/report?user={{ user.username }}" class="button report-button" title="{{ "Report @{} to the moderators"|tf(user.username) }}">{{ "Report"|t }}</a>
             {% endif %}

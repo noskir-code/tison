@@ -141,14 +141,35 @@ pub fn new_secret() -> Vec<u8> {
 
 /// What the QR code holds, read by every authenticator app:
 /// `otpauth://totp/Issuer:account?secret=...&issuer=Issuer`.
-pub fn setup_url(issuer: &str, account: &str, secret: &[u8]) -> String {
+pub fn setup_url(issuer: &str, account: &str, secret: &[u8], image: Option<&str>) -> String {
     let issuer = crate::entities::event::url_encode(issuer).replace('+', "%20");
     let account = crate::entities::event::url_encode(account).replace('+', "%20");
-    format!("otpauth://totp/{issuer}:{account}?secret={}&issuer={issuer}", base32_encode(secret))
+    let mut url = format!("otpauth://totp/{issuer}:{account}?secret={}&issuer={issuer}", base32_encode(secret));
+    // The site's logo, shown by the apps reading it (FreeOTP, Ente Auth,
+    // 2FAS); `:` and `/` stay as they are, allowed in a query and shorter
+    // in the QR code.
+    if let Some(image) = image {
+        let image = crate::entities::event::url_encode(image).replace("%3A", ":").replace("%2F", "/");
+        url.push_str(&format!("&image={image}"));
+    }
+    url
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn setup_urls_name_the_site_and_its_logo() {
+        let secret = b"12345678901234567890";
+        assert_eq!(
+            setup_url("tison.social", "ada lovelace", secret, None),
+            "otpauth://totp/tison.social:ada%20lovelace?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&issuer=tison.social"
+        );
+        assert!(
+            setup_url("tison.social", "ada", secret, Some("https://tison.social/public/logo.png"))
+                .ends_with("&issuer=tison.social&image=https://tison.social/public/logo.png")
+        );
+    }
+
     use super::*;
 
     fn hex(bytes: &[u8]) -> String {

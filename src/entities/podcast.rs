@@ -104,7 +104,7 @@ macro_rules! podcast_select {
         "SELECT pc.id, pc.user_id, u.username, u.displayname, pc.title, pc.description,
                 pc.cover_url, pc.cover_original_url, pc.category, pc.language, pc.explicit, pc.created_at,
                 (SELECT COUNT(*) FROM posts e WHERE e.podcast_id = pc.id AND e.visibility = 'public'
-                   AND e.media_status = 'ready') AS episode_count
+                   AND e.media_status = 'ready' AND e.removed_at IS NULL) AS episode_count
          FROM podcasts pc
          JOIN users u ON u.id = pc.user_id
          WHERE u.suspended_at IS NULL"
@@ -116,7 +116,7 @@ pub async fn all(pool: &PgPool) -> Result<Vec<Podcast>, sqlx::Error> {
     sqlx::query(concat!(
         podcast_select!(),
         " ORDER BY COALESCE((SELECT MAX(e.created_at) FROM posts e WHERE e.podcast_id = pc.id
-                              AND e.visibility = 'public' AND e.media_status = 'ready'), pc.created_at) DESC
+                              AND e.visibility = 'public' AND e.media_status = 'ready' AND e.removed_at IS NULL), pc.created_at) DESC
           LIMIT 200"
     ))
     .fetch_all(pool)

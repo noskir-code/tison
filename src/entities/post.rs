@@ -65,6 +65,10 @@ pub const TABLE: Table = Table {
         Column::new("visibility", "TEXT").default("'public'"),
         // Its media are hidden until clicked, like on Mastodon.
         Column::new("sensitive", "BOOLEAN").default("FALSE"),
+        // See `Labels`.
+        Column::new("content_warning", "TEXT").default("''"),
+        Column::new("ai_generated", "BOOLEAN").default("FALSE"),
+        Column::new("sponsored", "BOOLEAN").default("FALSE"),
         // Views of a video, see `entities::views`.
         Column::new("view_count", "BIGINT").default("0"),
         // Hashtags given apart from the text, like PeerTube's tags: lowercase,
@@ -79,8 +83,12 @@ pub const TABLE: Table = Table {
         // Its first link was looked at for a preview, see `crate::preview`.
         // Reset by an edit.
         Column::new("link_checked", "BOOLEAN").default("FALSE"),
+        // Removed by the moderators: hidden from everyone, erased after
+        // `settings::removed_content_days` unless an appeal brings it back.
+        Column::new("removed_at", "TIMESTAMPTZ").nullable(),
     ],
     indexes: &[
+        Index::new("posts_removed_at_idx", "removed_at"),
         // Home timeline, and the posts of one user.
         Index::new("posts_created_at_idx", "created_at DESC"),
         Index::new("posts_remote_actor_created_at_idx", "remote_actor_id, created_at DESC"),
@@ -167,6 +175,10 @@ pub struct PostPodcast {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Visibility {
     Public,
+    /// Anyone with the link, the profile and the followers' feeds, but not
+    /// the public lists (timeline, hashtags, search, videos): Mastodon's
+    /// "unlisted", the default of bots (Server rules, 7).
+    Unlisted,
     /// Only the author.
     Private,
     /// Only for posts of other servers: the local users following its author
@@ -176,12 +188,13 @@ pub enum Visibility {
 
 impl Visibility {
     /// What local users can choose.
-    pub const ALL: [Self; 2] = [Self::Public, Self::Private];
+    pub const ALL: [Self; 3] = [Self::Public, Self::Unlisted, Self::Private];
 
     /// Stored in the database and sent by the form.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Public => "public",
+            Self::Unlisted => "unlisted",
             Self::Private => "private",
             Self::Followers => "followers",
         }
@@ -190,13 +203,14 @@ impl Visibility {
     pub fn label(self) -> &'static str {
         match self {
             Self::Public => "Public",
+            Self::Unlisted => "Unlisted: not in public lists",
             Self::Private => "Only me",
             Self::Followers => "Followers only",
         }
     }
 
     pub fn parse(value: &str) -> Option<Self> {
-        [Self::Public, Self::Private, Self::Followers]
+        [Self::Public, Self::Unlisted, Self::Private, Self::Followers]
             .into_iter()
             .find(|visibility| visibility.as_str() == value)
     }
@@ -253,6 +267,12 @@ pub struct Post {
     pub body: String,
     pub visibility: Visibility,
     pub sensitive: bool,
+    /// Hides the post behind it until clicked, like Mastodon's (`summary`).
+    pub content_warning: String,
+    /// Made or changed with AI, said by its author (Server rules, 7).
+    pub ai_generated: bool,
+    /// Paid for: an ad or a partnership (Server rules, 7).
+    pub sponsored: bool,
     pub created_at: DateTime<Utc>,
     pub edited_at: Option<DateTime<Utc>>,
     pub author: Author,
@@ -281,6 +301,10 @@ pub struct Post {
 }
 
 impl Post {
+    pub fn labels(&self) -> Labels {
+        Labels { content_warning: self.content_warning.clone(), ai_generated: self.ai_generated, sponsored: self.sponsored }
+    }
+
     fn from_row(row: &PgRow) -> Result<Self, sqlx::Error> {
         let visibility: String = row.try_get("visibility")?;
         Ok(Self {
@@ -307,6 +331,9 @@ impl Post {
             // An unknown value is treated as the most restrictive one.
             visibility: Visibility::parse(&visibility).unwrap_or(Visibility::Private),
             sensitive: row.try_get("sensitive")?,
+            content_warning: row.try_get("content_warning")?,
+            ai_generated: row.try_get("ai_generated")?,
+            sponsored: row.try_get("sponsored")?,
             created_at: row.try_get("posted_at")?,
             edited_at: row.try_get("edited_at")?,
             author: Author::from_row(row)?,
@@ -557,7 +584,7 @@ impl Post {
     /// private community.
     pub fn can_share(&self) -> bool {
         !self.is_own
-            && self.visibility == Visibility::Public
+            && matches!(self.visibility, Visibility::Public | Visibility::Unlisted)
             && self.community.as_ref().is_none_or(|community| community.is_public)
     }
 
@@ -594,13 +621,13 @@ macro_rules! post_select {
                     CASE WHEN p.kind = 'live' AND p.media_status = 'live' THEN p.media_source END AS live_playlist, ",
             crate::entities::event::event_columns!(),
             ",
-                    p.body, p.visibility, p.sensitive, p.created_at AS posted_at,
+                    p.body, p.visibility, p.sensitive, p.content_warning, p.ai_generated, p.sponsored, p.created_at AS posted_at,
                     p.edited_at, p.ap_id, p.ap_url,
                     COALESCE(p.user_id = $1 OR (u.team AND EXISTS (
                         SELECT 1 FROM users staff WHERE staff.id = $1 AND staff.role IN ('moderator', 'admin'))), FALSE) AS is_own, ",
             like_count!(),
             " AS like_count,
-                    (SELECT COUNT(*) FROM comments pc WHERE pc.post_id = p.id) AS comment_count,
+                    (SELECT COUNT(*) FROM comments pc WHERE pc.post_id = p.id AND pc.removed_at IS NULL) AS comment_count,
                     (SELECT COUNT(*) FROM post_shares s WHERE s.post_id = p.id)
                     + (SELECT COUNT(*) FROM remote_reactions rs WHERE rs.post_id = p.id AND rs.kind = 'share') AS share_count,
                     EXISTS (SELECT 1 FROM post_likes l WHERE l.post_id = p.id AND l.user_id = $1) AS liked,
@@ -629,18 +656,32 @@ macro_rules! post_select {
 /// communities that aren't banned and are public or have the viewer as
 /// member, and followers-only posts of other servers when the viewer follows
 /// their author. Never posts of suspended users, nor posts of a limited
-/// server to someone not following their author.
+/// server to someone not following their author, nor posts between people
+/// blocking each other, nor posts of a limited account to someone not
+/// following them.
 macro_rules! post_visible {
     () => {
         concat!(
-        "((NOT EXISTS (SELECT 1 FROM users su WHERE su.id = p.user_id AND su.suspended_at IS NOT NULL))
+        "(p.removed_at IS NULL
+          AND (NOT EXISTS (SELECT 1 FROM users su WHERE su.id = p.user_id AND su.suspended_at IS NOT NULL))
+          -- Blocks, either way (Server rules, 2), see `entities::block`.
+          AND NOT EXISTS (SELECT 1 FROM user_blocks pb WHERE
+                (pb.user_id = $1 AND (pb.blocked_user_id = p.user_id OR pb.blocked_actor_id = p.remote_actor_id))
+                OR (pb.user_id = p.user_id AND pb.blocked_user_id = $1))
+          -- A limited account: only their followers, friends and the staff.
+          AND NOT EXISTS (SELECT 1 FROM users lu WHERE lu.id = p.user_id AND lu.limited_at IS NOT NULL
+                AND COALESCE(lu.id <> $1, TRUE)
+                AND NOT EXISTS (SELECT 1 FROM user_follows lfw WHERE lfw.followed_id = lu.id AND lfw.follower_id = $1)
+                AND NOT EXISTS (SELECT 1 FROM friendships lfr WHERE lfr.accepted
+                    AND ((lfr.requester_id = lu.id AND lfr.addressee_id = $1) OR (lfr.addressee_id = lu.id AND lfr.requester_id = $1)))
+                AND NOT EXISTS (SELECT 1 FROM users lst WHERE lst.id = $1 AND lst.role IN ('moderator', 'admin')))
           AND (p.media_status IS NULL OR p.media_status IN ('ready', 'live', 'ended') OR COALESCE(p.user_id = $1, FALSE))
           AND (p.community_id IS NULL OR ", crate::entities::service_on!(aggregator), ")
           AND (NOT EXISTS (SELECT 1 FROM federation_actors la JOIN instance_policies lp ON lp.domain = la.host
                 WHERE la.id = p.remote_actor_id AND lp.policy = 'limited'
                   AND NOT EXISTS (SELECT 1 FROM federation_following lf
                                   WHERE lf.actor_id = la.id AND lf.user_id = $1 AND lf.accepted)))
-          AND (COALESCE(p.user_id = $1, FALSE) OR (p.visibility = 'public' AND (p.community_id IS NULL OR (
+          AND (COALESCE(p.user_id = $1, FALSE) OR (p.visibility IN ('public', 'unlisted') AND (p.community_id IS NULL OR (
             cm.status <> 'banned' AND (cm.visibility = 'public' OR EXISTS (
                 SELECT 1 FROM community_members mm WHERE mm.community_id = cm.id AND mm.user_id = $1)))))
           OR (p.visibility = 'followers' AND p.remote_actor_id IS NOT NULL AND EXISTS (
@@ -649,6 +690,17 @@ macro_rules! post_visible {
     };
 }
 pub(crate) use post_visible;
+
+/// The posts `p` shown in public lists (timeline, hashtags, search, videos,
+/// events): not unlisted ones, unless the viewer `$1` wrote them or follows
+/// their author. With `post_visible!`.
+macro_rules! post_listed {
+    () => {
+        "(p.visibility <> 'unlisted' OR COALESCE(p.user_id = $1, FALSE)
+          OR EXISTS (SELECT 1 FROM user_follows uf WHERE uf.followed_id = p.user_id AND uf.follower_id = $1)
+          OR EXISTS (SELECT 1 FROM federation_following ul WHERE ul.actor_id = p.remote_actor_id AND ul.user_id = $1 AND ul.accepted))"
+    };
+}
 
 /// Trims the text and checks it's not empty, at most `max_chars`, and has no
 /// control characters other than line breaks and tabs.
@@ -679,6 +731,75 @@ pub enum BodyError {
     Empty,
     TooLong,
     InvalidCharacters,
+}
+
+/// Longest content warning.
+pub const WARNING_MAX_CHARS: usize = 200;
+
+/// What the author says about a post (Server rules, 4 and 7): a content
+/// warning hiding it, made with AI, sponsored.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Labels {
+    pub content_warning: String,
+    pub ai_generated: bool,
+    pub sponsored: bool,
+}
+
+/// Hashtags other servers read as the labels, and which they send.
+pub const AI_TAGS: [&str; 6] = ["aigenerated", "aiart", "madewithai", "generativeai", "aiimage", "aivideo"];
+pub const SPONSORED_TAGS: [&str; 4] = ["ad", "sponsored", "advertisement", "paidpartnership"];
+
+impl Labels {
+    /// From the fields of a form: `content_warning`, `ai_generated`,
+    /// `sponsored`. The warning is cut at `WARNING_MAX_CHARS`, on one line.
+    pub fn from_form(field: impl Fn(&str) -> Option<String>) -> Self {
+        let checked = |name: &str| field(name).is_some_and(|value| !value.is_empty());
+        Self {
+            content_warning: clean_warning(&field("content_warning").unwrap_or_default()),
+            ai_generated: checked("ai_generated"),
+            sponsored: checked("sponsored"),
+        }
+    }
+
+    /// Of an object of another server: its `summary` (a Note's, not an
+    /// Article's excerpt) and its hashtags.
+    pub fn from_remote(summary: Option<&str>, tags: &[String]) -> Self {
+        let has = |list: &[&str]| tags.iter().any(|tag| list.contains(&tag.to_lowercase().as_str()));
+        Self {
+            content_warning: clean_warning(summary.unwrap_or_default()),
+            ai_generated: has(&AI_TAGS),
+            sponsored: has(&SPONSORED_TAGS),
+        }
+    }
+}
+
+fn clean_warning(raw: &str) -> String {
+    let one_line: String = raw.split_whitespace().collect::<Vec<_>>().join(" ");
+    let clean: String = one_line.chars().filter(|letter| !letter.is_control()).collect();
+    clean.chars().take(WARNING_MAX_CHARS).collect()
+}
+
+/// A moderator hides the post behind `warning` and blurs its media (or no
+/// more, after an appeal: `None`).
+pub async fn set_moderated_warning(pool: &PgPool, post_id: i64, warning: Option<&str>) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE posts SET content_warning = $2, sensitive = $3 WHERE id = $1")
+        .bind(post_id)
+        .bind(warning.map(clean_warning).unwrap_or_default())
+        .bind(warning.is_some())
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn set_labels(pool: &PgPool, post_id: i64, labels: &Labels) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE posts SET content_warning = $2, ai_generated = $3, sponsored = $4 WHERE id = $1")
+        .bind(post_id)
+        .bind(&labels.content_warning)
+        .bind(labels.ai_generated)
+        .bind(labels.sponsored)
+        .execute(pool)
+        .await?;
+    Ok(())
 }
 
 /// `community_id` posts it in a community: the author must be a member.
@@ -849,17 +970,33 @@ macro_rules! media_query {
     };
 }
 
+/// `media_query!` for the public lists: without unlisted posts, see `post_listed!`.
+macro_rules! listed_media_query {
+    ($filter:literal) => {
+        concat!(
+            post_select!("NULL::text", "NULL::text"),
+            " WHERE ",
+            $filter,
+            " AND ",
+            post_visible!(),
+            " AND ",
+            post_listed!(),
+            " ORDER BY p.created_at DESC, p.id DESC LIMIT $3"
+        )
+    };
+}
+
 pub async fn media_list(pool: &PgPool, viewer_id: Option<i32>, list: MediaList) -> Result<Vec<Post>, sqlx::Error> {
     let (query, id) = match list {
-        MediaList::Videos => (media_query!("p.kind = 'video' AND p.media_status = 'ready' AND $2::bigint IS NULL"), None),
-        MediaList::LiveNow => (media_query!("p.kind = 'live' AND p.media_status = 'live' AND $2::bigint IS NULL"), None),
+        MediaList::Videos => (listed_media_query!("p.kind = 'video' AND p.media_status = 'ready' AND $2::bigint IS NULL"), None),
+        MediaList::LiveNow => (listed_media_query!("p.kind = 'live' AND p.media_status = 'live' AND $2::bigint IS NULL"), None),
         MediaList::VideosIn(category) => (
-            media_query!("p.kind = 'video' AND p.media_status = 'ready' AND p.category = $2::bigint"),
+            listed_media_query!("p.kind = 'video' AND p.media_status = 'ready' AND p.category = $2::bigint"),
             Some(i64::from(category)),
         ),
         MediaList::VideosBy(user_id) => (media_query!("p.kind = 'video' AND p.user_id = $2"), Some(i64::from(user_id))),
         MediaList::Episodes(podcast_id) => (media_query!("p.kind = 'episode' AND p.podcast_id = $2"), Some(podcast_id)),
-        MediaList::LatestEpisodes => (media_query!("p.kind = 'episode' AND p.media_status = 'ready' AND $2::bigint IS NULL"), None),
+        MediaList::LatestEpisodes => (listed_media_query!("p.kind = 'episode' AND p.media_status = 'ready' AND $2::bigint IS NULL"), None),
         MediaList::ConvertingBy(user_id) => (
             media_query!("p.kind IN ('video', 'episode') AND p.media_status = 'processing' AND p.user_id = $2 AND p.user_id = $1"),
             Some(i64::from(user_id)),
@@ -899,7 +1036,7 @@ pub async fn events(pool: &PgPool, viewer_id: Option<i32>, list: EventList) -> R
         EventList::Upcoming => (
             concat!(
                 post_select!("NULL::text", "NULL::text"),
-                " WHERE p.kind = 'event' AND $2::bigint IS NULL AND ", event_not_over!(), " AND ", post_visible!(),
+                " WHERE p.kind = 'event' AND $2::bigint IS NULL AND ", event_not_over!(), " AND ", post_visible!(), " AND ", post_listed!(),
                 " ORDER BY ev.starts_at, p.id LIMIT $3"
             ),
             None,
@@ -907,7 +1044,7 @@ pub async fn events(pool: &PgPool, viewer_id: Option<i32>, list: EventList) -> R
         EventList::Past => (
             concat!(
                 post_select!("NULL::text", "NULL::text"),
-                " WHERE p.kind = 'event' AND $2::bigint IS NULL AND NOT ", event_not_over!(), " AND ", post_visible!(),
+                " WHERE p.kind = 'event' AND $2::bigint IS NULL AND NOT ", event_not_over!(), " AND ", post_visible!(), " AND ", post_listed!(),
                 " ORDER BY ev.starts_at DESC, p.id DESC LIMIT $3"
             ),
             None,
@@ -1179,6 +1316,37 @@ pub async fn delete(pool: &PgPool, post_id: i64) -> Result<bool, sqlx::Error> {
     Ok(true)
 }
 
+/// Removes a post for the moderators: hidden from everyone at once, its
+/// files kept, erased by `purge_removed` after
+/// `settings::removed_content_days` unless `restore` brings it back first.
+pub async fn remove(pool: &PgPool, post_id: i64) -> Result<bool, sqlx::Error> {
+    Ok(sqlx::query("UPDATE posts SET removed_at = NOW() WHERE id = $1 AND removed_at IS NULL")
+        .bind(post_id)
+        .execute(pool)
+        .await?
+        .rows_affected()
+        > 0)
+}
+
+/// Brings back a post `remove`d by the moderators (an accepted appeal).
+/// `false` when it isn't removed anymore: erased, or never removed.
+pub async fn restore(pool: &PgPool, post_id: i64) -> Result<bool, sqlx::Error> {
+    Ok(sqlx::query("UPDATE posts SET removed_at = NULL WHERE id = $1 AND removed_at IS NOT NULL")
+        .bind(post_id)
+        .execute(pool)
+        .await?
+        .rows_affected()
+        > 0)
+}
+
+/// The posts removed by the moderators more than `days` ago: to erase.
+pub async fn removed_before(pool: &PgPool, days: u32) -> Result<Vec<i64>, sqlx::Error> {
+    sqlx::query_scalar("SELECT id FROM posts WHERE removed_at < NOW() - make_interval(days => $1) ORDER BY id LIMIT 500")
+        .bind(i32::try_from(days).unwrap_or(30))
+        .fetch_all(pool)
+        .await
+}
+
 /// A post or comment stored from another server, by its ActivityPub id.
 pub enum RemoteObject {
     /// (post id, community id)
@@ -1342,6 +1510,8 @@ pub async fn by_tag(pool: &PgPool, viewer_id: Option<i32>, tag: &str, limit: i64
         post_select!("NULL::text", "NULL::text"),
         " WHERE ",
         post_visible!(),
+        " AND ",
+        post_listed!(),
         " AND (p.body ~* $2 OR p.title ~* $2 OR (' ' || p.tags || ' ') LIKE '% ' || $3 || ' %')
          ORDER BY p.created_at DESC, p.id DESC
          LIMIT $4"
@@ -1355,26 +1525,77 @@ pub async fn by_tag(pool: &PgPool, viewer_id: Option<i32>, tag: &str, limit: i64
     to_posts(pool, rows).await
 }
 
+/// Searches of fewer characters only find words starting with them: one
+/// letter is in nearly every post.
+pub const SEARCH_WORD_START_BELOW: usize = 3;
+
+/// `text` with the characters special in a regular expression escaped.
+pub fn escape_regex(text: &str) -> String {
+    let mut escaped = String::with_capacity(text.len() + 8);
+    for letter in text.chars() {
+        if "\\.^$|?*+()[]{}".contains(letter) {
+            escaped.push('\\');
+        }
+        escaped.push(letter);
+    }
+    escaped
+}
+
+/// Which posts a search may find (Mastodon's `indexable`): those of
+/// indexable accounts, here or of other servers, and for the viewer `$1`
+/// their own and those they liked, shared or commented on.
+macro_rules! post_indexable {
+    () => {
+        "(COALESCE(p.user_id = $1, FALSE)
+          OR EXISTS (SELECT 1 FROM users iu WHERE iu.id = p.user_id AND iu.indexable)
+          OR EXISTS (SELECT 1 FROM federation_actors ia WHERE ia.id = p.remote_actor_id AND ia.indexable)
+          OR EXISTS (SELECT 1 FROM post_likes il WHERE il.post_id = p.id AND il.user_id = $1)
+          OR EXISTS (SELECT 1 FROM post_shares ish WHERE ish.post_id = p.id AND ish.user_id = $1)
+          OR EXISTS (SELECT 1 FROM comments ic WHERE ic.post_id = p.id AND ic.user_id = $1))"
+    };
+}
+
 /// Posts found by the search bar, of here and of other servers already
-/// received, newest first: `words` in their text or title.
+/// received, most relevant first: `words` at the start of the title, then
+/// starting a word of the title, then of the text, then anywhere; among
+/// those, the liked and recent ones first. Under
+/// `SEARCH_WORD_START_BELOW` characters, only words starting with them.
 pub async fn search(pool: &PgPool, viewer_id: Option<i32>, words: &str, kind: SearchKind, limit: i64) -> Result<Vec<Post>, sqlx::Error> {
-    let pattern = format!("%{}%", crate::entities::user::escape_like(words.trim()));
+    let words = words.trim();
+    let pattern = format!("%{}%", crate::entities::user::escape_like(words));
+    let word_start = format!("\\m{}", escape_regex(words));
+    let short = words.chars().count() < SEARCH_WORD_START_BELOW;
     let rows = sqlx::query(concat!(
         post_select!("NULL::text", "NULL::text"),
         " WHERE ",
         post_visible!(),
-        " AND (p.body ILIKE $2 OR p.title ILIKE $2)
+        " AND ",
+        post_listed!(),
+        " AND ",
+        post_indexable!(),
+        " AND (CASE WHEN $6 THEN (p.body ~* $5 OR p.title ~* $5) ELSE (p.body ILIKE $2 OR p.title ILIKE $2) END)
           AND ($4 = 'all'
                OR ($4 = 'posts' AND p.kind = 'post' AND p.title IS NULL)
                OR ($4 = 'articles' AND p.kind = 'post' AND p.title IS NOT NULL)
                OR ($4 = 'videos' AND p.kind = 'video' AND p.media_status = 'ready'))
-         ORDER BY p.created_at DESC, p.id DESC
+         ORDER BY CASE
+                    WHEN p.title ILIKE SUBSTRING($2 FROM 2) THEN 0
+                    WHEN p.title ~* $5 THEN 1
+                    WHEN p.body ~* $5 THEN 2
+                    ELSE 3
+                  END,
+                  LN(2 + (SELECT COUNT(*) FROM post_likes rl WHERE rl.post_id = p.id)
+                       + (SELECT COUNT(*) FROM remote_reactions rr WHERE rr.post_id = p.id)) * 7
+                    - EXTRACT(EPOCH FROM NOW() - p.created_at) / 86400.0 DESC,
+                  p.id DESC
          LIMIT $3"
     ))
     .bind(viewer_id)
     .bind(pattern)
     .bind(limit)
     .bind(kind.as_str())
+    .bind(word_start)
+    .bind(short)
     .fetch_all(pool)
     .await?;
     to_posts(pool, rows).await
@@ -1414,8 +1635,8 @@ impl FoundTag {
 }
 
 /// The hashtags containing `words` (`game` finds `#videogames`) in the
-/// posts the viewer can see, of here and of other servers known here, the
-/// most used first. The trigram index of the texts finds the posts fast.
+/// posts the viewer can see, of here and of other servers known here: the
+/// exact one, then those starting with it, then the most used. The trigram index of the texts finds the posts fast.
 pub async fn search_tags(pool: &PgPool, viewer_id: Option<i32>, words: &str, limit: i64) -> Result<Vec<FoundTag>, sqlx::Error> {
     let words = crate::entities::user::escape_like(&words.trim().trim_start_matches('#').to_lowercase());
     let rows = sqlx::query(concat!(
@@ -1427,10 +1648,14 @@ pub async fn search_tags(pool: &PgPool, viewer_id: Option<i32>, words: &str, lim
              '(?:^|[^[:alnum:]_&/#])#([[:alnum:]_]+)', 'g') m
          WHERE ",
         post_visible!(),
+        " AND ",
+        post_listed!(),
         " AND (p.body ILIKE '%' || $2 || '%' OR p.title ILIKE '%' || $2 || '%' OR p.tags ILIKE '%' || $2 || '%')
           AND LOWER(m[1]) LIKE '%' || $2 || '%'
+          -- Short: only the hashtags starting with it.
+          AND (LENGTH($2) >= 3 OR LOWER(m[1]) LIKE $2 || '%')
          GROUP BY 1
-         ORDER BY uses DESC, tag
+         ORDER BY LOWER(m[1]) = $2 DESC, LOWER(m[1]) LIKE $2 || '%' DESC, uses DESC, tag
          LIMIT $3"
     ))
     .bind(viewer_id)
@@ -1454,6 +1679,8 @@ pub async fn timeline(pool: &PgPool, viewer_id: Option<i32>) -> Result<Vec<Post>
         post_select!("NULL::text", "NULL::text"),
         " WHERE ",
         post_visible!(),
+        " AND ",
+        post_listed!(),
         " AND (p.remote_actor_id IS NULL OR p.community_id IS NOT NULL)
           AND NOT EXISTS (SELECT 1 FROM community_ignores ci
                           WHERE ci.community_id = p.community_id AND ci.user_id = $1)
@@ -1485,6 +1712,15 @@ pub async fn feed(pool: &PgPool, viewer_id: i32) -> Result<Vec<Post>, sqlx::Erro
             FROM posts p
             WHERE p.user_id = $1 OR p.user_id IN (SELECT followed_id FROM followed_users)
                OR (p.community_id IS NULL AND p.remote_actor_id IN (SELECT actor_id FROM followed))
+            UNION ALL
+            -- Public posts of the last days with a hashtag the user follows
+            -- (`hashtag_follow`); tags have only letters, digits and `_`.
+            SELECT p.id, p.created_at, NULL, NULL FROM posts p
+            WHERE p.visibility = 'public' AND p.created_at > NOW() - INTERVAL '30 days'
+              AND EXISTS (SELECT 1 FROM hashtag_follows hf WHERE hf.user_id = $1
+                    AND (p.body ~* ('(^|[^[:alnum:]_&/#])#' || hf.tag || '([^[:alnum:]_]|$)')
+                         OR p.title ~* ('(^|[^[:alnum:]_&/#])#' || hf.tag || '([^[:alnum:]_]|$)')
+                         OR (' ' || p.tags || ' ') LIKE '% ' || hf.tag || ' %'))
             UNION ALL
             SELECT s.post_id, s.created_at, s.user_id, NULL FROM post_shares s
             WHERE s.user_id = $1 OR s.user_id IN (SELECT followed_id FROM followed_users)
@@ -1631,7 +1867,7 @@ pub async fn for_community(
         Sort::Hot => ordered!(
             "((SELECT COUNT(*) FROM post_likes hl WHERE hl.post_id = p.id)
               + (SELECT COUNT(*) FROM remote_reactions hr WHERE hr.post_id = p.id AND hr.kind = 'like')
-              + (SELECT COUNT(*) FROM comments hc WHERE hc.post_id = p.id) + 1)
+              + (SELECT COUNT(*) FROM comments hc WHERE hc.post_id = p.id AND hc.removed_at IS NULL) + 1)
               / POWER(EXTRACT(EPOCH FROM (NOW() - p.created_at)) / 3600 + 2, 1.5) DESC, p.id DESC"
         ),
     };
@@ -1667,7 +1903,7 @@ pub async fn find_federable(pool: &PgPool, post_id: i64) -> Result<Option<Post>,
     }
     let rows = sqlx::query(concat!(
         post_select!("NULL::text", "NULL::text"),
-        " WHERE p.id = $2 AND p.visibility = 'followers' AND p.remote_actor_id IS NOT NULL
+        " WHERE p.id = $2 AND p.removed_at IS NULL AND p.visibility = 'followers' AND p.remote_actor_id IS NOT NULL
            AND $1::integer IS NULL"
     ))
     .bind(None::<i32>)
@@ -1738,6 +1974,26 @@ pub async fn toggle(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn labels_are_read_from_forms_and_other_servers() {
+        use super::{Labels, WARNING_MAX_CHARS};
+        let fields = |name: &str| match name {
+            "content_warning" => Some("  spoilers \n  for   the end ".to_string()),
+            "ai_generated" => Some("on".to_string()),
+            _ => None,
+        };
+        let labels = Labels::from_form(fields);
+        assert_eq!(labels.content_warning, "spoilers for the end");
+        assert!(labels.ai_generated);
+        assert!(!labels.sponsored);
+        let long = "x".repeat(WARNING_MAX_CHARS + 50);
+        assert_eq!(Labels::from_form(|_| Some(long.clone())).content_warning.chars().count(), WARNING_MAX_CHARS);
+
+        let remote = Labels::from_remote(Some("food"), &["AIArt".to_string(), "Ad".to_string()]);
+        assert_eq!(remote, Labels { content_warning: "food".to_string(), ai_generated: true, sponsored: true });
+        assert_eq!(Labels::from_remote(None, &["cats".to_string()]), Labels::default());
+    }
+
     /// The rule is pasted into many queries: unbalanced, every post is hidden.
     #[test]
     fn visibility_rule_is_balanced() {

@@ -1,0 +1,59 @@
+{% extends "base.html" %} {% import "macros/moderation.html" as moderation_ui %}
+{# One incident's fields, empty for a new one. #}
+{% macro incident_fields(prefix, incident_occurred, incident_discovered, description, data_concerned, people_affected, serious, measures, authority, people) %}
+<div class="incident-dates">
+    <label>{{ "Happened on (if known)"|t }} <input type="date" name="occurred_on" value="{{ incident_occurred }}" max="{{ today }}" /></label>
+    <label>{{ "Discovered on"|t }} <input type="date" name="discovered_on" value="{{ incident_discovered }}" max="{{ today }}" required /></label>
+</div>
+<label for="{{ prefix }}-description">{{ "What happened"|t }}</label>
+<textarea id="{{ prefix }}-description" name="description" rows="3" maxlength="{{ text_max_chars }}" required>{{ description }}</textarea>
+<label for="{{ prefix }}-data">{{ "Personal data concerned"|t }}</label>
+<input id="{{ prefix }}-data" type="text" name="data_concerned" value="{{ data_concerned }}" maxlength="{{ text_max_chars }}" placeholder="{{ "Emails, private messages, passwords (hashed)..."|t }}" />
+<label for="{{ prefix }}-people">{{ "People affected"|t }}</label>
+<input id="{{ prefix }}-people" type="text" name="people_affected" value="{{ people_affected }}" maxlength="200" placeholder="{{ "12, about 300, unknown..."|t }}" />
+<fieldset class="choices">
+    <legend>{{ "Risk of serious injury to them?"|t }}</legend>
+    <label><input type="radio" name="serious_risk" value="no"{% if !serious %} checked{% endif %} /> {{ "No"|t }}</label>
+    <label><input type="radio" name="serious_risk" value="yes"{% if serious %} checked{% endif %} /> {{ "Yes: the authority and the people concerned must be told"|t }}</label>
+</fieldset>
+<label for="{{ prefix }}-measures">{{ "Measures taken"|t }}</label>
+<textarea id="{{ prefix }}-measures" name="measures" rows="2" maxlength="{{ text_max_chars }}">{{ measures }}</textarea>
+<div class="incident-dates">
+    <label>{{ "Authority told on"|t }} <input type="date" name="authority_notified_on" value="{{ authority }}" max="{{ today }}" /></label>
+    <label>{{ "People told on"|t }} <input type="date" name="people_notified_on" value="{{ people }}" max="{{ today }}" /></label>
+</div>
+{% endmacro %}
+{% block content %}
+<section class="box content moderation incidents">
+    {% call moderation_ui::tabs(sections) %}{% endcall %}
+    <p class="post-username">
+        {{ "The register of confidentiality incidents: personal data accessed, used, shared or lost without authorization. Record each one and keep it 5 years; the GDPR asks to document them. When there is a risk of serious injury, tell the Commission d'accès à l'information (Québec) or your data protection authority — within 72 hours in Europe — and the people concerned."|t }}
+    </p>
+    {% if let Some(message) = error %}<p class="error" role="alert">{{ message|t }}</p>{% else if saved %}<p class="saved" role="status">{{ "Saved."|t }}</p>{% endif %}
+
+    <h2 id="new">{{ "Record an incident"|t }}</h2>
+    <form action="/moderation/incidents" method="post" class="incident-form">
+        {% call incident_fields("new", "", today, "", "", "", false, "", "", "") %}{% endcall %}
+        <button type="submit" class="button primary">{{ "Record it"|t }}</button>
+    </form>
+
+    <h2>{{ "Register"|t }}</h2>
+    {% for incident in incidents %}
+    <details class="incident{% if incident.needs_notice() %} needs-notice{% endif %}" id="incident-{{ incident.id }}">
+        <summary>
+            <strong>{{ incident.discovered_label() }}</strong> — {{ incident.description }}
+            {% if incident.serious_risk %}<span class="config-badge off">{{ "serious risk"|t }}</span>{% endif %}
+            {% if incident.needs_notice() %}<span class="config-badge off">{{ "to be told"|t }}</span>{% endif %}
+        </summary>
+        <p class="post-meta">{% if let Some(by) = incident.created_by %}{{ "Recorded by @{}"|tf(by) }} · {% endif %}{{ "updated {}"|tf(incident.updated_label()) }}</p>
+        <form action="/moderation/incidents" method="post" class="incident-form">
+            <input type="hidden" name="id" value="{{ incident.id }}" />
+            {% call incident_fields(incident.id, incident.occurred_field(), incident.discovered_field(), incident.description, incident.data_concerned, incident.people_affected, incident.serious_risk, incident.measures, incident.authority_field(), incident.people_field()) %}{% endcall %}
+            <button type="submit" class="button">{{ "Save"|t }}</button>
+        </form>
+    </details>
+    {% else %}
+    <p class="empty">{{ "No incident recorded."|t }}</p>
+    {% endfor %}
+</section>
+{% endblock %}

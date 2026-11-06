@@ -137,12 +137,19 @@ fn back(error: &str) -> Response {
     Redirect::to(&format!("/settings/two-factor?error={error}")).into_response()
 }
 
-/// The QR code of `secret`, and the secret grouped by 4 for typing.
+/// The QR code of `secret`, and the secret grouped by 4 for typing. With
+/// the site's logo for the apps showing one, when phones can fetch it (an
+/// https address); without it when the code would be too long.
 fn setup_view(state: &AppState, user: &User, secret: &str) -> Option<(String, String)> {
     let issuer = crate::entities::author::host_of(&state.public_base_url);
     let issuer = issuer.split(':').next().unwrap_or("Tison");
     let bytes = totp::base32_decode(secret)?;
-    let qr = QrCode::encode(totp::setup_url(issuer, &user.username, &bytes).as_bytes())?;
+    let base = state.public_base_url.trim_end_matches('/');
+    let logo = base.starts_with("https://").then(|| format!("{base}/public/logo.png"));
+    let qr = logo
+        .as_deref()
+        .and_then(|logo| QrCode::encode(totp::setup_url(issuer, &user.username, &bytes, Some(logo)).as_bytes()))
+        .or_else(|| QrCode::encode(totp::setup_url(issuer, &user.username, &bytes, None).as_bytes()))?;
     let grouped = secret.as_bytes().chunks(4).map(|chunk| String::from_utf8_lossy(chunk).into_owned()).collect::<Vec<_>>().join(" ");
     Some((qr.to_svg(), grouped))
 }
@@ -203,7 +210,15 @@ pub async fn confirm(State(state): State<AppState>, session: Session, Form(form)
     let Some((codes, hashes)) = recovery_codes().await else {
         return back("server");
     };
-    if let Err(err) = two_factor::enable(&pool, me.id, &secret, step, &hashes).await {
+    // Encrypted, never stored readable: without the key, it can't be turned on.
+    let sealed = match two_factor::seal_secret(me.id, &secret) {
+        Ok(sealed) => sealed,
+        Err(err) => {
+            tracing::error!("failed to encrypt the two-factor secret of {}: {}", me.username, err);
+            return back("server");
+        }
+    };
+    if let Err(err) = two_factor::enable(&pool, me.id, &sealed, step, &hashes).await {
         tracing::error!("failed to turn on two-factor authentication for {}: {}", me.username, err);
         return back("server");
     }
@@ -371,17 +386,31 @@ pub async fn login_page(State(state): State<AppState>, session: Session) -> Resp
     })
 }
 
-pub async fn login_code(State(state): State<AppState>, session: Session, Form(form): Form<HashMap<String, String>>) -> Response {
+pub async fn login_code(
+    State(state): State<AppState>,
+    session: Session,
+    axum::Extension(crate::security::ClientIp(ip)): axum::Extension<crate::security::ClientIp>,
+    Form(form): Form<HashMap<String, String>>,
+) -> Response {
+    // Codes guessed by starting over with the password, see `security`.
+    if !crate::security::hit(crate::security::Limit::TwoFactor, &ip) {
+        return error_page(Layout::load(&state, &session).await, StatusCode::TOO_MANY_REQUESTS, crate::security::Limit::TwoFactor.message());
+    }
     let Some(pool) = state.pool.clone() else {
         return Redirect::to("/login").into_response();
     };
     let Some(user_id) = pending_user(&session).await else {
         return Redirect::to("/login").into_response();
     };
+    // And for the account, from any address.
+    if !crate::security::hit(crate::security::Limit::TwoFactor, &format!("user-{user_id}")) {
+        forget_pending(&session).await;
+        return error_page(Layout::load(&state, &session).await, StatusCode::TOO_MANY_REQUESTS, crate::security::Limit::TwoFactor.message());
+    }
     let tries = session.get::<i32>(PENDING_TRIES_KEY).await.ok().flatten().unwrap_or(0) + 1;
     let _ = session.insert(PENDING_TRIES_KEY, tries).await;
     let (factor, found) = match (two_factor::find(&pool, user_id).await, user::find_by_id(&pool, user_id).await) {
-        (Ok(factor), Ok(Some(found))) if !found.is_suspended() => (factor, found),
+        (Ok(factor), Ok(Some(found))) => (factor, found),
         _ => {
             forget_pending(&session).await;
             return Redirect::to("/login").into_response();
@@ -408,6 +437,13 @@ pub async fn login_code(State(state): State<AppState>, session: Session, Form(fo
     }
     let stay_signed_in = session.get::<bool>(PENDING_REMEMBER_KEY).await.ok().flatten().unwrap_or(false);
     forget_pending(&session).await;
+    // Suspended or banned: only its moderation notices, see `handlers::notice`.
+    if found.is_suspended() {
+        return match crate::handlers::session::open_appeal(&session, user_id).await {
+            Ok(()) => Redirect::to("/notices").into_response(),
+            Err(_) => Redirect::to("/login").into_response(),
+        };
+    }
     if let Err(err) = sign_in(&session, &found).await {
         tracing::error!("failed to sign in user {}: {}", user_id, err);
         return Redirect::to("/login").into_response();

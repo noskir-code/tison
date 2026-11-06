@@ -1,4 +1,5 @@
 {% extends "base.html" %} {% import "macros/account.html" as accounts %} {% import "macros/post.html" as posts_ui %}
+{% block head %}<meta name="robots" content="noindex" />{% endblock %}
 {# A section's title on the "All" tab: with a link to its own tab. #}
 {% macro section_title(title, slug) %}
 <h2 class="search-section-title">

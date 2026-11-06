@@ -22,6 +22,8 @@
             <form action="/messenger/{{ conversation_id }}/messages/{{ message.id }}/delete" method="post" class="inline" data-confirm="{{ "Delete this message for both of you?"|t }}">
                 <button type="submit" class="action danger">{{ "Delete"|t }}</button>
             </form>
+            {% else %}
+            <a href="/report?message={{ message.id }}" class="action report-link">{{ "Report"|t }}</a>
             {% endif %}
         </div>
     </div>

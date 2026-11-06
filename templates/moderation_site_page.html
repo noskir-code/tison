@@ -2,7 +2,16 @@
 <section class="box content moderation configuration composer edit-form">
     {% call moderation_ui::tabs(sections) %}{% endcall %}
     <p><a href="/moderation/configuration#site-pages">{{ "← Configuration"|t }}</a></p>
-    <h1>{{ title|t }} <code class="config-path">{{ page.kind.path() }}</code></h1>
+    <h1>{{ title|t }} <code class="config-path">{{ page.path() }}</code></h1>
+    {# Each language its own file; visitors read theirs, else the English one. #}
+    <nav class="profile-tabs" aria-label="{{ "Language of the page"|t }}">
+        {% for language in languages %}
+        <a href="/moderation/configuration/pages/{{ page.kind.slug() }}?lang={{ language.code() }}"{% if *language == page.lang %} class="active" aria-current="page"{% endif %}>{{ language.name() }}</a>
+        {% endfor %}
+    </nav>
+    {% if page.lang != crate::i18n::Lang::En %}
+    <p class="post-username">{{ "Visitors using this language read this version when it's written, else the English one. In Québec, the French version of the Terms must be offered first."|t }}</p>
+    {% endif %}
     <p class="post-username">{{ page.kind.about()|t }}</p>
     <p class="post-username">{{ "Saved in this file, which can also be changed in any editor. Written in Markdown, like articles, with tables. Visitors don't see the <!-- comments -->, and these are filled in for them: {}."|tf(placeholders) }} {{ "Leave it empty to show that it isn't written yet."|t }}</p>
     {% if let Some(message) = error %}
@@ -10,6 +19,7 @@
     {% endif %}
     <form action="/moderation/configuration/pages/{{ page.kind.slug() }}" method="post">
         <input type="hidden" name="version" value="{{ page.version }}" />
+        <input type="hidden" name="lang" value="{{ page.lang.code() }}" />
         <div class="article-editor">
             <div class="article-editor-write">
                 <label for="site-page-body" class="visually-hidden">{{ "Page, in Markdown"|t }}</label>

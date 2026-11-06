@@ -62,6 +62,16 @@ pub async fn sign_in(session: &Session, user: &User) -> Result<(), tower_session
 }
 
 /// Deletes the session data and its cookie.
+/// A suspended or banned account gave its password: the session only opens
+/// its moderation notices (see `handlers::notice`). An older sign-in kept in
+/// the session goes first, or the next page would empty the session.
+pub async fn open_appeal(session: &Session, user_id: i32) -> Result<(), tower_sessions::session::Error> {
+    session.remove::<i32>(USER_ID_KEY).await?;
+    session.remove::<i32>(SESSION_VERSION_KEY).await?;
+    session.cycle_id().await?;
+    session.insert(crate::handlers::notice::APPEAL_USER_KEY, user_id).await
+}
+
 pub async fn sign_out(session: &Session) -> Result<(), tower_sessions::session::Error> {
     session.flush().await
 }
@@ -167,6 +177,12 @@ async fn restore(
     let Some(user) = user::find_by_id(pool, stored.user_id).await? else {
         return Ok(false);
     };
+    // Suspended or banned: not signed in, but the token stays for after the
+    // suspension. Signing in would empty the session on the next check, and
+    // with it the access to the moderation notices (see `open_appeal`).
+    if user.is_suspended() {
+        return Ok(true);
+    }
     sign_in(session, &user).await?;
     tokens::extend(pool, selector, days).await?;
     Ok(true)

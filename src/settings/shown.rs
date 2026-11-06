@@ -141,6 +141,7 @@ fn heading(line: &str) -> Option<String> {
 fn service_in_effect(key: &str) -> Option<bool> {
     let services = services();
     Some(match key.replace('-', "_").as_str() {
+        "BLOGGING" => services.blogging,
         "IMAGESHARING" => services.image_sharing,
         "IMAGESYSTEM" => services.image_system,
         "PUBLISHING" => services.publishing,
@@ -181,7 +182,7 @@ fn known() -> [(&'static str, &'static str, String, &'static str, bool, bool); 3
             "settings",
             "settings.conf",
             config_path("TISON_SETTINGS", DEFAULT_SETTINGS_FILE).display().to_string(),
-            "The accounts and the Fediverse of the site.",
+            "The accounts, the Fediverse, the privacy contact and the minimum age of the site.",
             true,
             false,
         ),

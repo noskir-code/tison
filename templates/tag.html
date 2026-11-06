@@ -1,8 +1,15 @@
 {% extends "base.html" %} {% import "macros/post.html" as posts_ui %} {% block content %}
+{% block head %}<meta name="robots" content="noindex" />{% endblock %}
 {# See handlers::post::tag_page. #}
 <section class="box content">
     <h1>#{{ tag }}</h1>
     <p class="post-username">{{ "Posts with this hashtag, from here and from the other servers known here."|t }}</p>
+    {% if let Some(following) = following %}
+    <form action="/tags/{{ tag }}/{% if following %}unfollow{% else %}follow{% endif %}" method="post">
+        <button type="submit" class="button{% if !following %} primary{% endif %}" aria-pressed="{{ following }}">{% if following %}{{ "Unfollow the hashtag"|t }}{% else %}{{ "Follow the hashtag"|t }}{% endif %}</button>
+    </form>
+    <p class="post-username form-hint">{% if following %}{{ "Its public posts show in your feed."|t }}{% else %}{{ "Follow it to see its public posts in your feed."|t }}{% endif %}</p>
+    {% endif %}
 </section>
 <div class="flex center vertical full-width posts">
     {% call posts_ui::post_list(posts, "No post with this hashtag yet."|t, layout.viewer.is_some(), "/tags/{}"|format(tag), false) %}{% endcall %}

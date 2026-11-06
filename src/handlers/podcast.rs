@@ -173,7 +173,7 @@ struct PodcastTemplate {
     is_owner: bool,
     feed_url: String,
     error: Option<String>,
-    visibilities: [Visibility; 2],
+    visibilities: [Visibility; 3],
     max_mb: usize,
     title_max_chars: usize,
     description_max_chars: usize,
@@ -250,6 +250,11 @@ pub async fn upload_episode(
         Ok(upload) => upload,
         Err(error) => return back(error),
     };
+    // Only what others see counts for a bot's limit (Server rules, 7).
+    if upload.field("visibility") != Visibility::Private.as_str() && crate::handlers::post::bot_over_limit(&pool, &me).await {
+        upload.discard().await;
+        return crate::handlers::post::bot_limit_page(Layout::load(&state, &session).await);
+    }
     let checked = (|| {
         let source = upload.file("audio").ok_or(MediaError::NoFile)?;
         let title = validate_title(upload.field("title"), crate::entities::video::TITLE_MAX_CHARS)?;
@@ -277,6 +282,7 @@ pub async fn upload_episode(
     };
     match post::create_media(&pool, me.id, &media).await {
         Ok(post_id) => {
+            crate::handlers::post::save_labels(&pool, post_id, &upload.label_fields()).await;
             tracing::info!("@{} uploaded episode {} of podcast {}", me.username, post_id, podcast_id);
             jobs::enqueue(state.clone(), post_id);
             Redirect::to(&format!("/podcasts/{podcast_id}")).into_response()

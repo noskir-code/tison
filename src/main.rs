@@ -15,6 +15,7 @@ mod av;
 mod entities;
 mod geocode;
 mod document;
+mod zip;
 mod hashtag;
 mod i18n;
 mod handlers;
@@ -26,7 +27,10 @@ mod photo;
 mod preview;
 mod push;
 mod qr;
+mod security;
 mod settings;
+mod vault;
+mod mention;
 mod totp;
 use handlers::user;
 use settings::Config;
@@ -110,10 +114,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     config.services.install();
     settings::install_site_domain(&config.public_base_url);
     settings::install_instance_name(&config.instance_name);
+    settings::install_privacy(&config.privacy_officer, &config.privacy_email, config.minimum_age);
+    settings::install_bot_limit(config.bot_posts_per_hour);
+    settings::install_removed_content_days(config.removed_content_days);
+    settings::install_relay_server(config.relay_server);
+    security::install(&config.public_base_url, config.trusted_proxies.clone());
     av::set_video_settings(av::VideoSettings { preset: config.video_preset.clone(), max_lines: config.video_max_lines });
     av::jobs::set_parallel(config.video_conversions);
     tracing::info!(
-        "services: photos {} in {} style, articles {}, videos {}, live streams {}, podcasts {}, events {}, communities {}, friends and messenger {}",
+        "services: posts {} (at most {} characters), photos {} in {} style, articles {}, videos {}, live streams {}, podcasts {}, events {}, communities {}, friends and messenger {}",
+        if config.services.blogging { "on" } else { "off" },
+        config.services.blogging_max_chars,
         if config.services.image_sharing { "on" } else { "off" },
         if config.services.image_system { "Pixelfed" } else { "Mastodon" },
         if config.services.publishing { "on" } else { "off" },
@@ -147,6 +158,41 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         && let Err(err) = entities::schema::sync(pool, entities::TABLES).await
     {
         tracing::error!("failed to update the database schema: {}", err);
+    }
+
+    // The key of the two-factor secrets (see `vault`). Never a new one over
+    // secrets already encrypted: they could no longer be read.
+    if let Some(pool) = &pool {
+        let key_file = &config.two_factor_key_file;
+        match entities::two_factor::has_sealed(pool).await {
+            Ok(sealed) => match vault::load(key_file, !sealed).map_err(io_error_from_string)? {
+                vault::Loaded::Read => {}
+                vault::Loaded::Created => tracing::warn!(
+                    "created {}, the key of the two-factor secrets: back it up apart from the database",
+                    key_file
+                ),
+                vault::Loaded::Missing => {
+                    let message = format!(
+                        "the two-factor key file {key_file} is missing: restore it from a backup (TWO_FACTOR_KEY_FILE), \
+                         or the two-factor secrets in the database can't be read"
+                    );
+                    tracing::error!("{}", message);
+                    return Err(io_error_from_string(message).into());
+                }
+            },
+            // Postgres down: the key is read if it's there, never made.
+            Err(err) => {
+                tracing::warn!("failed to check the two-factor secrets: {}", err);
+                if vault::load(key_file, false).map_err(io_error_from_string)? == vault::Loaded::Missing {
+                    tracing::error!("{} is missing: two-factor authentication can't work until it's restored", key_file);
+                }
+            }
+        }
+        match entities::two_factor::secure_secrets(pool).await {
+            Ok((_, 0)) => {}
+            Ok((_, now)) => tracing::info!("encrypted {} two-factor secret(s) stored readable", now),
+            Err(err) => tracing::error!("{}", err),
+        }
     }
 
     // Servers without a real domain (`mastodon` alone) can't be reached.
@@ -317,7 +363,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     av::jobs::resume(&state).await;
     tokio::spawn(handlers::event::run_scheduler(state.clone()));
     if let Some(pool) = state.pool.clone() {
-        tokio::spawn(handlers::moderation::run_suspension_ends(state.clone(), pool));
+        tokio::spawn(handlers::moderation::run_suspension_ends(state.clone(), pool.clone()));
+        tokio::spawn(handlers::moderation::run_removed_purge(pool.clone()));
+        tokio::spawn(handlers::account::run_export_cleaning(pool));
     }
     if config.services.live_streaming && state.pool.is_some() {
         tokio::spawn(av::rtmp::serve(format!("{}:{}", config.rtmp_host, config.rtmp_port), state.clone()));
@@ -361,13 +409,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             handlers::session::restore_remembered,
         ))
         .layer(session_layer)
+        // Outermost: forged forms stop before anything, and every answer
+        // gets the security headers, see `security`.
+        .layer(axum::middleware::from_fn(security::middleware))
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind(config.addr()).await?;
 
     tracing::info!("Server running on http://{}", config.addr());
 
-    axum::serve(listener, app)
+    // With the client's address, for the rate limits (see `security`).
+    axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>())
         .with_graceful_shutdown(shutdown_signal())
         .await?;
 

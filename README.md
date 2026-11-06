@@ -55,17 +55,19 @@ https://instavox.social/
  - (Completed) v0.16 > Add a dashboard for creators
  - (Completed) v0.17 > Add translation system
  - (Completed) v0.18 > Add the necessary pages for legal use and Fediverse norms
- - (Current) v0.19 > Fix texts and menus
- - v0.20 > Apply corrective to the federation system and enhancing even more functions
- - v0.21 > API to connect from other server and to connect to other servers
- - v0.22 > AT Protocol Bridge integration
- - v0.23 > Diaspora Bridge integration
- - v0.24 > ZOT Bridge integration
- - v0.25 > Matrix Bridge integration
- - v0.26 > Cross-posting
- - v0.27 > Cleaning up the code and comments
- - v0.28 > Badges system
- - v0.29 > Preparation for the full release
+ - (Completed) v0.19 > Fix texts and menus
+ - (Current) v0.20 > Badges system
+ - (Current) v.21 > Add a relay system for post and users
+ - (Current) v0.22 > Apply corrective to the federation system and enhancing even more functions
+ - v0.23 > API to connect from other server and to connect to other servers
+ - v0.24 > AT Protocol Bridge integration
+ - v0.25 > Diaspora Bridge integration
+ - v0.26 > ZOT Bridge integration
+ - v0.27 > Matrix Bridge integration
+ - v0.28 > Cross-posting
+ - v0.29 > Cleaning up the code and comments
+ - v0.30 > Add more badges
+ - v0.31 > Preparation for the full release
  
  - v1.0 > Fully functional system and cleaned up that shows contents and users from other instances with multi-user links and notifier that notifies the publication of new content by users.
 
