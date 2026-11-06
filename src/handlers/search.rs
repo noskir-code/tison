@@ -226,9 +226,10 @@ pub async fn search_page(
         if (all || tab == SearchTab::Hashtags) && !words.is_empty() {
             tags = post::search_tags(&pool, viewer_id, words, if all { ALL_TAB_SIZE * 2 } else { SEARCH_SIZE * 2 }).await.unwrap_or_else(logged_empty("hashtags"));
         }
-        // Posts need words of at least 3 letters: shorter, nearly all match.
+        // From the first letter or digit; short words only match the
+        // start of words, see `post::search`.
         let posts_tab = matches!(tab, SearchTab::All | SearchTab::Posts | SearchTab::Videos | SearchTab::Articles);
-        if posts_tab && words.chars().count() >= 3 {
+        if posts_tab && starts_searchable(words) {
             let limit = if all { ALL_TAB_SIZE * 2 } else { SEARCH_SIZE * 2 };
             posts = post::search(&pool, viewer_id, words, tab.post_kind(), limit).await.unwrap_or_else(logged_empty("posts"));
         }
@@ -285,32 +286,58 @@ const SEARCH_SIZE: i64 = 20;
 /// Of each kind on the "All" tab, with a link to its own tab.
 const ALL_TAB_SIZE: i64 = 5;
 
-/// Suggestions shown while typing, from `SUGGEST_MIN_CHARS` characters.
-const SUGGEST_MIN_CHARS: usize = 3;
+/// Whether a search can be made: it starts (after `@`, `!` or `#`) with a
+/// letter or a digit. Suggestions and results come from the first one.
+pub(crate) fn starts_searchable(search: &str) -> bool {
+    search.trim().trim_start_matches(['@', '!', '#']).chars().next().is_some_and(char::is_alphanumeric)
+}
+
 /// Of each kind.
 const SUGGEST_SIZE: i64 = 5;
+/// Posts suggested, the most relevant.
+const SUGGEST_POSTS: i64 = 3;
+/// Characters of a post's text shown in a suggestion.
+const SUGGEST_EXCERPT_CHARS: usize = 80;
 
-/// `{"users": [...], "communities": [...]}`, each with `name`, `detail`,
-/// `url` and `photo` (or `initial`). Empty for short texts and for
-/// addresses of other servers, which are only looked up on Enter.
-pub async fn suggest(State(state): State<AppState>, Query(query): Query<HashMap<String, String>>) -> Response {
+/// `{"users": [...], "communities": [...], "tags": [...], "posts": [...]}`,
+/// each with `name`, `detail`, `url` and `photo` (or `initial`), the most
+/// relevant first. From the first letter or digit; empty for addresses of
+/// other servers, which are only looked up on Enter.
+pub async fn suggest(State(state): State<AppState>, session: Session, Query(query): Query<HashMap<String, String>>) -> Response {
     let search = query.get("q").map(|search| search.trim()).unwrap_or_default();
-    let empty = || Json(json!({ "users": [], "communities": [] })).into_response();
+    let empty = || Json(json!({ "users": [], "communities": [], "tags": [], "posts": [] })).into_response();
     let Some(pool) = &state.pool else {
         return empty();
     };
-    if search.trim_start_matches(['@', '!']).chars().count() < SUGGEST_MIN_CHARS || is_address(search) {
+    if !starts_searchable(search) || is_address(search) {
         return empty();
     }
-    let users = user::search(pool, search, SUGGEST_SIZE).await;
-    let communities = if crate::settings::services().content_aggregator {
-        community::search_limited(pool, Some(search.trim_start_matches(['@', '!'])), SUGGEST_SIZE).await
-    } else {
-        Ok(Vec::new())
+    let viewer_id = crate::handlers::session::signed_in(pool, &session).await.ok().flatten().map(|viewer| viewer.id);
+    let words = search.trim_start_matches(['@', '!', '#']);
+    // `#…` is a hashtag, `@…` someone, `!…` a community: only those.
+    let (people, groups, hashtags, texts) = match search.chars().next() {
+        Some('#') => (false, false, true, false),
+        Some('@') => (true, false, false, false),
+        Some('!') => (false, true, false, false),
+        _ => (true, true, true, true),
     };
-    let (users, communities) = match (users, communities) {
-        (Ok(users), Ok(communities)) => (users, communities),
-        (Err(err), _) | (_, Err(err)) => {
+    let loaded = async {
+        let users = if people { user::search(pool, search, SUGGEST_SIZE).await? } else { Vec::new() };
+        let communities = match groups && crate::settings::services().content_aggregator {
+            true => community::search_limited(pool, Some(words), SUGGEST_SIZE).await?,
+            false => Vec::new(),
+        };
+        let tags = if hashtags { post::search_tags(pool, viewer_id, words, SUGGEST_SIZE).await? } else { Vec::new() };
+        let posts = match texts {
+            true => post::search(pool, viewer_id, words, post::SearchKind::All, SUGGEST_POSTS).await?,
+            false => Vec::new(),
+        };
+        Ok::<_, sqlx::Error>((users, communities, tags, posts))
+    }
+    .await;
+    let (users, communities, tags, posts) = match loaded {
+        Ok(loaded) => loaded,
+        Err(err) => {
             tracing::error!("failed to suggest for the search: {}", err);
             return StatusCode::INTERNAL_SERVER_ERROR.into_response();
         }
@@ -338,6 +365,28 @@ pub async fn suggest(State(state): State<AppState>, Query(query): Query<HashMap<
             community.photo_url.as_ref(),
             community.initial(),
         )).collect::<Vec<_>>(),
+        "tags": tags.iter().map(|tag| entry(
+            format!("#{}", tag.tag),
+            crate::i18n::plural(tag.uses, "1 post", "{} posts"),
+            tag.path(),
+            None,
+            "#".to_string(),
+        )).collect::<Vec<_>>(),
+        "posts": posts.iter().map(|found| {
+            let text = found.title.clone().unwrap_or_else(|| found.body.clone());
+            let text: String = text.split_whitespace().collect::<Vec<_>>().join(" ");
+            let excerpt = match text.char_indices().nth(SUGGEST_EXCERPT_CHARS) {
+                Some((cut, _)) => format!("{}…", &text[..cut]),
+                None => text,
+            };
+            entry(
+                excerpt,
+                found.author.handle(),
+                format!("/posts/{}", found.id),
+                found.author.photo_url().as_ref(),
+                found.author.initial(),
+            )
+        }).collect::<Vec<_>>(),
     }))
     .into_response()
 }
@@ -508,6 +557,8 @@ struct RemoteProfileTemplate {
     account: Account,
     posts: Vec<Post>,
     return_to: String,
+    /// The viewer blocked it, see `handlers::block`.
+    blocked: bool,
 }
 
 /// An account of another server, with its posts stored here.
@@ -526,11 +577,16 @@ pub async fn remote_profile(State(state): State<AppState>, session: Session, Pat
             None => None,
         };
         let posts = post::by_remote_author(pool, id, viewer_id).await?;
-        Ok::<_, sqlx::Error>(Some((Account { author, summary, following }, posts)))
+        let blocked = match viewer_id {
+            Some(viewer_id) => crate::entities::block::blocks_actor(pool, viewer_id, id).await?,
+            None => false,
+        };
+        Ok::<_, sqlx::Error>(Some((Account { author, summary, following }, posts, blocked)))
     }
     .await;
     match loaded {
-        Ok(Some((account, posts))) => render_template(&RemoteProfileTemplate {
+        Ok(Some((account, posts, blocked))) => render_template(&RemoteProfileTemplate {
+            blocked,
             title: format!("{} ({})", account.author.display_name(), account.author.handle()),
             layout,
             return_to: format!("/remote/{id}"),

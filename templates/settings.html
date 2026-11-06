@@ -52,6 +52,35 @@
         <button type="submit" class="button">{{ "Save names"|t }}</button>
     </form>
 
+    {# Server rules, 7: bots and parody accounts are labelled, see entities::user::AccountKind. #}
+    <form action="/settings/account-kind" method="post" id="account-kind" class="settings-choice" data-account-kind>
+        <fieldset>
+            <legend>{{ "This account is"|t }}</legend>
+            {% for kind in account_kinds %}
+            <label class="checkbox-line"><input type="radio" name="account_kind" value="{{ kind.as_str() }}"{% if *kind == user.account_kind %} checked{% endif %} /> {{ kind.label()|t }}</label>
+            {% endfor %}
+        </fieldset>
+        <label for="bot-contact">{{ "Human answering for the bot"|t }}</label>
+        <input type="text" id="bot-contact" name="bot_contact" value="{{ user.bot_contact }}" maxlength="{{ bot_contact_max_chars }}" placeholder="{{ "@alice or alice@example.com"|t }}" />
+        <p class="post-username form-hint">{% if bot_posts_per_hour == 1 %}{{ "A badge shows it by your name, here and on other servers. A bot must name a human to contact, and can publish at most one post an hour."|t }}{% else %}{{ "A badge shows it by your name, here and on other servers. A bot must name a human to contact, and can publish at most {} posts an hour."|tf(bot_posts_per_hour) }}{% endif %}</p>
+        <button type="submit" class="button">{{ "Save"|t }}</button>
+    </form>
+
+    {# Off by default (Law 25 art. 9.1): pages say `noindex` unless chosen. #}
+    <form action="/settings/search-engines" method="post" id="search-engines" class="settings-choice">
+        <label class="checkbox-line"><input type="checkbox" name="search_indexing" value="on"{% if user.search_indexing %} checked{% endif %} /> {{ "Let search engines (Google, Bing...) show my profile and posts"|t }}</label>
+        <p class="post-username form-hint">{{ "Off: your public profile and posts can still be read here and on the Fediverse, but search engines are asked not to list them."|t }}</p>
+        <button type="submit" class="button">{{ "Save"|t }}</button>
+    </form>
+
+    {# Mastodon's `indexable`, also sent to other servers. #}
+    <form action="/settings/indexable" method="post" id="indexable" class="settings-choice">
+        <input type="hidden" name="indexable" value="off" />
+        <label class="checkbox-line"><input type="checkbox" name="indexable" value="on"{% if user.indexable %} checked{% endif %} /> {{ "Let my public posts be found by the search, here and on other servers"|t }}</label>
+        <p class="post-username form-hint">{{ "Off: your posts don't show in search results, except for you and people who interacted with them. Your profile can still be found by its name, and your hashtags still show on their pages."|t }}</p>
+        <button type="submit" class="button">{{ "Save"|t }}</button>
+    </form>
+
     <form action="/settings/bio" method="post">
         <label for="bio">{{ "Bio"|t }}</label>
         <textarea
@@ -183,6 +212,85 @@
         <strong>{{ "Two-factor authentication"|t }}</strong>
         <a href="/settings/two-factor" class="button">{{ "Manage"|t }}</a>
     </div>
+
+    {# GDPR art. 15, 17 and 20, Québec's Law 25 art. 27 and 28: see handlers/account.rs. #}
+    {# Server rules, 2: see handlers::block. #}
+    <section class="blocked-accounts" id="blocked">
+        <h2>{{ "Blocked accounts"|t }}</h2>
+        {% if blocked.is_empty() %}
+        <p class="post-username">{{ "You haven't blocked anyone. When you block someone you stop seeing each other, and they can't follow, message or notify you."|t }}</p>
+        {% else %}
+        <ul class="account-list">
+            {% for account in blocked %}
+            <li class="flex center space-between">
+                <a href="{{ account.url }}">{{ account.handle }}</a>
+                <form action="{{ account.unblock_url }}" method="post">
+                    <input type="hidden" name="return" value="/settings?tab=account#blocked" />
+                    <button type="submit" class="button">{{ "Unblock"|t }}</button>
+                </form>
+            </li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+    </section>
+
+    {# See entities::hashtag_follow. #}
+    <section class="blocked-accounts" id="hashtags">
+        <h2>{{ "Followed hashtags"|t }}</h2>
+        {% if followed_tags.is_empty() %}
+        <p class="post-username">{{ "You don't follow any hashtag. Open one (like on a post) and follow it to see its public posts in your feed."|t }}</p>
+        {% else %}
+        <ul class="account-list">
+            {% for tag in followed_tags %}
+            <li class="flex center space-between">
+                <a href="/tags/{{ tag }}">#{{ tag }}</a>
+                <form action="/tags/{{ tag }}/unfollow" method="post">
+                    <input type="hidden" name="return" value="/settings?tab=account#hashtags" />
+                    <button type="submit" class="button">{{ "Unfollow"|t }}</button>
+                </form>
+            </li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+    </section>
+
+    <section class="your-data" id="your-data">
+        <h2>{{ "Your data"|t }}</h2>
+        {% if let Some(message) = data_message %}
+        <p class="{% if data_error %}error{% else %}saved{% endif %}" role="status">{{ message|t }}</p>
+        {% endif %}
+        {% if let Some(at) = consent_label %}
+        <p class="post-meta">{{ "You accepted the Terms of Use and the Privacy Policy on {}."|tf(at) }} <a href="/privacy-policy">{{ "Privacy Policy"|t }}</a></p>
+        {% endif %}
+
+        <h3>{{ "Download a copy"|t }}</h3>
+        <p class="post-username">{{ "Everything your account wrote, chose and uploaded, in a ZIP: your profile, posts, comments, sent messages, follows, likes, and your files. Readable by other services (JSON). Kept {} days."|tf(crate::entities::data_export::KEEP_DAYS) }}</p>
+        {% if let Some(export) = export %}
+        {% if export.is_ready() %}
+        <p><a href="/settings/export/{{ export.token }}" class="button primary">{{ "Download the copy of {}"|tf(export.created_label()) }}</a> <span class="post-meta">{{ export.size_label() }}</span></p>
+        {% else if export.is_preparing() %}
+        <p class="post-meta">{{ "Being made since {}…"|tf(export.created_label()) }}</p>
+        {% endif %}
+        {% endif %}
+        <form action="/settings/export" method="post" class="data-form">
+            <label for="export-password">{{ "Your password"|t }}</label>
+            <input id="export-password" type="password" name="password" autocomplete="current-password" required />
+            <button type="submit" class="button">{{ "Ask for a copy"|t }}</button>
+        </form>
+
+        <h3>{{ "Delete your account"|t }}</h3>
+        {% if user.is_admin() %}
+        <p class="post-username">{{ "The creator of the site can't delete their account: someone must run the site."|t }}</p>
+        {% else %}
+        <p class="post-username">{{ "Your account and everything it posted (posts, comments, photos, videos, messages, follows) are deleted at once, here and on the other servers that have them. This can't be undone: download a copy first if you want to keep anything."|t }}</p>
+        <form action="/settings/delete-account" method="post" class="data-form" data-confirm="{{ "Delete your account for good?"|t }}" data-confirm-label="{{ "Delete my account"|t }}">
+            <label class="checkbox-line"><input type="checkbox" name="confirm" value="yes" required /> {{ "I understand that everything is deleted for good"|t }}</label>
+            <label for="delete-password">{{ "Your password"|t }}</label>
+            <input id="delete-password" type="password" name="password" autocomplete="current-password" required />
+            <button type="submit" class="button danger">{{ "Delete my account"|t }}</button>
+        </form>
+        {% endif %}
+    </section>
 
     {# Shown by assets/system.js when the browser can receive them. #}
     <div class="settings-two-factor settings-push" data-push hidden>

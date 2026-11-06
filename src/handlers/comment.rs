@@ -35,15 +35,24 @@ enum CommentError {
     InvalidCharacters,
     /// The comment replied to doesn't exist, or is on another post.
     ReplyTarget,
+    /// A bot answering someone who doesn't interact with it (Server rules, 7).
+    BotUninvited,
+    /// The same text as recent comments, see `entities::spam`.
+    Duplicate,
+    /// Too many comments this hour (`security::Limit::Comment`).
+    TooMany,
     Server,
 }
 
 impl CommentError {
-    const ALL: [Self; 5] = [
+    const ALL: [Self; 8] = [
         Self::Empty,
         Self::TooLong,
         Self::InvalidCharacters,
         Self::ReplyTarget,
+        Self::BotUninvited,
+        Self::Duplicate,
+        Self::TooMany,
         Self::Server,
     ];
 
@@ -53,6 +62,9 @@ impl CommentError {
             Self::TooLong => "too-long",
             Self::InvalidCharacters => "invalid-characters",
             Self::ReplyTarget => "reply-target",
+            Self::BotUninvited => "bot-uninvited",
+            Self::Duplicate => "duplicate",
+            Self::TooMany => "too-many",
             Self::Server => "server",
         }
     }
@@ -67,6 +79,9 @@ impl CommentError {
             Self::TooLong => format!("A comment can be at most {BODY_MAX_CHARS} characters."),
             Self::InvalidCharacters => "The comment contains characters that are not allowed.".to_string(),
             Self::ReplyTarget => "The comment you reply to doesn't exist anymore.".to_string(),
+            Self::BotUninvited => "A bot only answers people who follow it or mention it.".to_string(),
+            Self::Duplicate => "You already wrote this comment several times: repeating it looks like spam.".to_string(),
+            Self::TooMany => "You commented a lot this hour: wait a little before commenting again.".to_string(),
             Self::Server => "Something went wrong, try again later.".to_string(),
         }
     }
@@ -238,6 +253,20 @@ pub async fn create_comment(
                 Some((id, author))
             }
         };
+        // Bots only answer who interacts with them (Server rules, 7).
+        if me.is_bot() && !crate::entities::user::bot_may_reply(&pool, &me, post_id, parent.map(|(id, _)| id)).await.map_err(server_error)? {
+            return Err(CommentError::BotUninvited);
+        }
+        if !crate::security::hit(crate::security::Limit::Comment, &me.id.to_string()) {
+            return Err(CommentError::TooMany);
+        }
+        let sender = crate::entities::spam::Sender::Local(me.id);
+        if crate::entities::spam::is_repeated(&pool, sender, crate::entities::spam::Kind::Comment, &body, None).await.map_err(server_error)? {
+            if let Err(err) = crate::entities::spam::record(&pool, sender, crate::entities::spam::Kind::Comment, &body, &format!("@{}", me.username)).await {
+                tracing::warn!("failed to record a repeat of @{}: {}", me.username, err);
+            }
+            return Err(CommentError::Duplicate);
+        }
         let comment_id = comment::create(&pool, post_id, me.id, parent.map(|(id, _)| id), &body)
             .await
             .map_err(server_error)?;
@@ -367,6 +396,8 @@ pub async fn edit_page(
         Err(err) => return comment_failed(layout, comment_id, err),
     };
     render_template(&EditTemplate {
+        post_max_chars: None,
+        labels: None,
         video_category: None,
         photos: Vec::new(),
         title: "Edit the comment".to_string(),

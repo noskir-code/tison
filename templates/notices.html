@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{# What the moderators did to the account, and why (Server rules,
+   enforcement), with an appeal for each. Also shown to suspended accounts,
+   see handlers::notice. #}
+{% block content %}
+<section class="box content notices">
+    <h1>{{ "Moderation notices"|t }}</h1>
+    {% if user.is_suspended() %}
+    <p class="error" role="alert">
+        {% if let Some(until) = user.suspension_end_label() %}{{ "Your account is suspended until {}."|tf(until) }}{% else %}{{ "Your account is banned."|t }}{% endif %}
+        {{ "You can read why below, and appeal."|t }}
+    </p>
+    {% endif %}
+    {% if let Some(text) = message %}<p class="{% if error %}error{% else %}saved{% endif %}" role="status">{{ text|t }}</p>{% endif %}
+    <p class="post-username">{{ "When the moderators act on your account or on what you posted, they tell you here what they did and which server rule it broke. You can appeal each decision once: another look is taken, and the answer shows here."|t }} <a href="/rules">{{ "Read the server rules"|t }}</a></p>
+
+    {% if notices.is_empty() %}
+    <p class="empty">{{ "No notice: the moderators never acted on your account."|t }}</p>
+    {% endif %}
+    <ol class="notice-list">
+        {% for notice in notices %}
+        <li class="notice-card{% if !notice.read %} unread{% endif %}" id="notice-{{ notice.id }}">
+            <header class="notice-header">
+                <strong>{{ notice.action.label()|t }}</strong>
+                <span class="post-meta">{{ notice.created_label() }}</span>
+            </header>
+            <p>{{ notice.action.explanation()|t }}{% if let Some(until) = notice.until_label() %} {{ "Until {}."|tf(until) }}{% endif %}</p>
+            <p><span class="field-label">{{ "Rule broken:"|t }}</span> {{ notice.reason.label()|t }}</p>
+            {% if !notice.note.is_empty() %}<blockquote class="notice-note">{{ notice.note }}</blockquote>{% endif %}
+            {% if !notice.excerpt.is_empty() %}
+            <p class="report-excerpt"><span class="field-label">{{ "About:"|t }}</span> {{ notice.excerpt }}</p>
+            {% endif %}
+            {% if let Some(link) = notice.link() %}<a href="{{ link }}" class="action">{{ "Open"|t }}</a>{% endif %}
+
+            {% if notice.can_appeal() %}
+            <details class="notice-appeal">
+                <summary>{{ "Appeal this decision"|t }}</summary>
+                <form action="/notices/{{ notice.id }}/appeal" method="post">
+                    <label for="appeal-{{ notice.id }}">{{ "Why should it change?"|t }}</label>
+                    <textarea id="appeal-{{ notice.id }}" name="appeal" rows="4" maxlength="{{ text_max_chars }}" required></textarea>
+                    <button type="submit" class="button primary">{{ "Send the appeal"|t }}</button>
+                </form>
+            </details>
+            {% else %}
+            <div class="notice-appeal-status">
+                <p><strong>{{ notice.appeal_status.label()|t }}</strong>{% if let Some(at) = notice.appealed_label() %} <span class="post-meta">· {{ "appealed {}"|tf(at) }}</span>{% endif %}</p>
+                <blockquote class="notice-note">{{ notice.appeal }}</blockquote>
+                {% if notice.is_answered() && !notice.answer.is_empty() %}
+                <p><span class="field-label">{{ "The moderators' answer:"|t }}</span> {{ notice.answer }}</p>
+                {% endif %}
+            </div>
+            {% endif %}
+        </li>
+        {% endfor %}
+    </ol>
+</section>
+{% endblock %}

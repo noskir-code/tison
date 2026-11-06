@@ -1908,6 +1908,77 @@ form.search-field {
     margin: 0.75em 0 0;
 }
 
+/* The settings of a conversation (mute, report, block), at the right of its
+   header. */
+.conversation-menu {
+    position: relative;
+    margin-left: auto;
+}
+
+.conversation-menu > summary {
+    list-style: none;
+    cursor: pointer;
+    padding: 0.2em 0.4em;
+    border-radius: 0.4em;
+}
+
+.conversation-menu > summary::-webkit-details-marker {
+    display: none;
+}
+
+.conversation-menu[open] > summary,
+.conversation-menu > summary:hover {
+    background-color: var(--button);
+}
+
+.conversation-menu-items {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 0.3em);
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    min-width: 14em;
+    max-width: calc(100vw - 2em);
+    padding: 0.3em;
+    border: solid 0.1em var(--button);
+    border-radius: 0.6em;
+    background-color: var(--main);
+    box-shadow: 0 0.3em 1em rgba(0, 0, 0, 0.25);
+}
+
+.conversation-menu-items form {
+    margin: 0;
+}
+
+.conversation-header .conversation-menu-items .action {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0.5em 0.7em;
+    border: 0;
+    border-radius: 0.4em;
+    background: none;
+    font-size: 0.95em;
+    text-align: left;
+    cursor: pointer;
+}
+
+.conversation-header .conversation-menu-items .action:hover,
+.conversation-header .conversation-menu-items .action:focus-visible {
+    background-color: var(--button);
+}
+
+.conversation-header .conversation-menu-items .action.danger {
+    color: var(--danger);
+}
+
+.conversation-muted {
+    font-size: 0.85em;
+    opacity: 0.7;
+}
+
 .message-list {
     display: flex;
     flex-direction: column;
@@ -2810,6 +2881,77 @@ nav.search-tabs a {
 .search-tag:hover .post-meta,
 .search-tag:focus-visible .post-meta {
     color: inherit;
+}
+
+/* Settings > Account > Your data (handlers/account.rs): a copy, deleting. */
+.your-data {
+    margin-top: 1.5em;
+    padding-top: 1em;
+    border-top: solid 0.1em var(--button);
+}
+
+.your-data h3 {
+    margin: 1.2em 0 0.3em;
+    font-size: 1.05em;
+}
+
+.data-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5em;
+}
+
+.data-form label:not(.checkbox-line) {
+    flex-basis: 100%;
+}
+
+.data-form input[type="password"],
+.data-form .password-field {
+    flex: 1;
+    min-width: 12em;
+}
+
+.data-form .checkbox-line {
+    flex-basis: 100%;
+}
+
+/* The register of confidentiality incidents (Moderation > Incidents). */
+.incident-form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4em;
+    margin-bottom: 1em;
+}
+
+.incident-dates {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5em 1.5em;
+}
+
+.incident-dates label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2em;
+}
+
+.incident {
+    padding: 0.6em 0;
+    border-bottom: solid 0.1em var(--button);
+}
+
+.incident summary {
+    cursor: pointer;
+}
+
+.incident.needs-notice summary strong {
+    color: var(--error);
+}
+
+/* What signing up shares, above the consent. */
+.signup-notice {
+    margin-top: 1em;
 }
 
 /* Hashtags: in the text, and those given apart under it (PeerTube's). */
@@ -5365,6 +5507,19 @@ Events, like Mobilizon's (macros/post.html, events.html, event_form.html).
     border-radius: 0.5em;
 }
 
+/* Before the map is asked for: a note and its button, centered. */
+.event-map-consent {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.6em;
+    padding: 1em;
+    text-align: center;
+    background-color: var(--background);
+    color: var(--light-text);
+}
+
 /* A community's events, in its side column: smaller lines. */
 .community-events .event-row {
     gap: 0.6em;
@@ -5889,4 +6044,287 @@ label .optional {
 
 .language-picker [hidden] {
     display: none;
+}
+
+/* "Bot" and "Parody" next to the names (Server rules, 7): outlined, so they
+   don't look like the staff's badges. */
+.kind-badge {
+    display: inline-block;
+    margin: 0 0.3em;
+    padding: 0 0.5em;
+    border: 1px solid currentColor;
+    border-radius: 0.3em;
+    font-size: 0.72em;
+    font-weight: bold;
+    line-height: 1.5;
+    vertical-align: middle;
+    white-space: nowrap;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    opacity: 0.85;
+}
+
+.profile-bot-contact {
+    margin: 0.2em 0 0;
+    font-size: 0.9em;
+    opacity: 0.85;
+}
+
+/* "AI-generated" and "Sponsored" on posts. */
+.post-labels {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4em;
+    margin: 0.4em 0;
+}
+
+.label-badge {
+    display: inline-block;
+    padding: 0.1em 0.7em;
+    border-radius: 1em;
+    border: 1px dashed currentColor;
+    font-size: 0.82em;
+    font-weight: 600;
+    line-height: 1.5;
+}
+
+.label-badge.ai::before {
+    content: "✦ ";
+}
+
+.label-badge.sponsored::before {
+    content: "$ ";
+}
+
+/* A content warning: what follows it in the post is hidden until clicked,
+   except the actions, without JavaScript. */
+.cw-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5em;
+    margin: 0.5em 0;
+    padding: 0.6em 0.9em;
+    border-radius: 0.5em;
+    background-color: var(--button);
+    color: var(--text-button);
+    cursor: pointer;
+}
+
+.cw-text {
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+
+.cw-toggle {
+    font-size: 0.9em;
+    text-decoration: underline;
+    white-space: nowrap;
+}
+
+.cw-reveal:focus-visible + .cw-bar {
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
+}
+
+.cw-reveal:not(:checked) ~ :not(.cw-bar):not(.post-actions):not(.post-labels),
+.cw-reveal:not(:checked) ~ .cw-bar .cw-hide,
+.cw-reveal:checked ~ .cw-bar .cw-show {
+    display: none;
+}
+
+/* The content warning and labels of a form. */
+.label-fields {
+    margin: 0.6em 0;
+    padding: 0;
+    border: 0;
+    min-width: 0;
+}
+
+.label-fields legend {
+    padding: 0;
+    margin-bottom: 0.4em;
+    font-weight: 600;
+}
+
+.label-fields input[type="text"] {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+/* Moderation notices and appeals, see templates/notices.html. */
+.notice-list {
+    list-style: none;
+    margin: 1em 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1em;
+}
+
+.notice-card {
+    padding: 0.9em 1em;
+    border-radius: 0.6em;
+    background-color: var(--background);
+}
+
+.notice-card.unread {
+    outline: 2px solid var(--text);
+}
+
+.notice-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5em;
+}
+
+.notice-note {
+    margin: 0.5em 0;
+    padding: 0.4em 0.8em;
+    border-left: 3px solid var(--button);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.notice-appeal summary {
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.notice-appeal textarea,
+.appeal-answer textarea,
+.notice-fields textarea,
+.notice-fields input[type="text"],
+.notice-fields select {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.appeal-answer .flex {
+    gap: 0.5em;
+    margin-top: 0.5em;
+    flex-wrap: wrap;
+}
+
+/* The rule and note told to the person, in a report card. */
+.notice-fields {
+    margin: 0.6em 0;
+    padding: 0.6em 0.8em;
+    border: 1px solid var(--button);
+    border-radius: 0.5em;
+}
+
+.notice-fields legend {
+    font-weight: 600;
+    padding: 0 0.3em;
+}
+
+/* Sexualization of minors: urgent. */
+.report-reason.urgent {
+    color: var(--danger);
+    font-weight: bold;
+}
+
+.report-urgent {
+    display: block;
+    margin-top: 0.3em;
+    color: var(--danger);
+    font-size: 0.9em;
+}
+
+.instance-status.media {
+    font-style: italic;
+}
+
+.blocked-accounts .account-list li {
+    gap: 0.5em;
+    padding: 0.3em 0;
+}
+
+.moderation-policy h2 {
+    margin-top: 1.4em;
+}
+
+.label-fields .checkbox-line {
+    display: flex;
+    align-items: baseline;
+    gap: 0.4em;
+    margin: 0.3em 0;
+}
+
+/* The button showing a password (system.js, `setupPasswordToggles`), inside
+   the right end of its field. */
+.password-field {
+    position: relative;
+    display: block;
+    width: 100%;
+}
+
+.password-field > input {
+    display: block;
+    margin: 0;
+    width: 100%;
+    box-sizing: border-box;
+    padding-right: 2.8em;
+}
+
+/* Centered in the field whatever the form's button margins (`.auth button`). */
+.password-field > .password-toggle {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: 0.3em;
+    margin: auto 0;
+    align-self: auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.2em;
+    height: 2.2em;
+    padding: 0;
+    border: 0;
+    border-radius: 0.4em;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    opacity: 0.75;
+}
+
+.password-toggle:hover,
+.password-toggle:focus-visible,
+.password-toggle[aria-pressed="true"] {
+    opacity: 1;
+}
+
+.password-toggle:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 1px;
+}
+
+/* Why the messenger's camera can't be used, see `setupCamera`. */
+.camera-status {
+    margin: 0.4em 0 0;
+}
+
+/* Characters left in a post, counted like Mastodon (system.js,
+   `setupMastodonCounters`). */
+.char-counter {
+    margin: 0.2em 0 0;
+    text-align: right;
+    font-size: 0.85em;
+    color: var(--light-text);
+    font-variant-numeric: tabular-nums;
+}
+
+.char-counter.near {
+    color: var(--text);
+    font-weight: 600;
+}
+
+.char-counter.over {
+    color: var(--error);
+    font-weight: 700;
 }

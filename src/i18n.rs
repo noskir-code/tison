@@ -85,8 +85,8 @@ where
     tokio::spawn(LANG.scope(current(), future))
 }
 
-/// Runs `future` as if answering a request in `lang`, for the tests of other modules.
-#[cfg(test)]
+/// Runs `future` as if answering a request in `lang`: an email to someone
+/// else than the reader (a moderation notice), and the tests.
 pub async fn scoped<F: Future>(lang: Lang, future: F) -> F::Output {
     LANG.scope(lang, future).await
 }
@@ -108,6 +108,13 @@ pub fn tf(text: &str, value: impl Display) -> String {
 /// `{}` replaced in order: `tf2("{} of {}", a, b)`.
 pub fn tf2(text: &str, first: impl Display, second: impl Display) -> String {
     t(text).replacen("{}", &first.to_string(), 1).replacen("{}", &second.to_string(), 1)
+}
+
+/// `tf` with the text for one (`one`, without `{}`) or for several
+/// (`many`): `plural(n, "One post", "{} posts")`.
+pub fn plural(count: impl Into<i64>, one: &str, many: &str) -> String {
+    let count = count.into();
+    if count == 1 { t(one) } else { tf(many, count) }
 }
 
 // --- Dates, in each language's usual order ---

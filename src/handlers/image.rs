@@ -1,7 +1,4 @@
-use std::{
-    path::PathBuf,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::path::PathBuf;
 
 use axum::extract::Multipart;
 
@@ -167,11 +164,13 @@ pub async fn save_original(owner: ImageOwner, data: &[u8]) -> Result<String, Ima
 /// A new file in the owner's folder, for ffmpeg to write (see `av::jobs`):
 /// its path and public URL.
 pub async fn new_file(owner: ImageOwner, kind: &str, extension: &str) -> std::io::Result<(PathBuf, String)> {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_nanos())
-        .unwrap_or(0);
-    let file_name = format!("{kind}-{nanos}.{extension}");
+    // Random, not the time: the files of private posts ("Only me") are
+    // served to whoever has their address, which can't be guessed this way.
+    use ring::rand::{SecureRandom, SystemRandom};
+    let mut random = [0u8; 16];
+    SystemRandom::new().fill(&mut random).map_err(|_| std::io::Error::other("no random numbers"))?;
+    let token: String = random.iter().map(|byte| format!("{byte:02x}")).collect();
+    let file_name = format!("{kind}-{token}.{extension}");
     let folder = owner.folder();
     let dir = PathBuf::from(UPLOADS_DIR).join(&folder);
     tokio::fs::create_dir_all(&dir).await?;

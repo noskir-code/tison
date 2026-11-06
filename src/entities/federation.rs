@@ -44,6 +44,9 @@ pub const ACTORS_TABLE: Table = Table {
         // Its ActivityPub type: `Person`, `Group` (a community of Lemmy,
         // Friendica...), `Service` (a bot), `Organization` or `Application`.
         Column::new("kind", "TEXT").default("'Person'"),
+        // Mastodon's `indexable`: their public posts may be found by the
+        // search. Missing on older servers: taken as yes.
+        Column::new("indexable", "BOOLEAN").default("TRUE"),
     ],
     indexes: &[
         Index::unique("federation_actors_actor_id_idx", "actor_id"),
@@ -194,6 +197,8 @@ pub struct NewRemoteActor {
     pub public_key_pem: String,
     /// Its ActivityPub `type`, like `Person` or `Group`.
     pub kind: String,
+    /// Mastodon's `indexable`, see `ACTORS_TABLE`.
+    pub indexable: bool,
 }
 
 impl RemoteActor {
@@ -250,7 +255,7 @@ macro_rules! profile_columns {
     () => {
         "a.id AS ra_id, a.actor_id AS ra_actor_id, a.username AS ra_username,
          a.display_name AS ra_display_name, a.icon_url AS ra_icon_url,
-         a.profile_url AS ra_profile_url, a.summary"
+         a.profile_url AS ra_profile_url, a.kind AS ra_kind, a.summary"
     };
 }
 
@@ -277,14 +282,15 @@ pub async fn save_actor(pool: &PgPool, actor: &NewRemoteActor) -> Result<RemoteA
     let row = sqlx::query(concat!(
         "INSERT INTO federation_actors
             (actor_id, username, inbox, shared_inbox, key_id, public_key_pem, display_name, icon_url, profile_url,
-             summary, followers_url, host, kind)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+             summary, followers_url, host, kind, indexable)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
          ON CONFLICT (actor_id) DO UPDATE SET
             username = EXCLUDED.username, inbox = EXCLUDED.inbox,
             shared_inbox = EXCLUDED.shared_inbox, key_id = EXCLUDED.key_id,
             public_key_pem = EXCLUDED.public_key_pem, display_name = EXCLUDED.display_name,
             icon_url = EXCLUDED.icon_url, profile_url = EXCLUDED.profile_url,
-            summary = EXCLUDED.summary, followers_url = EXCLUDED.followers_url, kind = EXCLUDED.kind, fetched_at = NOW()
+            summary = EXCLUDED.summary, followers_url = EXCLUDED.followers_url, kind = EXCLUDED.kind,
+            indexable = EXCLUDED.indexable, fetched_at = NOW()
          RETURNING ",
         actor_columns!()
     ))
@@ -301,6 +307,7 @@ pub async fn save_actor(pool: &PgPool, actor: &NewRemoteActor) -> Result<RemoteA
     .bind(&actor.followers_url)
     .bind(host_of(&actor.actor_id))
     .bind(&actor.kind)
+    .bind(actor.indexable)
     .fetch_one(pool)
     .await?;
     RemoteActor::from_row(&row)
@@ -427,6 +434,9 @@ pub enum Policy {
     /// Defederated: its content is deleted, nothing goes to it, what it sends
     /// is ignored (Mastodon's "suspend").
     Banned,
+    /// Its posts are kept, but its pictures, videos and sounds aren't shown
+    /// (Mastodon's "reject media", Server rules part D).
+    RejectMedia,
 }
 
 impl Policy {
@@ -434,6 +444,7 @@ impl Policy {
         match self {
             Self::Limited => "limited",
             Self::Banned => "banned",
+            Self::RejectMedia => "media",
         }
     }
 
@@ -441,7 +452,29 @@ impl Policy {
         match value {
             "limited" => Some(Self::Limited),
             "banned" => Some(Self::Banned),
+            "media" => Some(Self::RejectMedia),
             _ => None,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Limited => "Limited",
+            Self::Banned => "Banned",
+            Self::RejectMedia => "Media rejected",
+        }
+    }
+
+    pub fn is_banned(self) -> bool {
+        self == Self::Banned
+    }
+
+    /// For the public Moderation page.
+    pub fn explanation(self) -> &'static str {
+        match self {
+            Self::Limited => "Its posts only reach the people following its accounts.",
+            Self::Banned => "Nothing comes from it nor goes to it.",
+            Self::RejectMedia => "Its posts come, without their pictures, videos and sounds.",
         }
     }
 }
@@ -530,6 +563,25 @@ pub async fn policy_of(pool: &PgPool, domain: &str) -> Result<Option<Policy>, sq
     Ok(policy.as_deref().and_then(Policy::parse))
 }
 
+/// Whether the media at `url` can't be shown: its server is banned, or its
+/// media are rejected.
+pub async fn media_refused(pool: &PgPool, url: &str) -> Result<bool, sqlx::Error> {
+    Ok(matches!(policy_of(pool, &host_of(url)).await?, Some(Policy::Banned | Policy::RejectMedia)))
+}
+
+/// The servers with a rule, for the public Moderation page: domain, rule and
+/// reason.
+pub async fn moderated_servers(pool: &PgPool) -> Result<Vec<(String, Policy, String)>, sqlx::Error> {
+    let rows = sqlx::query("SELECT domain, policy, reason FROM instance_policies ORDER BY policy, domain").fetch_all(pool).await?;
+    let mut servers = Vec::with_capacity(rows.len());
+    for row in &rows {
+        if let Some(policy) = Policy::parse(&row.try_get::<String, _>("policy")?) {
+            servers.push((row.try_get("domain")?, policy, row.try_get("reason")?));
+        }
+    }
+    Ok(servers)
+}
+
 /// Whether the server of `url` is banned.
 pub async fn is_banned(pool: &PgPool, url: &str) -> Result<bool, sqlx::Error> {
     Ok(policy_of(pool, &host_of(url)).await? == Some(Policy::Banned))
@@ -559,6 +611,18 @@ pub async fn set_policy(pool: &PgPool, domain: &str, policy: Option<Policy>, rea
             .bind(by)
             .execute(&mut *transaction)
             .await?;
+        }
+    }
+    // Media rejected: what's already here loses its files and pictures too
+    // (videos link to their original instead).
+    if policy == Some(Policy::RejectMedia) {
+        let of_server = "IN (SELECT id FROM federation_actors WHERE host = $1)";
+        for statement in [
+            format!("DELETE FROM attachments WHERE post_id IN (SELECT id FROM posts WHERE remote_actor_id {of_server})"),
+            format!("DELETE FROM attachments WHERE comment_id IN (SELECT id FROM comments WHERE remote_actor_id {of_server})"),
+            format!("UPDATE posts SET poster_url = NULL WHERE remote_actor_id {of_server}"),
+        ] {
+            sqlx::query(sqlx::AssertSqlSafe(statement)).bind(&domain).execute(&mut *transaction).await?;
         }
     }
     if policy == Some(Policy::Banned) {
@@ -728,7 +792,7 @@ pub async fn actor_inbox(pool: &PgPool, actor_id: &str) -> Result<Option<String>
 
 /// Public posts of a user, shown as their post count on other servers.
 pub async fn public_post_count(pool: &PgPool, user_id: i32) -> Result<i64, sqlx::Error> {
-    sqlx::query_scalar("SELECT COUNT(*) FROM posts WHERE user_id = $1 AND visibility = 'public'")
+    sqlx::query_scalar("SELECT COUNT(*) FROM posts WHERE user_id = $1 AND visibility = 'public' AND removed_at IS NULL")
         .bind(user_id)
         .fetch_one(pool)
         .await
@@ -738,7 +802,7 @@ pub async fn public_post_count(pool: &PgPool, user_id: i32) -> Result<i64, sqlx:
 pub async fn instance_counts(pool: &PgPool) -> Result<(i64, i64), sqlx::Error> {
     let row = sqlx::query(
         "SELECT (SELECT COUNT(*) FROM users) AS users,
-                (SELECT COUNT(*) FROM posts WHERE visibility = 'public' AND user_id IS NOT NULL) AS posts",
+                (SELECT COUNT(*) FROM posts WHERE visibility = 'public' AND user_id IS NOT NULL AND removed_at IS NULL) AS posts",
     )
     .fetch_one(pool)
     .await?;
@@ -971,12 +1035,25 @@ pub async fn remove_community_followers(pool: &PgPool, community_id: i64) -> Res
     Ok(())
 }
 
-/// Who signs an activity: a local user or a local community.
+/// Who signs an activity: a local user, a local community, or the site
+/// itself (its instance actor, `/ap/actor`, for relays: see `API::relay`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Signer {
     User(i32),
     Community(i64),
+    Instance,
 }
+
+/// The keys of the instance actor: one row.
+pub const INSTANCE_KEYS_TABLE: Table = Table {
+    name: "instance_keys",
+    columns: &[
+        Column::new("id", "INTEGER").primary_key(),
+        Column::new("ap_public_key", "TEXT"),
+        Column::new("ap_private_key", "TEXT"),
+    ],
+    indexes: &[],
+};
 
 /// RSA keys of a signer: (public id, public PEM, private PEM).
 /// `None` until they are made, see `API::linker::keys`.
@@ -990,6 +1067,8 @@ pub async fn local_keys(pool: &PgPool, signer: Signer) -> Result<Option<(i64, St
             "SELECT public_id, ap_public_key, ap_private_key FROM communities
              WHERE id = $1 AND ap_public_key IS NOT NULL AND ap_private_key IS NOT NULL"
         }
+        // No public id: its address is `/ap/actor`.
+        Signer::Instance => "SELECT 0::bigint AS public_id, ap_public_key, ap_private_key FROM instance_keys WHERE id = $1::bigint",
     };
     let row = sqlx::query(query)
         .bind(signer_id(signer))
@@ -1010,6 +1089,7 @@ fn signer_id(signer: Signer) -> i64 {
     match signer {
         Signer::User(id) => i64::from(id),
         Signer::Community(id) => id,
+        Signer::Instance => 1,
     }
 }
 
@@ -1023,6 +1103,7 @@ pub async fn save_local_keys(pool: &PgPool, signer: Signer, public_pem: &str, pr
         Signer::Community(_) => {
             "UPDATE communities SET ap_public_key = $1, ap_private_key = $2 WHERE id = $3 AND ap_private_key IS NULL"
         }
+        Signer::Instance => "INSERT INTO instance_keys (id, ap_public_key, ap_private_key) VALUES ($3::integer, $1, $2) ON CONFLICT (id) DO NOTHING",
     };
     sqlx::query(query)
         .bind(public_pem)
@@ -1041,6 +1122,8 @@ pub async fn enqueue(pool: &PgPool, signer: Signer, inboxes: &[String], activity
     let (user_id, community_id) = match signer {
         Signer::User(id) => (Some(id), None),
         Signer::Community(id) => (None, Some(id)),
+        // Neither: the instance actor, see `claim_deliveries`.
+        Signer::Instance => (None, None),
     };
     sqlx::query(
         "INSERT INTO federation_deliveries (user_id, community_id, inbox, activity)
@@ -1088,10 +1171,11 @@ pub async fn claim_deliveries(pool: &PgPool, limit: i64) -> Result<Vec<Delivery>
         let community_id: Option<i64> = row.try_get("community_id")?;
         Ok(Delivery {
             id: row.try_get("id")?,
-            // One of them is always set, see `enqueue`.
+            // Neither for the instance actor, see `enqueue`.
             signer: match (user_id, community_id) {
                 (Some(id), _) => Signer::User(id),
-                (None, id) => Signer::Community(id.unwrap_or_default()),
+                (None, Some(id)) => Signer::Community(id),
+                (None, None) => Signer::Instance,
             },
             inbox: row.try_get("inbox")?,
             activity: row.try_get("activity")?,

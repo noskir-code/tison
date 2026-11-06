@@ -17,7 +17,7 @@ use tower_sessions::Session;
 use crate::{
     AppState,
     entities::user::{
-        self, CreateAccountError, EMAIL_MAX_LEN, MIN_AGE_YEARS, NAME_MAX_CHARS, NameVisibility, NewAccount,
+        self, CreateAccountError, EMAIL_MAX_LEN, NAME_MAX_CHARS, NameVisibility, NewAccount,
         PASSWORD_MAX_CHARS, PASSWORD_MIN_CHARS, USERNAME_MAX_LEN, USERNAME_MIN_LEN,
     },
     handlers::{
@@ -167,7 +167,8 @@ impl RegisterTemplate {
             firstname: field(form, "firstname").trim().to_string(),
             lastname: field(form, "lastname").trim().to_string(),
             // Public unless chosen otherwise, like before the choice existed.
-            names_visibility: form.get("names_visibility").map_or(NameVisibility::Public, |value| NameVisibility::parse(value)),
+            // The most private first (Law 25 art. 9.1).
+            names_visibility: form.get("names_visibility").map_or(NameVisibility::Private, |value| NameVisibility::parse(value)),
             name_visibilities: NameVisibility::choices(NameVisibility::Public),
             birthday: field(form, "birthday").trim().to_string(),
             today: Utc::now().date_naive().format("%Y-%m-%d").to_string(),
@@ -236,15 +237,15 @@ fn validate_registration(
 
     let firstname = optional_name(form, "firstname", &mut errors);
     let lastname = optional_name(form, "lastname", &mut errors);
-    // Public when not chosen, like before the choice existed.
-    let names_visibility = form.get("names_visibility").map_or(NameVisibility::Public, |value| NameVisibility::parse(value));
+    // Private when not chosen: the most private by default (Law 25 art. 9.1).
+    let names_visibility = form.get("names_visibility").map_or(NameVisibility::Private, |value| NameVisibility::parse(value));
 
-    let birthday = user::validate_birthday(field(form, "birthday"), today);
+    let birthday = user::validate_birthday(field(form, "birthday"), today, crate::settings::minimum_age());
     if birthday.is_none() {
         let message = if field(form, "birthday").trim().is_empty() {
             "Enter your birthday.".to_string()
         } else {
-            crate::i18n::tf("You must be at least {} years old to register.", MIN_AGE_YEARS)
+            crate::i18n::tf("You must be at least {} years old to register.", crate::settings::minimum_age())
         };
         errors.push(FormError::field("birthday", message));
     }
@@ -260,6 +261,10 @@ fn validate_registration(
     } else if password != field(form, "password_confirm") {
         errors.push(FormError::field("password_confirm", "The two passwords are different."));
     }
+    // Consent, recorded with the versions read (GDPR art. 7, Law 25 art. 14).
+    if field(form, "accept_terms").is_empty() {
+        errors.push(FormError::field("accept_terms", "Accept the Terms of Use and the Privacy Policy to create an account."));
+    }
 
     match (username, email, firstname, lastname, birthday) {
         (Some(username), Some(email), Some(firstname), Some(lastname), Some(birthday))
@@ -273,6 +278,7 @@ fn validate_registration(
                 lastname,
                 names_visibility,
                 birthday,
+                terms_version: crate::entities::site_page::consent_version(),
             };
             Ok((account, password.to_string()))
         }
@@ -283,11 +289,17 @@ fn validate_registration(
 pub async fn register(
     State(state): State<AppState>,
     session: Session,
+    axum::Extension(crate::security::ClientIp(ip)): axum::Extension<crate::security::ClientIp>,
     Form(form): Form<HashMap<String, String>>,
 ) -> Response {
     let layout = Layout::load(&state, &session).await;
     if let Some(redirect) = redirect_signed_in(&layout) {
         return redirect;
+    }
+    // Accounts made in a row from one address: spam, see `security`.
+    if !crate::security::hit(crate::security::Limit::Register, &ip) {
+        tracing::warn!("too many signups from {}", ip);
+        return error_page(layout, StatusCode::TOO_MANY_REQUESTS, crate::security::Limit::Register.message());
     }
     let Some(pool) = &state.pool else {
         return error_page(layout, StatusCode::SERVICE_UNAVAILABLE, "The database is not configured.");
@@ -343,6 +355,12 @@ pub async fn register(
 
 /// Redirect after signing in, with the "stay signed in" cookie when asked.
 pub(crate) async fn signed_in_redirect(state: &AppState, user_id: i32, stay_signed_in: bool, to: &str) -> Response {
+    // Their emails come in the language they use, see `handlers::notice`.
+    if let Some(pool) = &state.pool
+        && let Err(err) = user::set_language(pool, user_id, crate::i18n::current().code()).await
+    {
+        tracing::warn!("failed to save the language of user {}: {}", user_id, err);
+    }
     let mut response = Redirect::to(to).into_response();
     if stay_signed_in && let Some(cookie) = remember(state, user_id).await {
         response.headers_mut().append(SET_COOKIE, cookie);
@@ -402,6 +420,7 @@ pub async fn login_page(
 pub async fn login(
     State(state): State<AppState>,
     session: Session,
+    axum::Extension(crate::security::ClientIp(ip)): axum::Extension<crate::security::ClientIp>,
     Form(form): Form<HashMap<String, String>>,
 ) -> Response {
     let layout = Layout::load(&state, &session).await;
@@ -435,6 +454,13 @@ pub async fn login(
     if !missing.is_empty() {
         return show_errors(layout, StatusCode::BAD_REQUEST, missing);
     }
+    // Password guessing: tries from one address, and wrong passwords for one
+    // account from anywhere, see `security`.
+    use crate::security::{Limit, blocked, clear, hit};
+    if !hit(Limit::LoginAddress, &ip) || blocked(Limit::LoginAccount, &login) {
+        tracing::warn!("too many sign-in tries for {} from {}", login, ip);
+        return show_errors(layout, StatusCode::TOO_MANY_REQUESTS, vec![FormError::field("password", Limit::LoginAccount.message())]);
+    }
 
     let (user_id, hash) = match user::find_credentials(pool, &login).await {
         Ok(Some((user_id, hash))) => (Some(user_id), hash),
@@ -449,6 +475,11 @@ pub async fn login(
     // and the same message whether the account exists or not:
     // both fields are marked since telling which one is wrong would reveal it.
     let verified = verify_password_blocking(password, hash).await;
+    if verified {
+        clear(Limit::LoginAccount, &login);
+    } else {
+        hit(Limit::LoginAccount, &login);
+    }
     let Some(user_id) = user_id.filter(|_| verified) else {
         let errors = vec![
             FormError::field("login", ""),
@@ -465,7 +496,16 @@ pub async fn login(
             return show_errors(layout, StatusCode::INTERNAL_SERVER_ERROR, vec![server_error()]);
         }
     };
+    // Suspended or banned: only their moderation notices, to read why and
+    // appeal (see handlers::notice), never a real sign-in.
     if signed_in_user.is_suspended() {
+        // With two-factor authentication, its code first, like any sign-in.
+        if let Ok(Some(_)) = crate::entities::two_factor::find(pool, user_id).await {
+            return crate::handlers::two_factor::ask_code(&session, user_id, false).await;
+        }
+        if crate::handlers::session::open_appeal(&session, user_id).await.is_ok() {
+            return axum::response::Redirect::to("/notices").into_response();
+        }
         let errors = vec![FormError::field("login", "This account is suspended by the site's moderators.")];
         return show_errors(layout, StatusCode::FORBIDDEN, errors);
     }

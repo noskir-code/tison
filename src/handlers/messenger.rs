@@ -66,6 +66,12 @@ struct ConversationTemplate {
     max_attachments: usize,
     /// The other person can't receive messages: shown instead of the form.
     closed: Option<&'static str>,
+    /// The viewer blocked the other person: the settings offer "Unblock".
+    blocked_by_me: bool,
+    /// The other person can be reported (not of the site's staff).
+    can_report: bool,
+    /// What was just changed in the settings of the conversation.
+    saved: Option<&'static str>,
 }
 
 /// New messages of a conversation, for the live page.
@@ -93,6 +99,9 @@ fn error_message(code: &str) -> Option<String> {
         "invalid-characters" => "The message contains characters that are not allowed.".to_string(),
         "nobody" => "Nobody found with this name or address.".to_string(),
         "yourself" => "You can't write to yourself.".to_string(),
+        "blocked" => "You can't write to this person: one of you blocked the other.".to_string(),
+        "bot" => "A bot only writes to people who follow it or wrote to it first.".to_string(),
+        "duplicate" => "You sent this same message several times in the last hour: repeating it looks like spam.".to_string(),
         "fediverse-off" => "Your account isn't on the Fediverse: it can only write to people of this server.".to_string(),
         "server" => "Something went wrong, try again later.".to_string(),
         _ => return None,
@@ -210,6 +219,9 @@ pub async fn start(State(state): State<AppState>, session: Session, Form(form): 
 }
 
 async fn open_local(pool: &PgPool, me: &User, other: &User) -> Response {
+    if crate::entities::block::between(pool, me.id, other.id).await.unwrap_or(false) {
+        return Redirect::to("/messenger?error=blocked#new").into_response();
+    }
     match message::with_user(pool, me.id, other.id).await {
         Ok(id) => Redirect::to(&format!("/messenger/{id}")).into_response(),
         Err(err) => {
@@ -280,6 +292,19 @@ async fn load(state: &AppState, session: &Session, id: i64) -> Result<(PgPool, U
     }
 }
 
+/// The other person and the user block each other, either way (Server
+/// rules, 2): no message can go.
+async fn blocked(pool: &PgPool, me: &User, other: &Author) -> bool {
+    let result = match other {
+        Author::Local(other) => crate::entities::block::between(pool, me.id, other.id).await,
+        Author::Remote(other) => crate::entities::block::blocks_actor(pool, me.id, other.id).await,
+    };
+    result.unwrap_or_else(|err| {
+        tracing::warn!("failed to check the blocks of @{}: {}", me.username, err);
+        false
+    })
+}
+
 /// Why the other person can't receive messages, if they can't.
 fn closed(state: &AppState, me: &User, conversation: &Conversation) -> Option<&'static str> {
     match &conversation.other {
@@ -313,10 +338,30 @@ pub async fn conversation_page(
     }
     // Other tabs update their unread count.
     notification::signal_message(&pool, &[me.id], id).await.ok();
+    let blocked_by_me = match &conversation.other {
+        Author::Local(other) => crate::entities::block::blocks_user(&pool, me.id, other.id).await,
+        Author::Remote(other) => crate::entities::block::blocks_actor(&pool, me.id, other.id).await,
+    }
+    .unwrap_or_else(|err| {
+        tracing::warn!("failed to check the blocks of @{}: {}", me.username, err);
+        false
+    });
+    let can_report = !matches!(&conversation.other, Author::Local(other) if other.is_staff());
+    let saved = query.get("saved").and_then(|saved| match saved.as_str() {
+        "muted" => Some("Muted: you won't be notified of new messages in this conversation."),
+        "unmuted" => Some("You will be notified of new messages in this conversation again."),
+        _ => None,
+    });
     render_template(&ConversationTemplate {
         title: crate::i18n::tf("Messages with {}", conversation.other.display_name()),
+        blocked_by_me,
+        can_report,
+        saved,
         layout: Layout::load(&state, &session).await,
-        closed: closed(&state, &me, &conversation),
+        closed: match blocked(&pool, &me, &conversation.other).await {
+            true => Some("You can't write to this person: one of you blocked the other."),
+            false => closed(&state, &me, &conversation),
+        },
         conversation,
         messages,
         error: query.get("error").and_then(|code| error_message(code)),
@@ -414,9 +459,24 @@ pub async fn send(State(state): State<AppState>, session: Session, Path(id): Pat
         Ok(loaded) => loaded,
         Err(response) => return response,
     };
-    if closed(&state, &me, &conversation).is_some() {
+    if closed(&state, &me, &conversation).is_some() || blocked(&pool, &me, &conversation.other).await {
         return Redirect::to(&format!("/messenger/{id}")).into_response();
     }
+    // Bots only write to who interacts with them (Server rules, 7).
+    if me.is_bot() {
+        let (user_id, actor_id) = match &conversation.other {
+            Author::Local(other) => (Some(other.id), None),
+            Author::Remote(other) => (None, Some(other.id)),
+        };
+        if !crate::entities::user::bot_may_message(&pool, me.id, id, user_id, actor_id).await.unwrap_or(false) {
+            return Redirect::to(&format!("/messenger/{id}?error=bot#composer")).into_response();
+        }
+    }
+    let key = me.id.to_string();
+    if !crate::security::hit(crate::security::Limit::Message, &key) {
+        return error_page(Layout::load(&state, &session).await, StatusCode::TOO_MANY_REQUESTS, crate::security::Limit::Message.message());
+    }
+
     let back = |code: &str| Redirect::to(&format!("/messenger/{id}?error={code}#composer")).into_response();
     let form = match read_form(&mut multipart).await {
         Ok(form) => form,
@@ -429,6 +489,18 @@ pub async fn send(State(state): State<AppState>, session: Session, Path(id): Pat
         Err(BodyError::Empty) if has_attachments => String::new(),
         Err(err) => return back(body_error_code(err)),
     };
+    // The same message again and again (to many people): refused, see
+    // `entities::spam`.
+    let sender = crate::entities::spam::Sender::Local(me.id);
+    if crate::entities::spam::is_repeated(&pool, sender, crate::entities::spam::Kind::Message, &body, None).await.unwrap_or_else(|err| {
+        tracing::warn!("failed to check repeats: {}", err);
+        false
+    }) {
+        if let Err(err) = crate::entities::spam::record(&pool, sender, crate::entities::spam::Kind::Message, &body, &format!("@{}", me.username)).await {
+            tracing::warn!("failed to record a repeat of @{}: {}", me.username, err);
+        }
+        return back("duplicate");
+    }
     let attachments = match save_attachments(me.id, &form).await {
         Ok(attachments) => attachments,
         Err(code) => return back(code),
@@ -474,6 +546,49 @@ pub async fn delete(State(state): State<AppState>, session: Session, Path((id, m
         Err(err) => tracing::error!("failed to delete message {}: {}", message_id, err),
     }
     Redirect::to(&format!("/messenger/{id}")).into_response()
+}
+
+/// Mutes (`muted=on`) or unmutes the conversation for the user, see
+/// `message::set_muted`.
+pub async fn mute(State(state): State<AppState>, session: Session, Path(id): Path<i64>, Form(form): Form<HashMap<String, String>>) -> Response {
+    let (pool, me, _) = match load(&state, &session, id).await {
+        Ok(loaded) => loaded,
+        Err(response) => return response,
+    };
+    let muted = form.get("muted").is_some_and(|value| value == "on");
+    if let Err(err) = message::set_muted(&pool, id, me.id, muted).await {
+        tracing::error!("failed to mute conversation {}: {}", id, err);
+        return error_page(Layout::load(&state, &session).await, StatusCode::INTERNAL_SERVER_ERROR, "Something went wrong, try again later.");
+    }
+    // The unread count next to "Messenger" changes.
+    notification::signal_message(&pool, &[me.id], id).await.ok();
+    Redirect::to(&format!("/messenger/{id}?saved={}", if muted { "muted" } else { "unmuted" })).into_response()
+}
+
+/// Deletes a reported message for the moderators, with its photos and
+/// files. One written here is also deleted on the other server, like when
+/// its author deletes it.
+pub async fn remove_reported(state: &AppState, pool: &PgPool, message_id: i64) -> Result<(), sqlx::Error> {
+    let Some(conversation_id) = message::conversation_of(pool, message_id).await? else {
+        return Ok(());
+    };
+    let sender: Option<i32> = sqlx::query_scalar("SELECT sender_user_id FROM messages WHERE id = $1").bind(message_id).fetch_one(pool).await?;
+    let files = media::local_files_of_message(pool, message_id).await.unwrap_or_default();
+    let sender = match sender {
+        Some(sender_id) => crate::entities::user::find_by_id(pool, sender_id).await?,
+        None => None,
+    };
+    message::delete(pool, message_id).await?;
+    if let Some(sender) = &sender {
+        for url in &files {
+            image::remove_image(ImageOwner::User(sender.id), url).await;
+        }
+        if let Some(conversation) = message::find(pool, conversation_id, sender.id).await? {
+            notifier::message_deleted(state, pool, sender, &conversation, message_id).await;
+        }
+    }
+    signal(pool, conversation_id).await;
+    Ok(())
 }
 
 /// `{"html": "...", "ids": [...]}`: the messages after `message_id`, and the

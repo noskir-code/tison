@@ -40,8 +40,11 @@ pub const TABLE: Table = Table {
         Column::new("updated_at", "TIMESTAMPTZ").default("NOW()"),
         // Last edit by its author, shown as "edited".
         Column::new("edited_at", "TIMESTAMPTZ").nullable(),
+        // Removed by the moderators, like `posts.removed_at`.
+        Column::new("removed_at", "TIMESTAMPTZ").nullable(),
     ],
     indexes: &[
+        Index::new("comments_removed_at_idx", "removed_at"),
         Index::new("comments_post_created_at_idx", "post_id, created_at"),
         Index::new("comments_user_idx", "user_id, created_at DESC"),
         Index::unique("comments_ap_id_idx", "ap_id"),
@@ -66,6 +69,7 @@ macro_rules! comment_select {
     ($liked:literal, $own:literal) => {
         concat!(
             "SELECT c.id AS comment_id, c.body, c.sensitive, c.created_at AS commented_at, c.edited_at,
+                    c.removed_at IS NOT NULL AS removed,
                     c.post_id, c.ap_id, c.parent_id, COALESCE(pu.username, pra.username) AS parent_author,
                     (SELECT COUNT(*) FROM comment_likes cl WHERE cl.comment_id = c.id)
                     + (SELECT COUNT(*) FROM remote_reactions rl WHERE rl.comment_id = c.id AND rl.kind = 'like')
@@ -106,6 +110,8 @@ pub struct Comment {
     pub is_own: bool,
     /// Media of comments received from other servers.
     pub attachments: Vec<Attachment>,
+    /// Removed by the moderators, see `remove`: shown to nobody.
+    pub removed: bool,
 }
 
 impl Comment {
@@ -124,6 +130,7 @@ impl Comment {
             liked: row.try_get("liked")?,
             is_own: row.try_get("is_own")?,
             attachments: Vec::new(),
+            removed: row.try_get("removed")?,
         })
     }
 
@@ -240,6 +247,12 @@ pub async fn body_of(pool: &PgPool, comment_id: i64) -> Result<Option<String>, s
 }
 
 /// Changes the text of the user's own comment. Returns `false` when it isn't theirs.
+/// Marked sensitive by a moderator (or no more, after an appeal).
+pub async fn set_sensitive(pool: &PgPool, comment_id: i64, sensitive: bool) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE comments SET sensitive = $2 WHERE id = $1").bind(comment_id).bind(sensitive).execute(pool).await?;
+    Ok(())
+}
+
 pub async fn update_own(pool: &PgPool, comment_id: i64, user_id: i32, body: &str) -> Result<bool, sqlx::Error> {
     Ok(sqlx::query(
         "UPDATE comments SET body = $3, edited_at = NOW(), updated_at = NOW() WHERE id = $1 AND user_id = $2",
@@ -251,6 +264,35 @@ pub async fn update_own(pool: &PgPool, comment_id: i64, user_id: i32, body: &str
     .await?
     .rows_affected()
         > 0)
+}
+
+/// Removes a comment for the moderators, like `post::remove`: hidden with
+/// the replies below it (they show again with it).
+pub async fn remove(pool: &PgPool, comment_id: i64) -> Result<bool, sqlx::Error> {
+    Ok(sqlx::query("UPDATE comments SET removed_at = NOW() WHERE id = $1 AND removed_at IS NULL")
+        .bind(comment_id)
+        .execute(pool)
+        .await?
+        .rows_affected()
+        > 0)
+}
+
+/// Brings back a comment `remove`d by the moderators.
+pub async fn restore(pool: &PgPool, comment_id: i64) -> Result<bool, sqlx::Error> {
+    Ok(sqlx::query("UPDATE comments SET removed_at = NULL WHERE id = $1 AND removed_at IS NOT NULL")
+        .bind(comment_id)
+        .execute(pool)
+        .await?
+        .rows_affected()
+        > 0)
+}
+
+/// The comments removed by the moderators more than `days` ago: to erase.
+pub async fn removed_before(pool: &PgPool, days: u32) -> Result<Vec<i64>, sqlx::Error> {
+    sqlx::query_scalar("SELECT id FROM comments WHERE removed_at < NOW() - make_interval(days => $1) ORDER BY id LIMIT 500")
+        .bind(i32::try_from(days).unwrap_or(30))
+        .fetch_all(pool)
+        .await
 }
 
 /// Deletes a comment and the replies below it.
@@ -318,7 +360,7 @@ pub async fn find_public(pool: &PgPool, comment_id: i64) -> Result<Option<(Comme
         comment_select!("FALSE", "FALSE"),
         " JOIN posts p ON p.id = c.post_id
           LEFT JOIN communities cm ON cm.id = p.community_id
-         WHERE c.id = $2 AND ",
+         WHERE c.id = $2 AND c.removed_at IS NULL AND ",
         post_visible!()
     ))
     // `$1` is the viewer of `post_visible!`: nobody.
@@ -352,6 +394,10 @@ pub async fn for_post(pool: &PgPool, post_id: i64, viewer_id: Option<i32>) -> Re
             "COALESCE(c.user_id = $2, FALSE)"
         ),
         " WHERE c.post_id = $1 AND u.suspended_at IS NULL
+           -- Blocks, either way, see `entities::block`.
+           AND NOT EXISTS (SELECT 1 FROM user_blocks cb WHERE
+                (cb.user_id = $2 AND (cb.blocked_user_id = c.user_id OR cb.blocked_actor_id = c.remote_actor_id))
+                OR (cb.user_id = c.user_id AND cb.blocked_user_id = $2))
            -- Comments of a limited server: only for who follows their author.
            AND NOT EXISTS (SELECT 1 FROM instance_policies lp
                 WHERE lp.domain = ra.host AND lp.policy = 'limited'
@@ -366,12 +412,36 @@ pub async fn for_post(pool: &PgPool, post_id: i64, viewer_id: Option<i32>) -> Re
     .iter()
     .map(Comment::from_row)
     .collect::<Result<Vec<_>, _>>()?;
-    with_attachments(pool, comments).await
+    with_attachments(pool, without_removed(comments)).await
+}
+
+/// The comments without those removed by the moderators and the replies
+/// below them, at any depth.
+fn without_removed(comments: Vec<Comment>) -> Vec<Comment> {
+    let mut hidden: std::collections::HashSet<i64> = comments.iter().filter(|comment| comment.removed).map(|comment| comment.id).collect();
+    if hidden.is_empty() {
+        return comments;
+    }
+    // Replies usually come after what they answer, but not always (dates
+    // of other servers): until nothing changes.
+    loop {
+        let before = hidden.len();
+        for comment in &comments {
+            if comment.parent_id.is_some_and(|parent| hidden.contains(&parent)) {
+                hidden.insert(comment.id);
+            }
+        }
+        if hidden.len() == before {
+            break;
+        }
+    }
+    comments.into_iter().filter(|comment| !hidden.contains(&comment.id)).collect()
 }
 
 /// The post of a comment, to check the user can see it before liking.
+/// `None` for a comment removed by the moderators.
 pub async fn post_of(pool: &PgPool, comment_id: i64) -> Result<Option<i64>, sqlx::Error> {
-    sqlx::query_scalar("SELECT post_id FROM comments WHERE id = $1")
+    sqlx::query_scalar("SELECT post_id FROM comments WHERE id = $1 AND removed_at IS NULL")
         .bind(comment_id)
         .fetch_optional(pool)
         .await

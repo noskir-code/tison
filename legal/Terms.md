@@ -45,7 +45,7 @@ Replace every {{PLACEHOLDER}}. Sections marked [OPTIONAL] can be removed.
 
 **Effective date:** {{EFFECTIVE_DATE}}
 **Version:** {{VERSION}} — [changelog]({{CHANGELOG_URL}})
-**Version française :** [Conditions d'utilisation]({{FRENCH_TERMS_URL}})
+**Version française :** [Conditions d'utilisation]({{TERMS_URL}}?lang=fr) · **Versión en español:** [Condiciones de uso]({{TERMS_URL}}?lang=es)
 
 > **Plain-language summary (not a substitute for the full Terms):**
 > {{INSTANCE_NAME}} is a server in the Fediverse, a network of independently
@@ -80,7 +80,7 @@ If a document conflicts with these Terms, these Terms prevail, except that the
 Privacy Policy prevails on matters concerning personal information.
 
 1.5. **Language.** A French version of these Terms is available at
-{{FRENCH_TERMS_URL}} and was offered to you before this version. By accepting
+{{TERMS_URL}}?lang=fr and was offered to you before this version. By accepting
 the English version, you confirm that it is your express wish to be bound by
 the English version. If the two versions differ, you may rely on whichever is
 more favourable to you.
@@ -260,7 +260,9 @@ of.
 6.2. **Possible actions.** Depending on the severity and recurrence, we may:
 issue a warning; mark media as sensitive; add a content warning; remove
 content; limit (silence) an account; freeze it; suspend it; or permanently
-delete it. Where the law requires, we may also preserve information and
+delete it. Content removed by moderators is hidden from everyone and kept
+{{REMOVED_CONTENT_DAYS}} days, so that an accepted appeal can restore it; it
+is then erased. Where the law requires, we may also preserve information and
 disclose it to authorities (see Privacy Policy).
 
 6.3. **Notice and appeal.** Except where immediate action is necessary
@@ -326,7 +328,8 @@ file a complaint with the Commission d'accès à l'information du Québec.
 reports, administrators may technically access data stored on the Instance,
 including direct messages. Such access is limited to what is necessary for
 these purposes, is {{LOGGED: "logged" / "not logged"}}, and is never used
-for any other purpose.
+for any other purpose. A message you report is shown to the moderators with
+your report.
 
 ## 9. Account migration, export and deletion
 

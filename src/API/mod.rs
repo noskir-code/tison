@@ -22,6 +22,7 @@ pub mod activities;
 pub(crate) mod base64;
 pub mod federation;
 pub mod linker;
+pub mod relay;
 
 use std::time::Duration;
 
@@ -90,6 +91,16 @@ impl Federation {
     /// Starts sending what was just queued.
     pub fn wake_deliveries(&self) {
         self.deliveries.notify_one();
+    }
+
+    /// The site's own actor (an `Application`), which follows relays and
+    /// is followed by the servers using this one as a relay.
+    pub fn instance_actor_url(&self) -> String {
+        format!("{}/ap/actor", self.base_url)
+    }
+
+    pub fn instance_key_id(&self) -> String {
+        format!("{}#main-key", self.instance_actor_url())
     }
 
     pub fn actor_url(&self, public_id: i64) -> String {

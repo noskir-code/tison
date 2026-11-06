@@ -220,6 +220,12 @@ impl SmtpConfig {
 /// listed here aren't written yet.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Services {
+    /// `BLOGGING`: short text posts like on Mastodon, with mentions. Off,
+    /// a post needs a photo (with `IMAGESHARING`), or there are none.
+    pub blogging: bool,
+    /// `BLOGGING-MAX-CHARS`: the longest post, counted like Mastodon, see
+    /// `mention::mastodon_length`.
+    pub blogging_max_chars: usize,
     /// `IMAGESHARING`: users can add photos to their posts.
     pub image_sharing: bool,
     /// `IMAGESYSTEM`: posts of photos shown like on Pixelfed (on) or in a
@@ -245,6 +251,8 @@ pub struct Services {
 impl Default for Services {
     fn default() -> Self {
         Self {
+            blogging: true,
+            blogging_max_chars: 500,
             image_sharing: true,
             image_system: true,
             publishing: true,
@@ -271,6 +279,71 @@ pub fn site_domain() -> &'static str {
 static SITE_BASE_URL: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 
 static INSTANCE_NAME: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+/// See `Config::privacy_officer`, `privacy_email` and `minimum_age`.
+struct PrivacySettings {
+    officer: String,
+    email: String,
+    minimum_age: u32,
+}
+
+static PRIVACY: std::sync::OnceLock<PrivacySettings> = std::sync::OnceLock::new();
+
+/// Set once at start, from the `Config`.
+pub fn install_privacy(officer: &str, email: &str, minimum_age: u32) {
+    let _ = PRIVACY.set(PrivacySettings { officer: officer.trim().to_string(), email: email.trim().to_string(), minimum_age });
+}
+
+/// The person in charge of personal data (a title, like "Administrator"),
+/// empty when not set.
+pub fn privacy_officer() -> &'static str {
+    PRIVACY.get().map_or("", |privacy| privacy.officer.as_str())
+}
+
+pub fn privacy_email() -> &'static str {
+    PRIVACY.get().map_or("", |privacy| privacy.email.as_str())
+}
+
+pub fn minimum_age() -> u32 {
+    PRIVACY.get().map_or(16, |privacy| privacy.minimum_age)
+}
+
+static BOT_POSTS_PER_HOUR: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
+
+/// Set once at start, from `Config::bot_posts_per_hour`.
+pub fn install_bot_limit(posts_per_hour: u32) {
+    BOT_POSTS_PER_HOUR.store(posts_per_hour, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// The most posts a bot account can publish in an hour (Server rules, 7).
+pub fn bot_posts_per_hour() -> u32 {
+    BOT_POSTS_PER_HOUR.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+static RELAY_SERVER: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Set once at start, from `Config::relay_server`.
+pub fn install_relay_server(on: bool) {
+    RELAY_SERVER.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Whether the site acts as a relay for other servers, see `API::relay`.
+pub fn relay_server() -> bool {
+    RELAY_SERVER.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+static REMOVED_CONTENT_DAYS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(30);
+
+/// Set once at start, from `Config::removed_content_days`.
+pub fn install_removed_content_days(days: u32) {
+    REMOVED_CONTENT_DAYS.store(days, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// How many days posts and comments removed by the moderators are kept,
+/// hidden, before being erased: the time to appeal and bring them back.
+pub fn removed_content_days() -> u32 {
+    REMOVED_CONTENT_DAYS.load(std::sync::atomic::Ordering::Relaxed)
+}
 
 /// The site's name (`INSTANCE_NAME` in runtime.conf), shown wherever the
 /// site names itself. "Tison" stays the name of the software.
@@ -307,6 +380,11 @@ impl Services {
     pub fn from_file() -> Result<Self, String> {
         let settings = Settings::load("TISON_SERVICES", DEFAULT_SERVICES_FILE)?;
         Ok(Self {
+            blogging: settings.flag("BLOGGING", true),
+            blogging_max_chars: match settings.parse("BLOGGING_MAX_CHARS", 500)? {
+                chars @ 100..=10_000 => chars,
+                chars => return Err(format!("BLOGGING-MAX-CHARS must be between 100 and 10000, not {chars}")),
+            },
             image_sharing: settings.flag("IMAGESHARING", true),
             image_system: settings.flag("IMAGESYSTEM", true),
             publishing: settings.flag("PUBLISHING", true),
@@ -361,10 +439,36 @@ pub struct Config {
     /// An account for the moderation team (`MULTI-MODERATOR` in
     /// settings.conf), see `user::sync_team_account`.
     pub multi_moderator: bool,
+    /// Who answers questions about personal data, and how to reach them
+    /// (`PRIVACY-OFFICER`, `PRIVACY-EMAIL` in settings.conf): Québec's Law 25
+    /// asks to publish them. Shown under the menu and in the legal pages.
+    pub privacy_officer: String,
+    pub privacy_email: String,
+    /// The youngest age to sign up (`MINIMUM-AGE` in settings.conf): 16 by
+    /// default, the GDPR's age of consent without parents in most of the EU
+    /// (Québec's is 14, the US's 13).
+    pub minimum_age: u32,
+    /// The most posts a bot can publish in an hour (`BOT-POSTS-PER-HOUR` in
+    /// settings.conf, 1 by default), see `install_bot_limit`.
+    pub bot_posts_per_hour: u32,
+    /// How long posts and comments removed by the moderators are kept,
+    /// hidden, so an accepted appeal can bring them back
+    /// (`REMOVED-CONTENT-DAYS` in settings.conf, 30 by default).
+    pub removed_content_days: u32,
+    /// The site acts as a relay for other servers (`RELAY-SERVER` in
+    /// settings.conf), each accepted by an admin, see `API::relay`.
+    pub relay_server: bool,
     /// Lets federation reach `http://` and private addresses. Only to test
     /// two servers on one machine: on a real server it lets anyone make
     /// Tison send requests inside its network.
     pub federation_allow_insecure: bool,
+    /// The reverse proxies believed about the visitor's address
+    /// (`TRUSTED_PROXIES`), see `security::client_ip`. `loopback, private`
+    /// by default.
+    pub trusted_proxies: Vec<crate::security::Network>,
+    /// The key encrypting the two-factor secrets (`TWO_FACTOR_KEY_FILE`,
+    /// `keys/two_factor.key` by default), see `vault`.
+    pub two_factor_key_file: String,
     /// From `configs/services.conf`.
     pub services: Services,
     /// The programs converting videos and sounds (`FFMPEG`, `FFPROBE`).
@@ -420,7 +524,24 @@ impl Config {
             remember_me_days: settings.parse("REMEMBER_ME_DAYS", 30)?,
             federation: settings.flag("FEDERATION", site.flag("FEDERATED", true)),
             multi_moderator: site.flag("MULTI_MODERATOR", false),
+            privacy_officer: site.get("PRIVACY_OFFICER").unwrap_or_default(),
+            privacy_email: site.get("PRIVACY_EMAIL").unwrap_or_default(),
+            minimum_age: match site.parse("MINIMUM_AGE", 16)? {
+                age @ 13..=21 => age,
+                age => return Err(format!("MINIMUM-AGE must be between 13 and 21, not {age}")),
+            },
+            bot_posts_per_hour: match site.parse("BOT_POSTS_PER_HOUR", 1)? {
+                posts @ 1..=60 => posts,
+                posts => return Err(format!("BOT-POSTS-PER-HOUR must be between 1 and 60, not {posts}")),
+            },
+            relay_server: site.flag("RELAY_SERVER", false),
+            removed_content_days: match site.parse("REMOVED_CONTENT_DAYS", 30)? {
+                days @ 1..=365 => days,
+                days => return Err(format!("REMOVED-CONTENT-DAYS must be between 1 and 365, not {days}")),
+            },
             federation_allow_insecure: settings.flag("FEDERATION_ALLOW_INSECURE", false),
+            trusted_proxies: crate::security::parse_proxies(&settings.get("TRUSTED_PROXIES").unwrap_or_else(|| "loopback, private".to_string()))?,
+            two_factor_key_file: settings.get("TWO_FACTOR_KEY_FILE").unwrap_or_else(|| "keys/two_factor.key".to_string()),
             services: Services::from_file()?,
             ffmpeg: settings.get("FFMPEG").unwrap_or_else(|| "ffmpeg".to_string()),
             ffprobe: settings.get("FFPROBE").unwrap_or_else(|| "ffprobe".to_string()),

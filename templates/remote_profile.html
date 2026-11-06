@@ -3,7 +3,15 @@
     {% call accounts::identity(account.author) %}{% endcall %}
     {% if !account.summary.is_empty() %}<p class="profile-bio">{{ account.summary }}</p>{% endif %}
     <p class="post-username">{{ "An account of"|t }} {{ account.author.host }}. <a href="{{ account.author.external_url }}" rel="nofollow noopener">{{ "See it on its server"|t }}</a></p>
-    {% if layout.viewer.is_some() %}
+    {% if layout.viewer.is_some() && blocked %}
+    <div class="profile-actions">
+        <span class="post-username">{{ "You blocked this account."|t }}</span>
+        <form action="/remote/{{ account.author.id }}/unblock" method="post">
+            <input type="hidden" name="return" value="{{ return_to }}" />
+            <button type="submit" class="button">{{ "Unblock"|t }}</button>
+        </form>
+    </div>
+    {% else if layout.viewer.is_some() %}
     <div class="profile-actions">
         {% call accounts::follow_button(account, return_to) %}{% endcall %}
         {% if crate::settings::services().dfrn %}
@@ -11,6 +19,10 @@
             <button type="submit" class="button">{{ "Message"|t }}</button>
         </form>
         {% endif %}
+        <form action="/remote/{{ account.author.id }}/block" method="post" data-confirm="{{ "Block {}? You stop following each other, and you can't see or reach each other anymore. Its server is told."|tf(account.author.handle()) }}" data-confirm-label="{{ "Block"|t }}">
+            <input type="hidden" name="return" value="{{ return_to }}" />
+            <button type="submit" class="button">{{ "Block"|t }}</button>
+        </form>
         <a href="/report?remote={{ account.author.id }}" class="button report-button" title="{{ "Report this account to the moderators"|t }}">{{ "Report"|t }}</a>
     </div>
     {% endif %}

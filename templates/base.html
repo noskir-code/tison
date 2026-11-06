@@ -7,16 +7,7 @@
         <link rel="shortcut icon" href="/public/favicon.ico" type="image/x-icon">
         {# The theme chosen with the menu's button (see system.js), applied
            before the page is drawn so it never flashes in the other one. #}
-        <script>
-            // Tells the CSS JavaScript runs: the phone menu can be folded.
-            document.documentElement.classList.add("js");
-            try {
-                const theme = localStorage.getItem("tison-theme");
-                if (theme === "light" || theme === "dark") {
-                    document.documentElement.dataset.theme = theme;
-                }
-            } catch {}
-        </script>
+        <script src="/assets/theme.js?v={{ crate::handlers::system::assets_version() }}"></script>
         {% block stylesheets %}
         <link rel="stylesheet" href="/assets/style.css?v={{ crate::handlers::system::assets_version() }}"/>
         {% endblock %}
@@ -114,13 +105,16 @@
                 </form>
                 <div class="flex bottom center vertical">
                     <!-- Versions -->
-                    <div>Tison Protocol <br> v.0.18.102-beta</div>
+                    <div>Tison Protocol <br> v.0.19.134-beta</div>
                     <div class="flex wrap space-around infos">
                         <a href="/terms-of-use">&bull;{{ "Terms of Use"|t }}</a>
                         <a href="/privacy-policy">&bull;{{ "Privacy Policy"|t }}</a>
                         <a href="/cookies">&bull;{{ "Cookies"|t }}</a>
                         <a href="/rules">&bull;{{ "Server rules"|t }}</a>
-                        <a href="https://github.com/noskir-code/tison">{{ "Source Code"|t }}</a>
+                        <a href="/moderation-policy">&bull;{{ "Moderation"|t }}</a>
+                        {# The person in charge of personal data (Law 25 art. 3.1), see settings.conf. #}
+                        {% if !crate::settings::privacy_email().is_empty() %}<a href="mailto:{{ crate::settings::privacy_email() }}" title="{% if !crate::settings::privacy_officer().is_empty() %}{{ crate::settings::privacy_officer() }}{% endif %}">&bull;{{ "Privacy contact"|t }}</a>{% endif %}
+                        <a href="https://github.com/noskir-code/tison">&bull;{{ "Source Code"|t }}</a>
                     </div>
                 </div>
             </div>
@@ -144,11 +138,11 @@
             </div>
         </div>
         <div class="flex center full-width vertical content margin page-content">
-            {# People and communities here, or @name@server for the Fediverse,
+            {# People and communities here, or @username@doamin for the Fediverse,
                see handlers/search.rs. #}
             <form action="/search" method="get" class="search-field site-search" role="search">
                 <label for="site-search" class="visually-hidden">{{ "Search"|t }}</label>
-                <input id="site-search" type="search" name="q" value="{{ layout.search }}" placeholder="{% if crate::settings::services().content_aggregator %}{{ "Search people, communities, or @name@server"|t }}{% else %}{{ "Search people, or @name@server"|t }}{% endif %}" required />
+                <input id="site-search" type="search" name="q" value="{{ layout.search }}" placeholder="{% if crate::settings::services().content_aggregator %}{{ "Search people, communities, or @username@domain"|t }}{% else %}{{ "Search people, or @username@domain"|t }}{% endif %}" required />
                 <button type="submit" class="button" aria-label="{{ "Search"|t }}">
                     <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
                         <circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2.2" />
@@ -156,13 +150,29 @@
                     </svg>
                 </button>
             </form>
+            {% if layout.unread_notices > 0 %}
+            {# What the moderators did and why, see handlers/notice.rs. #}
+            <div class="box verify-ask notice-ask" role="region" aria-label="{{ "Moderation notices"|t }}">
+                <p><strong>{{ "The moderators sent you a notice."|t }}</strong> {{ "Read what they did and why, and appeal if you disagree."|t }}</p>
+                <a href="/notices" class="button">{{ "Read it"|t }}</a>
+            </div>
+            {% endif %}
+            {% if layout.terms_changed %}
+            {# The texts changed since they were accepted, see handlers/account.rs. #}
+            <div class="box verify-ask terms-ask" role="region" aria-label="{{ "Updated terms"|t }}">
+                <p><strong>{{ "Terms of Use and/or Privacy Policy changed."|t }}</strong> {{ "Read them:"|t }} <a href="/terms-of-use">{{ "Terms of Use"|t }}</a>, <a href="/privacy-policy">{{ "Privacy Policy"|t }}</a>. {{ "If you don't accept them, you can download your data and delete your account in the settings."|t }}</p>
+                <form action="/terms/accept" method="post">
+                    <button type="submit" class="button">{{ "I accept"|t }}</button>
+                </form>
+            </div>
+            {% endif %}
             {% if layout.email_unverified %}
             {# Until the link sent at signup is opened, see handlers/verify_email.rs. #}
             <div class="box verify-ask">
-                <p><strong>{{ "Verify your email."|t }}</strong> {{ "We sent you a link when you signed up: open it to confirm your address."|t }}</p>
+                <p><strong>{{ "Verify your email."|t }}</strong> {{ "An email was sent at sign up: open the link to confirm your address."|t }}</p>
                 <form action="/settings/verify-email" method="post">
                     <input type="hidden" name="return" value="/settings?tab=account#email" />
-                    <button type="submit" class="button">{{ "Send it again"|t }}</button>
+                    <button type="submit" class="button">{{ "Didn't received it? Send it again"|t }}</button>
                 </form>
             </div>
             {% endif %}

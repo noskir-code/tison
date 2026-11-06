@@ -1,6 +1,6 @@
 //! Links in the text of posts and comments: `https://…`, `http://…` and
-//! `www.…` become clickable, and hashtags link to their page (`/tags/…`,
-//! see `hashtag`). The text is plain, so everything else is
+//! `www.…` become clickable, hashtags link to their page (`/tags/…`, see
+//! `hashtag`), and mentions to the profile (`@alice`, see `mention`). The text is plain, so everything else is
 //! escaped: the result is safe to put in a page as HTML.
 //!
 //! Used for the pages (see `Post::body_html`) and for the Notes sent to
@@ -114,6 +114,11 @@ fn find_addresses(text: &str) -> Vec<Found> {
     found
 }
 
+/// Where the addresses of the text are, for `mention::mastodon_length`.
+pub fn address_spans(text: &str) -> Vec<(usize, usize)> {
+    find_addresses(text).into_iter().map(|found| (found.start, found.end)).collect()
+}
+
 /// Where the first address of the text leads, for its preview.
 pub fn first_link(text: &str) -> Option<String> {
     find_addresses(text).into_iter().next().map(|found| found.href)
@@ -131,22 +136,59 @@ fn shown(address: &str) -> String {
     }
 }
 
+/// Where a mention leads on this site: the profile of a user here
+/// (`/user/alice`), or the search finding an account of another server.
+/// Replaced by the address of the account for other servers, see
+/// `API::activities::mention_links`.
+pub fn mention_href(handle: &crate::mention::Handle) -> String {
+    match handle.is_local(crate::settings::site_domain()) {
+        true => format!("/user/{}", handle.user.to_lowercase()),
+        false => format!("/search?q=%40{}%40{}", handle.user.to_lowercase(), handle.domain.as_deref().unwrap_or_default()),
+    }
+}
+
 /// Text without addresses as HTML: escaped, its hashtags linked to their
-/// page. Their `href` starts with `/tags/`, made absolute for other servers
-/// by `API::activities::absolute_tags`.
+/// page and its mentions to the profile, like Mastodon's (`h-card`). Their
+/// `href` starts with `/`, made absolute for other servers by
+/// `API::activities::absolute_tags`.
 fn text_with_tags(text: &str) -> String {
-    let mut html = String::with_capacity(text.len() + 16);
-    let mut written = 0;
+    let mut spans: Vec<(usize, usize, String)> = Vec::new();
     for (start, end) in crate::hashtag::spans(text) {
         let Some(tag) = crate::hashtag::normalize(&text[start..end]) else {
             continue;
         };
-        html.push_str(&escape(&text[written..start]));
-        html.push_str(&format!(
-            "<a href=\"{}\" class=\"mention hashtag\" rel=\"tag\">#<span>{}</span></a>",
-            escape(&crate::hashtag::path(&tag)),
-            escape(&text[start + 1..end]),
+        spans.push((
+            start,
+            end,
+            format!(
+                "<a href=\"{}\" class=\"mention hashtag\" rel=\"tag\">#<span>{}</span></a>",
+                escape(&crate::hashtag::path(&tag)),
+                escape(&text[start + 1..end]),
+            ),
         ));
+    }
+    for handle in crate::mention::spans(text) {
+        // Never inside a hashtag.
+        if spans.iter().any(|(start, end, _)| handle.start < *end && *start < handle.end) {
+            continue;
+        }
+        spans.push((
+            handle.start,
+            handle.end,
+            format!(
+                "<span class=\"h-card\"><a href=\"{}\" class=\"u-url mention\" title=\"{}\">@<span>{}</span></a></span>",
+                escape(&mention_href(&handle)),
+                escape(&handle.full()),
+                escape(&handle.user),
+            ),
+        ));
+    }
+    spans.sort_by_key(|(start, _, _)| *start);
+    let mut html = String::with_capacity(text.len() + 16);
+    let mut written = 0;
+    for (start, end, link) in spans {
+        html.push_str(&escape(&text[written..start]));
+        html.push_str(&link);
         written = end;
     }
     html.push_str(&escape(&text[written..]));
@@ -221,6 +263,15 @@ mod tests {
             )
         );
         assert_eq!(to_html("#1 a#b"), "#1 a#b");
+    }
+
+    #[test]
+    fn mentions_become_links() {
+        assert_eq!(
+            to_html("Hi @Alice and @bob@mastodon.social, me@mail.org"),
+            "Hi <span class=\"h-card\"><a href=\"/user/alice\" class=\"u-url mention\" title=\"@Alice\">@<span>Alice</span></a></span> and \
+             <span class=\"h-card\"><a href=\"/search?q=%40bob%40mastodon.social\" class=\"u-url mention\" title=\"@bob@mastodon.social\">@<span>bob</span></a></span>, me@mail.org"
+        );
     }
 
     #[test]

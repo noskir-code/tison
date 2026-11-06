@@ -1,5 +1,5 @@
 //! Reports: users (here, or on another server through a Fediverse `Flag`)
-//! tell the site's staff about a post, a comment or an account breaking the
+//! tell the site's staff about a post, a comment, a message or an account breaking the
 //! rules. The staff handle them on the moderation dashboard (see
 //! `handlers::moderation`).
 //!
@@ -42,19 +42,25 @@ pub const TABLE: Table = Table {
         Column::new("comment_id", "BIGINT")
             .nullable()
             .references("comments(id) ON DELETE SET NULL"),
+        // A private message, reported by the person who received it.
+        Column::new("message_id", "BIGINT")
+            .nullable()
+            .references("messages(id) ON DELETE SET NULL"),
         Column::new("target_user_id", "INTEGER")
             .nullable()
             .references("users(id) ON DELETE SET NULL"),
         Column::new("target_actor_id", "BIGINT")
             .nullable()
             .references("federation_actors(id) ON DELETE SET NULL"),
-        // `post`, `comment` or `account`: what was reported, also once it's
+        // `post`, `comment`, `message` or `account`: what was reported, also once it's
         // deleted.
         Column::new("kind", "TEXT").default("'account'"),
         // Copies at report time, see the module.
         Column::new("snapshot", "TEXT").default("''"),
         Column::new("target_label", "TEXT").default("''"),
         Column::new("reason", "TEXT"),
+        // Made by the anti-spam (`entities::spam`), not by someone.
+        Column::new("automatic", "BOOLEAN").default("FALSE"),
         Column::new("comment", "TEXT").default("''"),
         // `open`, `resolved` or `dismissed`.
         Column::new("status", "TEXT").default("'open'"),
@@ -72,27 +78,52 @@ pub const TABLE: Table = Table {
     ],
 };
 
-/// Why something is reported.
+/// Why something is reported: the server rules (`legal/Rules.md`) it breaks.
+/// Also the rule given to the person in a moderation notice, see
+/// `entities::notice`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Reason {
     Spam,
-    Harassment,
     Hate,
+    Harassment,
+    /// Sexualization of minors: the most urgent, shown first to moderators.
+    Minors,
     Illegal,
     Sensitive,
+    /// Private information, or intimate images without consent.
+    Privacy,
+    Violence,
+    /// Impersonation, harmful disinformation, or a bot, AI media or an ad
+    /// not labelled.
+    Dishonest,
     Other,
 }
 
 impl Reason {
-    pub const ALL: [Self; 6] = [Self::Spam, Self::Harassment, Self::Hate, Self::Illegal, Self::Sensitive, Self::Other];
+    pub const ALL: [Self; 10] = [
+        Self::Spam,
+        Self::Hate,
+        Self::Harassment,
+        Self::Minors,
+        Self::Illegal,
+        Self::Sensitive,
+        Self::Privacy,
+        Self::Violence,
+        Self::Dishonest,
+        Self::Other,
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Spam => "spam",
-            Self::Harassment => "harassment",
             Self::Hate => "hate",
+            Self::Harassment => "harassment",
+            Self::Minors => "minors",
             Self::Illegal => "illegal",
             Self::Sensitive => "sensitive",
+            Self::Privacy => "privacy",
+            Self::Violence => "violence",
+            Self::Dishonest => "dishonest",
             Self::Other => "other",
         }
     }
@@ -100,12 +131,21 @@ impl Reason {
     pub fn label(self) -> &'static str {
         match self {
             Self::Spam => "Spam or scam",
-            Self::Harassment => "Harassment or bullying",
-            Self::Hate => "Hate speech",
+            Self::Hate => "Hate speech or discrimination",
+            Self::Harassment => "Harassment, threats or doxxing",
+            Self::Minors => "Sexualization of minors",
             Self::Illegal => "Illegal content",
-            Self::Sensitive => "Sensitive content not marked",
+            Self::Sensitive => "Sensitive content without a content warning",
+            Self::Privacy => "Private information or intimate images without consent",
+            Self::Violence => "Violent extremism or glorification of violence",
+            Self::Dishonest => "Impersonation, disinformation, or an unlabelled bot, AI media or ad",
             Self::Other => "Something else",
         }
+    }
+
+    /// Reported to the authorities too (Server rules, 3).
+    pub fn is_urgent(self) -> bool {
+        self == Self::Minors
     }
 
     pub fn parse(value: &str) -> Option<Self> {
@@ -153,6 +193,8 @@ impl Status {
 pub enum Target {
     Post(i64),
     Comment(i64),
+    /// A private message.
+    Message(i64),
     User(i32),
     /// A row of `federation_actors`.
     Remote(i64),
@@ -182,42 +224,56 @@ impl Target {
         match self {
             Self::Post(_) => "post",
             Self::Comment(_) => "comment",
+            Self::Message(_) => "message",
             Self::User(_) | Self::Remote(_) => "account",
         }
     }
 }
 
-fn ids(target: Target, account: Option<Target>) -> (Option<i64>, Option<i64>, Option<i32>, Option<i64>) {
-    let (mut post_id, mut comment_id, mut user_id, mut actor_id) = (None, None, None, None);
+/// The columns of a report: post, comment, message, local user, remote account.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct Ids {
+    post: Option<i64>,
+    comment: Option<i64>,
+    message: Option<i64>,
+    user: Option<i32>,
+    actor: Option<i64>,
+}
+
+fn ids(target: Target, account: Option<Target>) -> Ids {
+    let mut ids = Ids::default();
     for part in std::iter::once(target).chain(account) {
         match part {
-            Target::Post(id) => post_id = Some(id),
-            Target::Comment(id) => comment_id = Some(id),
-            Target::User(id) => user_id = Some(id),
-            Target::Remote(id) => actor_id = Some(id),
+            Target::Post(id) => ids.post = Some(id),
+            Target::Comment(id) => ids.comment = Some(id),
+            Target::Message(id) => ids.message = Some(id),
+            Target::User(id) => ids.user = Some(id),
+            Target::Remote(id) => ids.actor = Some(id),
         }
     }
-    (post_id, comment_id, user_id, actor_id)
+    ids
 }
 
 /// Saves a report by a local user. Reporting the same thing again while the
 /// first report is open updates it instead.
 pub async fn create(pool: &PgPool, reporter_id: i32, report: &NewReport) -> Result<i64, sqlx::Error> {
-    let (post_id, comment_id, user_id, actor_id) = ids(report.target, report.account);
+    let ids = ids(report.target, report.account);
     let updated: Option<i64> = sqlx::query_scalar(
         "UPDATE reports SET reason = $6, comment = $7, created_at = NOW()
          WHERE reporter_user_id = $1 AND status = 'open'
            AND post_id IS NOT DISTINCT FROM $2 AND comment_id IS NOT DISTINCT FROM $3
            AND target_user_id IS NOT DISTINCT FROM $4 AND target_actor_id IS NOT DISTINCT FROM $5
+           AND message_id IS NOT DISTINCT FROM $8
          RETURNING id",
     )
     .bind(reporter_id)
-    .bind(post_id)
-    .bind(comment_id)
-    .bind(user_id)
-    .bind(actor_id)
+    .bind(ids.post)
+    .bind(ids.comment)
+    .bind(ids.user)
+    .bind(ids.actor)
     .bind(report.reason.as_str())
     .bind(&report.comment)
+    .bind(ids.message)
     .fetch_optional(pool)
     .await?;
     if let Some(id) = updated {
@@ -226,29 +282,50 @@ pub async fn create(pool: &PgPool, reporter_id: i32, report: &NewReport) -> Resu
     insert(pool, Some(reporter_id), None, report).await
 }
 
+/// Saves a report made by the anti-spam (`entities::spam`), unless the
+/// account already has an open automatic report. `true` when saved.
+pub async fn create_automatic(pool: &PgPool, report: &NewReport) -> Result<bool, sqlx::Error> {
+    let ids = ids(report.target, report.account);
+    let open: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM reports WHERE automatic AND status = 'open'
+                          AND target_user_id IS NOT DISTINCT FROM $1 AND target_actor_id IS NOT DISTINCT FROM $2)",
+    )
+    .bind(ids.user)
+    .bind(ids.actor)
+    .fetch_one(pool)
+    .await?;
+    if open {
+        return Ok(false);
+    }
+    let id = insert(pool, None, None, report).await?;
+    sqlx::query("UPDATE reports SET automatic = TRUE WHERE id = $1").bind(id).execute(pool).await?;
+    Ok(true)
+}
+
 /// Saves a report sent by another server (a Fediverse `Flag`).
 pub async fn create_remote(pool: &PgPool, reporter_actor_id: i64, report: &NewReport) -> Result<i64, sqlx::Error> {
     insert(pool, None, Some(reporter_actor_id), report).await
 }
 
 async fn insert(pool: &PgPool, reporter_user_id: Option<i32>, reporter_actor_id: Option<i64>, report: &NewReport) -> Result<i64, sqlx::Error> {
-    let (post_id, comment_id, user_id, actor_id) = ids(report.target, report.account);
+    let ids = ids(report.target, report.account);
     sqlx::query_scalar(
         "INSERT INTO reports (reporter_user_id, reporter_actor_id, post_id, comment_id, target_user_id,
-                              target_actor_id, snapshot, target_label, reason, comment, kind)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id",
+                              target_actor_id, snapshot, target_label, reason, comment, kind, message_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id",
     )
     .bind(reporter_user_id)
     .bind(reporter_actor_id)
-    .bind(post_id)
-    .bind(comment_id)
-    .bind(user_id)
-    .bind(actor_id)
+    .bind(ids.post)
+    .bind(ids.comment)
+    .bind(ids.user)
+    .bind(ids.actor)
     .bind(&report.snapshot)
     .bind(&report.target_label)
     .bind(report.reason.as_str())
     .bind(&report.comment)
     .bind(report.target.kind())
+    .bind(ids.message)
     .fetch_one(pool)
     .await
 }
@@ -268,6 +345,8 @@ pub enum Reporter {
     Server(String),
     /// Account gone since.
     Gone,
+    /// The anti-spam, see `entities::spam`.
+    Automatic,
 }
 
 /// The account a report is about, with what the staff did to it.
@@ -284,6 +363,11 @@ impl Account {
     /// nor deleted from a report.
     pub fn is_staff(&self) -> bool {
         matches!(&self.author, Author::Local(user) if user.is_staff())
+    }
+
+    /// A local account limited by the moderators, see `user::set_limited`.
+    pub fn is_limited(&self) -> bool {
+        matches!(&self.author, Author::Local(user) if user.is_limited())
     }
 
     /// What the staff did, shown next to it: "banned", "suspended until
@@ -318,7 +402,7 @@ pub struct Report {
     pub snapshot: String,
     pub target_label: String,
     pub account: Option<Account>,
-    /// What was reported: "post", "comment" or "account".
+    /// What was reported: "post", "comment", "message" or "account".
     pub kind: &'static str,
 }
 
@@ -327,9 +411,12 @@ impl Report {
         let kind = match row.try_get::<String, _>("kind")?.as_str() {
             "post" => "post",
             "comment" => "comment",
+            "message" => "message",
             _ => "account",
         };
-        let reporter = if let Some(username) = row.try_get::<Option<String>, _>("reporter_username")? {
+        let reporter = if row.try_get::<bool, _>("automatic")? {
+            Reporter::Automatic
+        } else if let Some(username) = row.try_get::<Option<String>, _>("reporter_username")? {
             Reporter::User(username)
         } else if let Some(actor) = row.try_get::<Option<String>, _>("reporter_actor")? {
             Reporter::Server(host_of(&actor))
@@ -398,6 +485,10 @@ impl Report {
 
     /// Where to see what was reported.
     pub fn link(&self) -> Option<String> {
+        if self.kind == "message" {
+            // Private: only the copy shows, and the sender's profile.
+            return self.account.as_ref().map(|account| account.author.profile_url());
+        }
         match (self.post_id, self.comment_id, self.comment_post_id) {
             (_, Some(comment_id), Some(post_id)) => Some(format!("/posts/{post_id}#comment-{comment_id}")),
             (Some(post_id), None, _) => Some(format!("/posts/{post_id}")),
@@ -409,12 +500,12 @@ impl Report {
 /// Reports of a status, newest first, older than `before` when given.
 pub async fn list(pool: &PgPool, status: Status, before: Option<i64>) -> Result<Vec<Report>, sqlx::Error> {
     sqlx::query(concat!(
-        "SELECT r.id AS report_id, r.reason, r.comment AS report_comment, r.status, r.created_at AS reported_at,
+        "SELECT r.id AS report_id, r.reason, r.comment AS report_comment, r.status, r.created_at AS reported_at, r.automatic,
                 r.handled_at, handler.username AS handler_username,
                 reporter.username AS reporter_username, ra_reporter.actor_id AS reporter_actor,
                 r.post_id, r.comment_id, r.kind, r.snapshot, r.target_label,
                 c.post_id AS comment_post_id,
-                CASE r.kind WHEN 'comment' THEN c.body WHEN 'post' THEN p.body END AS current_text,
+                CASE r.kind WHEN 'comment' THEN c.body WHEN 'post' THEN p.body WHEN 'message' THEN msg.body END AS current_text,
                 (u.suspended_at IS NOT NULL OR ra.blocked_at IS NOT NULL) AS restricted,
                 (SELECT COUNT(*) FROM reports other WHERE other.status = 'open'
                    AND (other.target_user_id = r.target_user_id OR other.target_actor_id = r.target_actor_id))
@@ -428,6 +519,7 @@ pub async fn list(pool: &PgPool, status: Status, before: Option<i64>) -> Result<
           LEFT JOIN users handler ON handler.id = r.handled_by
           LEFT JOIN posts p ON p.id = r.post_id
           LEFT JOIN comments c ON c.id = r.comment_id
+          LEFT JOIN messages msg ON msg.id = r.message_id
           LEFT JOIN users u ON u.id = r.target_user_id
           LEFT JOIN federation_actors ra ON ra.id = r.target_actor_id
          WHERE r.status = $1 AND ($2::bigint IS NULL OR r.id < $2)
@@ -457,20 +549,40 @@ pub async fn counts(pool: &PgPool) -> Result<[i64; 3], sqlx::Error> {
     Ok([row.try_get("open")?, row.try_get("resolved")?, row.try_get("dismissed")?])
 }
 
-/// What a report is about, to act on it: (post, comment, local user, remote account).
-pub async fn targets(pool: &PgPool, id: i64) -> Result<Option<(Option<i64>, Option<i64>, Option<i32>, Option<i64>)>, sqlx::Error> {
-    sqlx::query("SELECT post_id, comment_id, target_user_id, target_actor_id FROM reports WHERE id = $1")
+/// What a report is about, to act on it.
+pub struct Targets {
+    pub post_id: Option<i64>,
+    pub comment_id: Option<i64>,
+    pub message_id: Option<i64>,
+    pub user_id: Option<i32>,
+    pub actor_id: Option<i64>,
+}
+
+pub async fn targets(pool: &PgPool, id: i64) -> Result<Option<Targets>, sqlx::Error> {
+    sqlx::query("SELECT post_id, comment_id, message_id, target_user_id, target_actor_id FROM reports WHERE id = $1")
         .bind(id)
         .fetch_optional(pool)
         .await?
         .map(|row| {
-            Ok((
-                row.try_get("post_id")?,
-                row.try_get("comment_id")?,
-                row.try_get("target_user_id")?,
-                row.try_get("target_actor_id")?,
-            ))
+            Ok(Targets {
+                post_id: row.try_get("post_id")?,
+                comment_id: row.try_get("comment_id")?,
+                message_id: row.try_get("message_id")?,
+                user_id: row.try_get("target_user_id")?,
+                actor_id: row.try_get("target_actor_id")?,
+            })
         })
+        .transpose()
+}
+
+/// The reason given and the copy of what was reported: what a moderation
+/// notice says by default, see `entities::notice`.
+pub async fn reason_and_snapshot(pool: &PgPool, id: i64) -> Result<Option<(Reason, String)>, sqlx::Error> {
+    sqlx::query("SELECT reason, snapshot FROM reports WHERE id = $1")
+        .bind(id)
+        .fetch_optional(pool)
+        .await?
+        .map(|row| Ok((Reason::parse(&row.try_get::<String, _>("reason")?).unwrap_or(Reason::Other), row.try_get("snapshot")?)))
         .transpose()
 }
 
@@ -494,4 +606,17 @@ pub async fn set_status(pool: &PgPool, id: i64, status: Status, moderator_id: i3
     .execute(pool)
     .await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_reported_message_keeps_its_sender() {
+        let found = ids(Target::Message(7), Some(Target::Remote(3)));
+        assert_eq!(found, Ids { message: Some(7), actor: Some(3), ..Ids::default() });
+        assert_eq!(Target::Message(7).kind(), "message");
+        assert_eq!(ids(Target::Post(1), Some(Target::User(2))), Ids { post: Some(1), user: Some(2), ..Ids::default() });
+    }
 }

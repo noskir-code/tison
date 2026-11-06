@@ -15,6 +15,7 @@
             <span>
                 <strong>{{ comment.author.display_name() }}</strong>
                 {% if let Some(badge) = comment.author.role_badge() %}<span class="role-badge {{ comment.author.role_name() }}">{{ badge|t }}</span>{% endif %}
+                {% if let Some(badge) = comment.author.kind_badge() %}<span class="kind-badge" title="{{ comment.author.kind_badge_title()|t }}">{{ badge|t }}</span>{% endif %}
                 <span class="post-username">{{ comment.author.handle() }}</span>
             </span>
         </a>

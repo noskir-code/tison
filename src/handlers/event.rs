@@ -363,6 +363,8 @@ struct FormValues {
     online_public: bool,
     banner_url: Option<String>,
     community_id: Option<i64>,
+    /// Content warning and labels, see `post::Labels`.
+    labels: post::Labels,
 }
 
 impl FormValues {
@@ -420,6 +422,7 @@ pub async fn new_page(State(state): State<AppState>, session: Session, Query(que
             online_public: false,
             banner_url: None,
             community_id: chosen,
+            labels: post::Labels::default(),
         },
         editing: false,
         error: EventError::from_query(&query),
@@ -438,11 +441,15 @@ pub async fn create(State(state): State<AppState>, session: Session, mut multipa
         Err(response) => return response,
     };
     let back = |error: EventError| Redirect::to(&format!("/events/new?error={}", error.code())).into_response();
+    if crate::handlers::post::bot_over_limit(&pool, &me).await {
+        return crate::handlers::post::bot_limit_page(Layout::load(&state, &session).await);
+    }
     let upload = match read_form(&mut multipart).await {
         Ok(upload) => upload,
         Err(error) => return back(error),
     };
     let form = EventForm::read(&upload);
+    let label_fields = upload.label_fields();
     let banner = match &form {
         Ok(_) => save_banner(me.id, &upload).await,
         Err(_) => Ok(None),
@@ -480,6 +487,7 @@ pub async fn create(State(state): State<AppState>, session: Session, mut multipa
     match post::create_event(&pool, me.id, &form.title, &form.body, banner.as_deref(), form.community_id, &details).await {
         Ok(post_id) => {
             locate(&state, &pool, post_id, form.place_query());
+            crate::handlers::post::save_labels(&pool, post_id, &label_fields).await;
             tracing::info!("@{} created event {}", me.username, post_id);
             // The organizer goes, like on Mobilizon.
             if let Err(err) = event::join_local(&pool, post_id, me.id, "going", None).await {
@@ -589,6 +597,7 @@ pub async fn edit_page(
             online_public: details.online_public,
             banner_url: post.poster(),
             community_id: post.community.as_ref().map(|community| community.id),
+            labels: post.labels(),
         },
         editing: true,
         error: EventError::from_query(&query),
@@ -611,6 +620,7 @@ pub async fn update(State(state): State<AppState>, session: Session, Path(post_i
         Ok(upload) => upload,
         Err(error) => return back(error),
     };
+    let label_fields = upload.label_fields();
     let form = EventForm::read(&upload);
     let banner = match &form {
         Ok(_) => save_banner(me.id, &upload).await,
@@ -632,6 +642,7 @@ pub async fn update(State(state): State<AppState>, session: Session, Path(post_i
             if banner.is_some() && !shared {
                 media::remove_local_files(&post.poster_url.into_iter().collect::<Vec<_>>()).await;
             }
+            crate::handlers::post::save_labels(&pool, post_id, &label_fields).await;
             notifier::post_updated(&state, &pool, post_id).await;
             Redirect::to(&format!("/posts/{post_id}")).into_response()
         }

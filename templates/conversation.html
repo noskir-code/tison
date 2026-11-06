@@ -13,7 +13,38 @@
                 <span class="post-username">{{ conversation.other.handle() }}</span>
             </span>
         </a>
+        {# Settings of the conversation: mute, report, block. #}
+        <details class="conversation-menu">
+            <summary class="action" title="{{ "Conversation settings"|t }}" aria-label="{{ "Conversation settings"|t }}">⚙</summary>
+            <div class="conversation-menu-items">
+                <a href="{{ conversation.other.profile_url() }}" class="action">{{ "View the profile"|t }}</a>
+                <form action="/messenger/{{ conversation.id }}/mute" method="post">
+                    {% if conversation.muted %}
+                    <input type="hidden" name="muted" value="off" />
+                    <button type="submit" class="action">🔔 {{ "Unmute notifications"|t }}</button>
+                    {% else %}
+                    <input type="hidden" name="muted" value="on" />
+                    <button type="submit" class="action">🔕 {{ "Mute notifications"|t }}</button>
+                    {% endif %}
+                </form>
+                {% match conversation.other %}
+                {% when crate::entities::author::Author::Local with (other) %}
+                {% if can_report %}<a href="/report?user={{ other.username }}" class="action">{{ "Report @{}"|tf(other.username) }}</a>{% endif %}
+                <form action="/user/{{ other.username }}/{% if blocked_by_me %}unblock{% else %}block{% endif %}" method="post"{% if !blocked_by_me %} data-confirm="{{ "Block @{}? You stop seeing each other, and they can't follow, message or notify you."|tf(other.username) }}" data-confirm-label="{{ "Block"|t }}"{% endif %}>
+                    <input type="hidden" name="return" value="/messenger/{{ conversation.id }}" />
+                    <button type="submit" class="action danger">{% if blocked_by_me %}{{ "Unblock"|t }}{% else %}{{ "Block"|t }}{% endif %}</button>
+                </form>
+                {% when crate::entities::author::Author::Remote with (other) %}
+                <a href="/report?remote={{ other.id }}" class="action">{{ "Report this account"|t }}</a>
+                <form action="/remote/{{ other.id }}/{% if blocked_by_me %}unblock{% else %}block{% endif %}" method="post"{% if !blocked_by_me %} data-confirm="{{ "Block this account? You stop seeing each other, and its server is told."|t }}" data-confirm-label="{{ "Block"|t }}"{% endif %}>
+                    <input type="hidden" name="return" value="/messenger/{{ conversation.id }}" />
+                    <button type="submit" class="action danger">{% if blocked_by_me %}{{ "Unblock"|t }}{% else %}{{ "Block"|t }}{% endif %}</button>
+                </form>
+                {% endmatch %}
+            </div>
+        </details>
     </header>
+    {% if let Some(text) = saved %}<p class="saved" role="status">{{ text|t }}</p>{% endif %}
     {% if conversation.other.is_remote() %}
     <p class="post-username conversation-note">{{ "On another server: they receive your messages as private messages. Their server can read them, like any email provider."|t }}</p>
     {% endif %}
@@ -33,7 +64,7 @@
         <p class="error">{{ message|t }}</p>
         {% endif %}
         <label for="message-body" class="visually-hidden">{{ "Message"|t }}</label>
-        <textarea id="message-body" name="body" rows="2" maxlength="{{ body_max_chars }}" placeholder="{{ "Write a message..."|t }}" data-message-input></textarea>
+        <textarea id="message-body" name="body" rows="2" maxlength="{{ body_max_chars }}" placeholder="{{ "Say something..."|t }}" data-message-input></textarea>
         <button type="submit" class="button primary">{{ "Send"|t }}</button>
         {# Photos (also from the camera) and files, see handlers/messenger.rs. #}
         <div class="message-tools">

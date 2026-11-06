@@ -30,6 +30,25 @@ pub struct Layout {
     /// The viewer's email isn't verified yet, and a link can be sent: a
     /// banner asks to, see `handlers::verify_email`.
     pub email_unverified: bool,
+    /// The Terms of Use or Privacy Policy changed since the viewer accepted
+    /// them: a banner asks again, see `handlers::account::accept_terms`.
+    pub terms_changed: bool,
+    /// Moderation notices not opened yet, see `handlers::notice`.
+    pub unread_notices: i64,
+}
+
+/// `site_page::consent_version`, read again every minute: not on every page.
+fn current_consent_version() -> String {
+    static CACHE: std::sync::Mutex<Option<(std::time::Instant, String)>> = std::sync::Mutex::new(None);
+    let mut cache = CACHE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    match &*cache {
+        Some((at, version)) if at.elapsed() < std::time::Duration::from_secs(60) => version.clone(),
+        _ => {
+            let version = crate::entities::site_page::consent_version();
+            *cache = Some((std::time::Instant::now(), version.clone()));
+            version
+        }
+    }
 }
 
 impl Layout {
@@ -66,7 +85,23 @@ impl Layout {
             None => 0,
         };
         let email_unverified = state.mailer.is_some() && viewer.as_ref().is_some_and(|viewer| !viewer.email_verified);
+        let terms_changed = match &viewer {
+            Some(viewer) if !viewer.team => {
+                let current = current_consent_version();
+                !current.is_empty() && crate::entities::user::consent(pool, viewer.id).await.is_ok_and(|(accepted, _)| accepted != current)
+            }
+            _ => false,
+        };
+        let unread_notices = match &viewer {
+            Some(viewer) => crate::entities::notice::unread_count(pool, viewer.id).await.unwrap_or_else(|err| {
+                tracing::warn!("failed to count the notices of @{}: {}", viewer.username, err);
+                0
+            }),
+            None => 0,
+        };
         Self {
+            unread_notices,
+            terms_changed,
             viewer,
             unread_notifications,
             unread_messages,
@@ -171,7 +206,13 @@ pub async fn site_page(State(state): State<AppState>, session: Session, uri: axu
     let Some(kind) = site_page::Kind::parse(uri.path().trim_start_matches('/')) else {
         return error_page(layout, StatusCode::NOT_FOUND, "This page doesn't exist.");
     };
-    let page = site_page::read(kind);
+    // In the visitor's language when it's written (`Terms.fr.md`), or the
+    // one asked (`?lang=fr`, the links between the versions of a page).
+    let asked = uri.query().and_then(|query| query.split('&').find_map(|pair| pair.strip_prefix("lang="))).and_then(crate::i18n::Lang::parse);
+    let page = match asked.map(|lang| site_page::read_language(kind, lang)) {
+        Some(page) if page.is_written() => page,
+        _ => site_page::read_for_visitor(kind),
+    };
     render_template(&SitePageTemplate {
         title: kind.title().to_string(),
         html: page.html(&state.instance_name, &state.public_base_url),
@@ -185,6 +226,7 @@ pub async fn site_page(State(state): State<AppState>, session: Session, uri: axu
 /// back to the page it was chosen on (from `Referer`, this site only).
 pub async fn set_language(
     State(state): State<AppState>,
+    session: Session,
     headers: axum::http::HeaderMap,
     axum::Form(form): axum::Form<std::collections::HashMap<String, String>>,
 ) -> Response {
@@ -196,6 +238,11 @@ pub async fn set_language(
     let back = local_path(back.as_ref(), "/");
     let mut response = axum::response::Redirect::to(&back).into_response();
     if let Some(lang) = form.get("lang").and_then(|lang| crate::i18n::Lang::parse(lang)) {
+        if let Some(pool) = &state.pool
+            && let Ok(Some(viewer)) = crate::handlers::session::signed_in(pool, &session).await
+        {
+            let _ = crate::entities::user::set_language(pool, viewer.id, lang.code()).await;
+        }
         let secure = if state.secure_cookies { "; Secure" } else { "" };
         let cookie = format!("lang={}; Max-Age=31536000; Path=/; SameSite=Lax{secure}", lang.code());
         if let Ok(value) = axum::http::HeaderValue::from_str(&cookie) {
@@ -203,4 +250,40 @@ pub async fn set_language(
         }
     }
     response
+}
+
+#[derive(Template)]
+#[template(path = "moderation_policy.html")]
+struct ModerationPolicyTemplate {
+    title: String,
+    layout: Layout,
+    /// The creator and the moderators.
+    staff: Vec<User>,
+    /// Domain, rule and reason of the moderated servers.
+    servers: Vec<(String, crate::entities::federation::Policy, String)>,
+    bot_posts_per_hour: u32,
+}
+
+/// Who moderates and how (Server rules, parts C and D): the staff, the
+/// moderated servers with their reasons, reporting and appealing.
+pub async fn moderation_policy(State(state): State<AppState>, session: Session) -> Response {
+    let layout = Layout::load(&state, &session).await;
+    let Some(pool) = &state.pool else {
+        return error_page(layout, StatusCode::SERVICE_UNAVAILABLE, "The database is not configured.");
+    };
+    let staff = crate::entities::user::staff(pool).await.unwrap_or_else(|err| {
+        tracing::warn!("failed to load the staff: {}", err);
+        Vec::new()
+    });
+    let servers = crate::entities::federation::moderated_servers(pool).await.unwrap_or_else(|err| {
+        tracing::warn!("failed to load the moderated servers: {}", err);
+        Vec::new()
+    });
+    render_template(&ModerationPolicyTemplate {
+        title: "Moderation".to_string(),
+        layout,
+        staff: staff.into_iter().filter(|user| !user.team).collect(),
+        servers,
+        bot_posts_per_hour: crate::settings::bot_posts_per_hour(),
+    })
 }

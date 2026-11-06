@@ -1,0 +1,74 @@
+{% extends "base.html" %} {% import "macros/moderation.html" as moderation_ui %} {% block content %}
+{# See handlers::moderation::relays_page and API::relay. #}
+<section class="box content moderation relays">
+    {% call moderation_ui::tabs(sections) %}{% endcall %}
+    <p class="post-username">{{ "A relay forwards public posts between the servers following it: this site receives the public posts of other servers (they show in search, on hashtag pages and in feeds following the hashtags), discovers their accounts, and sends its own public posts. Unlisted, followers-only and private posts never go to relays."|t }}</p>
+    {% if !federation_on %}
+    <p class="empty">{{ "The Fediverse is turned off on this site: no other server is reached."|t }}</p>
+    {% endif %}
+    {% if let Some(text) = message %}
+    <p class="{% if error %}error{% else %}saved{% endif %}" role="status">{{ text|t }}</p>
+    {% endif %}
+
+    <h2>{{ "Relays followed"|t }}</h2>
+    <form action="/moderation/relays" method="post" class="relay-add">
+        <label for="relay-url">{{ "Relay address"|t }}</label>
+        <input type="url" id="relay-url" name="url" required placeholder="https://relay.example/inbox" />
+        <p class="post-username form-hint">{{ "Its inbox for Mastodon relays (ending with /inbox), or its actor for LitePub and Pleroma relays (often ending with /actor)."|t }}</p>
+        <button type="submit" class="button primary">{{ "Follow the relay"|t }}</button>
+    </form>
+    {% if relays.is_empty() %}
+    <p class="empty">{{ "No relay followed."|t }}</p>
+    {% else %}
+    <ul class="account-list relay-list">
+        {% for relay in relays %}
+        <li class="flex center space-between">
+            <span>
+                <strong>{{ relay.host }}</strong>
+                <span class="post-username">{{ relay.url }} · {{ relay.state.label()|t }} · {{ "since {}"|tf(relay.created_label()) }}</span>
+            </span>
+            <span class="flex center">
+                {% if relay.state == crate::entities::relay::State::Paused || relay.state == crate::entities::relay::State::Rejected %}
+                <form action="/moderation/relays/{{ relay.id }}/resume" method="post"><button type="submit" class="button">{{ "Ask again"|t }}</button></form>
+                {% else %}
+                <form action="/moderation/relays/{{ relay.id }}/pause" method="post"><button type="submit" class="button">{{ "Pause"|t }}</button></form>
+                {% endif %}
+                <form action="/moderation/relays/{{ relay.id }}/remove" method="post" data-confirm="{{ "Stop following this relay?"|t }}" data-confirm-label="{{ "Remove"|t }}"><button type="submit" class="button danger">{{ "Remove"|t }}</button></form>
+            </span>
+        </li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+
+    <h2>{{ "This site as a relay"|t }}</h2>
+    {% if relay_server %}
+    <p class="post-username">{{ "Other servers can use this site as their relay with this address, each accepted here first:"|t }}</p>
+    <p><code>{{ inbox_url }}</code> <span class="post-username">{{ "(Mastodon)"|t }}</span></p>
+    <p><code>{{ actor_url }}</code> <span class="post-username">{{ "(LitePub, Pleroma)"|t }}</span></p>
+    {% if subscribers.is_empty() %}
+    <p class="empty">{{ "No server uses this site as a relay."|t }}</p>
+    {% else %}
+    <ul class="account-list relay-list">
+        {% for subscriber in subscribers %}
+        <li class="flex center space-between">
+            <span>
+                <strong>{{ subscriber.host }}</strong>
+                <span class="post-username">{{ subscriber.actor_id }} · {{ subscriber.state.label()|t }} · {{ "since {}"|tf(subscriber.created_label()) }}</span>
+            </span>
+            <span class="flex center">
+                {% if subscriber.is_pending() %}
+                <form action="/moderation/relay-subscribers/{{ subscriber.id }}/accept" method="post"><button type="submit" class="button primary">{{ "Accept"|t }}</button></form>
+                <form action="/moderation/relay-subscribers/{{ subscriber.id }}/reject" method="post"><button type="submit" class="button">{{ "Refuse"|t }}</button></form>
+                {% else %}
+                <form action="/moderation/relay-subscribers/{{ subscriber.id }}/remove" method="post" data-confirm="{{ "Stop relaying for this server?"|t }}" data-confirm-label="{{ "Remove"|t }}"><button type="submit" class="button danger">{{ "Remove"|t }}</button></form>
+                {% endif %}
+            </span>
+        </li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+    {% else %}
+    <p class="post-username">{{ "Off: other servers can't use this site as their relay. Turn on RELAY-SERVER in settings.conf (Configuration tab) to let them ask."|t }}</p>
+    {% endif %}
+</section>
+{% endblock %}

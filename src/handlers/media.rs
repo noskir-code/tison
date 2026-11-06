@@ -51,8 +51,8 @@ pub async fn proxy(State(state): State<AppState>, Path(hash): Path<String>, requ
         }
     };
 
-    // From a server banned since: not served anymore.
-    if crate::entities::federation::is_banned(pool, &proxied.url).await.unwrap_or(false) {
+    // From a server banned since, or whose media are rejected: not served.
+    if crate::entities::federation::media_refused(pool, &proxied.url).await.unwrap_or(false) {
         return StatusCode::NOT_FOUND.into_response();
     }
     let cached = match &proxied.extension {

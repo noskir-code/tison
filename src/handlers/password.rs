@@ -100,8 +100,13 @@ pub async fn forgot_page(State(state): State<AppState>, session: Session) -> Res
 pub async fn forgot(
     State(state): State<AppState>,
     session: Session,
+    axum::Extension(crate::security::ClientIp(ip)): axum::Extension<crate::security::ClientIp>,
     Form(form): Form<HashMap<String, String>>,
 ) -> Response {
+    // Reset emails asked in a row from one address, see `security`.
+    if !crate::security::hit(crate::security::Limit::PasswordReset, &ip) {
+        return error_page(Layout::load(&state, &session).await, StatusCode::TOO_MANY_REQUESTS, crate::security::Limit::PasswordReset.message());
+    }
     let layout = Layout::load(&state, &session).await;
     if state.pool.is_none() {
         return error_page(layout, StatusCode::SERVICE_UNAVAILABLE, "The database is not configured.");

@@ -30,7 +30,7 @@ Provide a French version (Règles du serveur).
 
 # Server Rules — {{INSTANCE_NAME}}
 
-**Last updated:** {{EFFECTIVE_DATE}} · **Version française :** [Règles du serveur]({{FRENCH_RULES_URL}})
+**Last updated:** {{EFFECTIVE_DATE}} · **Version française :** [Règles du serveur]({{RULES_URL}}?lang=fr) · **Versión en español:** [Normas del servidor]({{RULES_URL}}?lang=es)
 
 These rules apply to everyone with an account on {{INSTANCE_NAME}}, and to
 how we moderate content arriving from other servers. They are part of our
@@ -161,7 +161,7 @@ reporting and analysis are allowed with context and a CW.
   Accounts mainly used for advertising, affiliate links, or undisclosed
   sponsored posts are not.
 - **Bots and automation:** automated accounts must be marked as bots in
-  their profile, must not post more than {{BOT_RATE_LIMIT}} public posts
+  their profile, must not publish more public posts than {{BOT_RATE_LIMIT}}
   per hour, should use "unlisted" visibility by default, must only reply to
   people who interact with them, and must have a human contact listed in
   the bio.
@@ -197,10 +197,14 @@ and history:
 Rule 3 (sexualization of minors) and credible threats lead to immediate
 suspension without warning.
 
+Content removed by moderators is hidden from everyone, kept
+{{REMOVED_CONTENT_DAYS}} days so an accepted appeal can restore it, then
+erased.
+
 You will be notified of actions on your account and can appeal as described
 in section 6 of the [Terms of Use]({{TERMS_URL}}).
 
-**Reporting:** use the "Report" button on a post or profile, or email
+**Reporting:** use the "Report" button on a post, profile or message, or email
 {{MODERATION_EMAIL}}. Reports are confidential. Remote users can report our
 members through their own server.
 

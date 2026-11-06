@@ -33,7 +33,7 @@ Québec, Canada. Works with TERMS.md and PRIVACY.md. NOT legal advice.
 
 **Effective date:** {{EFFECTIVE_DATE}}
 **Version:** {{VERSION}} — [changelog]({{CHANGELOG_URL}})
-**Version française :** [Politique relative aux témoins]({{FRENCH_COOKIES_URL}})
+**Version française :** [Politique relative aux témoins]({{COOKIES_URL}}?lang=fr) · **Versión en español:** [Política de cookies]({{COOKIES_URL}}?lang=es)
 
 > **Plain-language summary:** We use only the cookies and browser storage
 > needed to log you in, keep your account secure, and remember your display

@@ -53,7 +53,7 @@
         {% if !membership.can_manage() %}
         <form action="/community/{{ community.slug }}/ignore" method="post">
             <button type="submit" class="button" aria-pressed="{{ membership.is_ignored }}">
-                {% if membership.is_ignored %}{{ "Show on home"|t }}{% else %}{{ "Hide from home"|t }}{% endif %}
+                {% if membership.is_ignored %}{{ "Show in your feed"|t }}{% else %}{{ "Hide from your feed"|t }}{% endif %}
             </button>
         </form>
         {% endif %}
@@ -81,11 +81,12 @@
                 <textarea
                     id="post-body"
                     name="body"
-                    placeholder="{{ "What do you want to share with the community?"|t }}"
+                    placeholder="{{ "Share something with this community..."|t }}"
                     maxlength="{{ body_max_chars }}"
                     rows="4"
                     required
                 ></textarea>
+                {% call posts_ui::label_fields("community-post", "", false, false) %}{% endcall %}
                 <button type="submit" class="button">{{ "Publish"|t }}</button>
             </form>
         </section>
@@ -99,9 +100,9 @@
 
         <div class="flex center vertical full-width posts">
             {% if posts_hidden %}
-            <p class="box content empty">{{ "This community is private: only members approved by its moderators can read its posts."|t }}</p>
+            <p class="box content empty">{{ "This community is private: only approved members can read its posts."|t }}</p>
             {% else %}
-            {% call posts_ui::post_list(posts, "No post yet."|t, layout.viewer.is_some(), return_to, can_manage) %}{% endcall %}
+            {% call posts_ui::post_list(posts, "No post yet..."|t, layout.viewer.is_some(), return_to, can_manage) %}{% endcall %}
             {% endif %}
         </div>
     </div>

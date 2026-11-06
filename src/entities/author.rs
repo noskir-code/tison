@@ -10,7 +10,8 @@ use crate::entities::{media, user::User};
 macro_rules! remote_author_columns {
     () => {
         "ra.id AS ra_id, ra.actor_id AS ra_actor_id, ra.username AS ra_username,
-         ra.display_name AS ra_display_name, ra.icon_url AS ra_icon_url, ra.profile_url AS ra_profile_url"
+         ra.display_name AS ra_display_name, ra.icon_url AS ra_icon_url, ra.profile_url AS ra_profile_url,
+         ra.kind AS ra_kind"
     };
 }
 pub(crate) use remote_author_columns;
@@ -28,6 +29,13 @@ pub struct RemoteAuthor {
     /// Its profile page on its server.
     pub external_url: String,
     pub host: String,
+    /// A `Service` or `Application`: Mastodon's bots.
+    pub bot: bool,
+}
+
+/// Actor types of automated accounts: Mastodon's "This is a bot account".
+pub fn is_bot_kind(kind: &str) -> bool {
+    matches!(kind, "Service" | "Application")
 }
 
 impl RemoteAuthor {
@@ -43,6 +51,7 @@ impl RemoteAuthor {
                 .try_get::<Option<String>, _>("ra_profile_url")?
                 .unwrap_or_else(|| actor_id.clone()),
             host: host_of(&actor_id),
+            bot: is_bot_kind(&row.try_get::<String, _>("ra_kind")?),
             actor_id,
         })
     }
@@ -90,6 +99,12 @@ impl Author {
         Ok(Self::Remote(RemoteAuthor::from_row(row)?))
     }
 
+    /// A local user who let search engines show their posts (`noindex`
+    /// otherwise, and always for copies of other servers' posts).
+    pub fn allows_search_engines(&self) -> bool {
+        self.local().is_some_and(|user| user.search_indexing)
+    }
+
     /// Written by the moderation team's account, see `user::sync_team_account`.
     pub fn is_team(&self) -> bool {
         self.local().is_some_and(|user| user.team)
@@ -104,6 +119,21 @@ impl Author {
 
     pub fn is_remote(&self) -> bool {
         matches!(self, Self::Remote(_))
+    }
+
+    /// "Bot" or "Parody", shown by the name (Server rules, 7).
+    pub fn kind_badge(&self) -> Option<&'static str> {
+        match self {
+            Self::Local(user) => user.account_kind.badge(),
+            Self::Remote(remote) => remote.bot.then_some("Bot"),
+        }
+    }
+
+    pub fn kind_badge_title(&self) -> &'static str {
+        match self {
+            Self::Local(user) => user.account_kind.badge_title(),
+            Self::Remote(_) => crate::entities::user::AccountKind::Bot.badge_title(),
+        }
     }
 
     /// "Creator" or "Moderator" for the site's staff, shown by the name.

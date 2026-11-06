@@ -27,6 +27,7 @@
     {% endif %}
     <span>
         <strong>{{ author.display_name() }}</strong>
+        {% if author.bot %}<span class="kind-badge" title="{{ "An automated account"|t }}">{{ "Bot"|t }}</span>{% endif %}
         <span class="post-username">{{ author.handle() }}</span>
     </span>
 </a>
@@ -43,6 +44,7 @@
     {% endif %}
     <span>
         <strong>{{ author.display_name() }}</strong>
+        {% if let Some(badge) = author.kind_badge() %}<span class="kind-badge" title="{{ author.kind_badge_title()|t }}">{{ badge|t }}</span>{% endif %}
         <span class="post-username">{{ author.handle() }}</span>
     </span>
 </a>

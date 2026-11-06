@@ -68,7 +68,7 @@ msgid "; use the arrow keys to read each point"
 msgstr " ; utilisez les flèches pour lire chaque point"
 
 msgid "@name@mastodon.social"
-msgstr ""
+msgstr "@nom@mastodon.social"
 
 msgid "A code like en, fr or pt-BR."
 msgstr "Un code comme en, fr ou pt-BR."
@@ -104,7 +104,7 @@ msgid "A separating line"
 msgstr "Une ligne de séparation"
 
 msgid "ALT"
-msgstr ""
+msgstr "ALT"
 
 msgid "About"
 msgstr "À propos"
@@ -893,7 +893,7 @@ msgid "Government"
 msgstr "Administration"
 
 msgid "HD"
-msgstr ""
+msgstr "HD"
 
 msgid "Harassment or bullying"
 msgstr "Harcèlement ou intimidation"
@@ -925,8 +925,8 @@ msgstr "Masqué : laissez vide pour le conserver"
 msgid "Hide"
 msgstr "Masquer"
 
-msgid "Hide from home"
-msgstr "Masquer de l'accueil"
+msgid "Hide from your feed"
+msgstr "Masquer de votre fil"
 
 msgid "History"
 msgstr "Histoire"
@@ -1933,8 +1933,8 @@ msgstr "Afficher plus"
 msgid "Show notes"
 msgstr "Afficher les notes"
 
-msgid "Show on home"
-msgstr "Afficher sur l'accueil"
+msgid "Show in your feed"
+msgstr "Afficher dans votre fil"
 
 msgid "Show the online link to everyone (otherwise only to participants)"
 msgstr "Montrer le lien en ligne à tout le monde (sinon seulement aux participants)"
@@ -3716,3 +3716,1001 @@ msgstr "Aucune vidéo trouvée."
 
 msgid "No article found."
 msgstr "Aucun article trouvé."
+
+# Personal data: copy, deletion, consent, incidents
+
+msgid "12, about 300, unknown..."
+msgstr "12, environ 300, inconnu..."
+
+msgid "A copy can be asked once a day: download the last one below."
+msgstr "Une copie peut être demandée une fois par jour : téléchargez la dernière ci-dessous."
+
+msgid "Accept the Terms of Use and the Privacy Policy to create an account."
+msgstr "Acceptez les conditions d'utilisation et la politique de confidentialité pour créer un compte."
+
+msgid "Ask for a copy"
+msgstr "Demander une copie"
+
+msgid "Authority told on"
+msgstr "Autorité avisée le"
+
+msgid "Being made since {}…"
+msgstr "En préparation depuis {}…"
+
+msgid "Delete my account"
+msgstr "Supprimer mon compte"
+
+msgid "Delete your account"
+msgstr "Supprimer votre compte"
+
+msgid "Delete your account for good?"
+msgstr "Supprimer votre compte définitivement ?"
+
+msgid "Discovered on"
+msgstr "Découvert le"
+
+msgid "Download a copy"
+msgstr "Télécharger une copie"
+
+msgid "Download the copy of {}"
+msgstr "Télécharger la copie du {}"
+
+msgid "Emails, private messages, passwords (hashed)..."
+msgstr "Courriels, messages privés, mots de passe (hachés)..."
+
+msgid "Everything your account wrote, chose and uploaded, in a ZIP: your profile, posts, comments, sent messages, follows, likes, and your files. Readable by other services (JSON). Kept {} days."
+msgstr "Tout ce que votre compte a écrit, choisi et téléversé, dans un ZIP : votre profil, vos publications, commentaires, messages envoyés, abonnements, j'aime et vos fichiers. Lisible par d'autres services (JSON). Conservée {} jours."
+
+msgid "Happened on (if known)"
+msgstr "Survenu le (si connu)"
+
+msgid "I accept"
+msgstr "J'accepte"
+
+msgid "I have read and accept the"
+msgstr "J'ai lu et j'accepte les"
+
+msgid "I understand that everything is deleted for good"
+msgstr "Je comprends que tout est supprimé définitivement"
+
+msgid "If you don't accept them, you can download your data and delete your account in your settings."
+msgstr "Si vous ne les acceptez pas, vous pouvez télécharger vos données et supprimer votre compte dans vos paramètres."
+
+msgid "Incidents"
+msgstr "Incidents"
+
+msgid "Language of the page"
+msgstr "Langue de la page"
+
+msgid "Let search engines (Google, Bing...) show my profile and posts"
+msgstr "Laisser les moteurs de recherche (Google, Bing...) afficher mon profil et mes publications"
+
+msgid "Measures taken"
+msgstr "Mesures prises"
+
+msgid "No incident recorded."
+msgstr "Aucun incident consigné."
+
+msgid "Off: your public profile and posts can still be read here and on the Fediverse, but search engines are asked not to list them."
+msgstr "Désactivé : votre profil et vos publications publics restent lisibles ici et sur le Fédivers, mais les moteurs de recherche sont priés de ne pas les répertorier."
+
+msgid "Our Terms of Use or Privacy Policy changed."
+msgstr "Nos conditions d'utilisation ou notre politique de confidentialité ont changé."
+
+msgid "People affected"
+msgstr "Personnes concernées"
+
+msgid "People told on"
+msgstr "Personnes avisées le"
+
+msgid "Personal data concerned"
+msgstr "Renseignements personnels concernés"
+
+msgid "Privacy contact"
+msgstr "Contact confidentialité"
+
+msgid "Read them:"
+msgstr "Lisez-les :"
+
+msgid "Record an incident"
+msgstr "Consigner un incident"
+
+msgid "Record it"
+msgstr "Le consigner"
+
+msgid "Recorded by @{}"
+msgstr "Consigné par @{}"
+
+msgid "Risk of serious injury to them?"
+msgstr "Risque qu'un préjudice sérieux leur soit causé ?"
+
+msgid "Show the map"
+msgstr "Afficher la carte"
+
+msgid "The accounts, the Fediverse, the privacy contact and the minimum age of the site."
+msgstr "Les comptes, le Fédivers, le contact confidentialité et l'âge minimum du site."
+
+msgid "The creator of the site can't delete their account: someone must run the site."
+msgstr "Le créateur du site ne peut pas supprimer son compte : quelqu'un doit gérer le site."
+
+msgid "The map comes from OpenStreetMap: showing it sends them your IP address."
+msgstr "La carte vient d'OpenStreetMap : l'afficher leur transmet votre adresse IP."
+
+msgid "The register of confidentiality incidents: personal data accessed, used, shared or lost without authorization. Québec's Law 25 asks to record each one and keep it 5 years; the GDPR asks to document them. When there is a risk of serious injury, tell the Commission d'accès à l'information (Québec) or your data protection authority — within 72 hours in Europe — and the people concerned."
+msgstr "Le registre des incidents de confidentialité : renseignements personnels consultés, utilisés, communiqués ou perdus sans autorisation. La Loi 25 du Québec demande de consigner chacun et de le conserver 5 ans ; le RGPD demande de les documenter. En cas de risque de préjudice sérieux, avisez la Commission d'accès à l'information (Québec) ou votre autorité de protection des données — dans les 72 heures en Europe — et les personnes concernées."
+
+msgid "This copy doesn't exist anymore: ask for a new one."
+msgstr "Cette copie n'existe plus : demandez-en une nouvelle."
+
+msgid "Tick the box to confirm that you want to delete your account."
+msgstr "Cochez la case pour confirmer que vous voulez supprimer votre compte."
+
+msgid "Updated terms"
+msgstr "Conditions mises à jour"
+
+msgid "Visitors using this language read this version when it's written, else the English one. In Québec, the French version of the Terms must be offered first."
+msgstr "Les visiteurs qui utilisent cette langue lisent cette version quand elle est écrite, sinon la version anglaise. Au Québec, la version française des conditions doit être offerte en premier."
+
+msgid "What happened"
+msgstr "Ce qui s'est passé"
+
+msgid "Write what happened and when it was discovered."
+msgstr "Écrivez ce qui s'est passé et quand cela a été découvert."
+
+msgid "Wrong password: nothing was done."
+msgstr "Mot de passe erroné : rien n'a été fait."
+
+msgid "Yes: the authority and the people concerned must be told"
+msgstr "Oui : l'autorité et les personnes concernées doivent être avisées"
+
+msgid "You accepted the Terms of Use and the Privacy Policy on {}."
+msgstr "Vous avez accepté les conditions d'utilisation et la politique de confidentialité le {}."
+
+msgid "Your account and everything it posted (posts, comments, photos, videos, messages, follows) are deleted at once, here and on the other servers that have them. This can't be undone: download a copy first if you want to keep anything."
+msgstr "Votre compte et tout ce qu'il a publié (publications, commentaires, photos, vidéos, messages, abonnements) sont supprimés immédiatement, ici et sur les autres serveurs qui les ont. C'est irréversible : téléchargez d'abord une copie si vous voulez garder quelque chose."
+
+msgid "Your copy is being made: it shows here when it's ready, in a few minutes. Reload the page."
+msgstr "Votre copie est en préparation : elle s'affiche ici quand elle est prête, dans quelques minutes. Rechargez la page."
+
+msgid "Your data"
+msgstr "Vos données"
+
+msgid "Your profile, your username and what you publish publicly can be seen by everyone and are sent to other servers of the Fediverse. Your email and birthday stay here, never shown. You can download your data or delete your account at any time in your settings."
+msgstr "Votre profil, votre nom d'utilisateur et ce que vous publiez publiquement sont visibles par tous et envoyés aux autres serveurs du Fédivers. Votre courriel et votre date de naissance restent ici, jamais affichés. Vous pouvez télécharger vos données ou supprimer votre compte à tout moment dans vos paramètres."
+
+msgid "and the"
+msgstr "et les"
+
+msgid "serious risk"
+msgstr "risque sérieux"
+
+msgid "the"
+msgstr "la"
+
+msgid "to be told"
+msgstr "à aviser"
+
+msgid "updated {}"
+msgstr "mis à jour le {}"
+
+msgid "Moderation notices"
+msgstr "Avis de modération"
+
+msgid "The moderators sent you a notice."
+msgstr "Les modérateurs vous ont envoyé un avis."
+
+msgid "Read what they did and why, and appeal if you disagree."
+msgstr "Lisez ce qu'ils ont fait et pourquoi, et faites appel si vous n'êtes pas d'accord."
+
+msgid "Read it"
+msgstr "Le lire"
+
+msgid "An automated account"
+msgstr "Un compte automatisé"
+
+msgid "Bot"
+msgstr "Robot"
+
+msgid "Parody"
+msgstr "Parodie"
+
+msgid "The author says it was made or changed with AI"
+msgstr "L'auteur indique qu'il a été créé ou modifié avec l'IA"
+
+msgid "AI-generated"
+msgstr "Généré par IA"
+
+msgid "Paid for: an advertisement or a partnership"
+msgstr "Rémunéré : une publicité ou un partenariat"
+
+msgid "Sponsored"
+msgstr "Commandité"
+
+msgid "Content warning and labels"
+msgstr "Avertissement et étiquettes"
+
+msgid "Content warning"
+msgstr "Avertissement de contenu"
+
+msgid "Violence, spoilers, politics...: it's hidden behind it"
+msgstr "Violence, divulgâcheurs, politique... : le contenu est caché derrière"
+
+msgid "Made or changed with AI (picture, sound, video or text)"
+msgstr "Créé ou modifié avec l'IA (image, son, vidéo ou texte)"
+
+msgid "Sponsored: paid for, an advertisement or a partnership"
+msgstr "Commandité : rémunéré, une publicité ou un partenariat"
+
+msgid "The server rules ask to label them. Other servers see them too (#AIGenerated, #Ad)."
+msgstr "Les règles du serveur demandent de les indiquer. Les autres serveurs les voient aussi (#AIGenerated, #Ad)."
+
+msgid "Urgent: suspend at once, keep the evidence, and report it to Cybertip.ca or the police."
+msgstr "Urgent : suspendez immédiatement, conservez les preuves et signalez-le à Cyberaide.ca ou à la police."
+
+msgid "Told to the person"
+msgstr "Communiqué à la personne"
+
+msgid "Rule broken"
+msgstr "Règle enfreinte"
+
+msgid "Note for the person (optional)"
+msgstr "Note pour la personne (facultatif)"
+
+msgid "Content warning to add (optional, the rule otherwise)"
+msgstr "Avertissement à ajouter (facultatif, sinon la règle)"
+
+msgid "They see what was done, why, and can appeal, even when suspended."
+msgstr "La personne voit ce qui a été fait, pourquoi, et peut faire appel, même suspendue."
+
+msgid "Add a content warning"
+msgstr "Ajouter un avertissement"
+
+msgid "Warn"
+msgstr "Avertir"
+
+msgid "Limit {}? Only their followers, friends and the staff see what they post, until a moderator lifts it."
+msgstr "Limiter {} ? Seuls ses abonnés, ses amis et l'équipe verront ses publications, jusqu'à ce qu'un modérateur lève la limite."
+
+msgid "Lift the limit"
+msgstr "Lever la limite"
+
+msgid "Limit account"
+msgstr "Limiter le compte"
+
+msgid "People appeal what the moderators did. Accepting reverses it when it can be (suspension, ban, limit, content warning; a deleted post can't come back). Better answered by another moderator than the one who decided."
+msgstr "Les gens font appel de ce que les modérateurs ont fait. Accepter l'annule quand c'est possible (suspension, bannissement, limite, avertissement; une publication supprimée ne peut pas revenir). Mieux vaut qu'un autre modérateur que celui qui a décidé réponde."
+
+msgid "No appeal waiting."
+msgstr "Aucun appel en attente."
+
+msgid "Rule broken:"
+msgstr "Règle enfreinte :"
+
+msgid "Note sent:"
+msgstr "Note envoyée :"
+
+msgid "Their appeal:"
+msgstr "Son appel :"
+
+msgid "Answer for the person"
+msgstr "Réponse pour la personne"
+
+msgid "Accept and reverse"
+msgstr "Accepter et annuler"
+
+msgid "Reject"
+msgstr "Refuser"
+
+msgid "Back to normal"
+msgstr "Revenir à la normale"
+
+msgid "Reject media"
+msgstr "Refuser les médias"
+
+msgid "Reason (optional, shown on the public Moderation page)"
+msgstr "Raison (facultatif, affichée sur la page publique Modération)"
+
+msgid "The moderators act on reports with the server rules, from a reminder to a suspension. The person is told what was done and why, and can appeal."
+msgstr "Les modérateurs traitent les signalements selon les règles du serveur, du simple rappel à la suspension. La personne est informée de ce qui a été fait et pourquoi, et peut faire appel."
+
+msgid "Read the server rules"
+msgstr "Lire les règles du serveur"
+
+msgid "The moderators"
+msgstr "Les modérateurs"
+
+msgid "Reporting"
+msgstr "Signaler"
+
+msgid "Use Report on a post, a comment or a profile. Reports are confidential: the person reported doesn't know who reported them. Other servers can report their members' content here too."
+msgstr "Utilisez Signaler sur une publication, un commentaire ou un profil. Les signalements sont confidentiels : la personne signalée ne sait pas qui l'a signalée. Les autres serveurs peuvent aussi signaler ici le contenu de nos membres."
+
+msgid "For personal data, write to"
+msgstr "Pour les renseignements personnels, écrivez à"
+
+msgid "Notices and appeals"
+msgstr "Avis et appels"
+
+msgid "When the moderators act on an account or on what it posted, its owner gets a notice naming the rule broken, on their Moderation notices page. Each decision can be appealed once, even by a suspended account, by signing in."
+msgstr "Quand les modérateurs agissent sur un compte ou sur ce qu'il a publié, son titulaire reçoit un avis nommant la règle enfreinte, sur sa page Avis de modération. Chaque décision peut être portée en appel une fois, même par un compte suspendu, en se connectant."
+
+msgid "Labels"
+msgstr "Étiquettes"
+
+msgid "Bots and parody accounts carry a badge by their name; a bot names the human answering for it, and publishes at most {} posts an hour. Posts made with AI or sponsored carry a label, and sensitive posts a content warning."
+msgstr "Les robots et les comptes parodiques portent un badge près de leur nom; un robot nomme l'humain qui en répond et publie au plus {} publications par heure. Les publications créées avec l'IA ou commanditées portent une étiquette, et les publications sensibles un avertissement."
+
+msgid "Moderated servers"
+msgstr "Serveurs modérés"
+
+msgid "No server is limited or banned."
+msgstr "Aucun serveur n'est limité ni banni."
+
+msgid "Reason"
+msgstr "Raison"
+
+msgid "Your account is suspended until {}."
+msgstr "Votre compte est suspendu jusqu'au {}."
+
+msgid "Your account is banned."
+msgstr "Votre compte est banni."
+
+msgid "You can read why below, and appeal."
+msgstr "Vous pouvez lire pourquoi ci-dessous, et faire appel."
+
+msgid "When the moderators act on your account or on what you posted, they tell you here what they did and which server rule it broke. You can appeal each decision once: another look is taken, and the answer shows here."
+msgstr "Quand les modérateurs agissent sur votre compte ou sur ce que vous avez publié, ils vous disent ici ce qu'ils ont fait et quelle règle du serveur a été enfreinte. Vous pouvez faire appel de chaque décision une fois : elle est réexaminée, et la réponse s'affiche ici."
+
+msgid "No notice: the moderators never acted on your account."
+msgstr "Aucun avis : les modérateurs n'ont jamais agi sur votre compte."
+
+msgid "Until {}."
+msgstr "Jusqu'au {}."
+
+msgid "About:"
+msgstr "Concerne :"
+
+msgid "Appeal this decision"
+msgstr "Faire appel de cette décision"
+
+msgid "Why should it change?"
+msgstr "Pourquoi devrait-elle changer?"
+
+msgid "Send the appeal"
+msgstr "Envoyer l'appel"
+
+msgid "appealed {}"
+msgstr "appel le {}"
+
+msgid "The moderators' answer:"
+msgstr "Réponse des modérateurs :"
+
+msgid "You blocked this account."
+msgstr "Vous avez bloqué ce compte."
+
+msgid "Block {}? You stop following each other, and you can't see or reach each other anymore. Its server is told."
+msgstr "Bloquer {} ? Vous cessez de vous suivre, et vous ne pouvez plus vous voir ni vous joindre. Son serveur en est informé."
+
+msgid "This account is"
+msgstr "Ce compte est"
+
+msgid "Human answering for the bot"
+msgstr "Humain qui répond du robot"
+
+msgid "@alice or alice@example.com"
+msgstr "@alice ou alice@exemple.com"
+
+msgid "A badge shows it by your name, here and on other servers. A bot must name a human to contact, and can publish at most {} posts an hour."
+msgstr "Un badge l'indique près de votre nom, ici et sur les autres serveurs. Un robot doit nommer un humain à contacter, et peut publier au plus {} publications par heure."
+
+msgid "Blocked accounts"
+msgstr "Comptes bloqués"
+
+msgid "You haven't blocked anyone. Block someone from their profile: you stop seeing each other, and they can't follow, message or notify you."
+msgstr "Vous n'avez bloqué personne. Bloquez quelqu'un depuis son profil : vous cessez de vous voir, et la personne ne peut plus vous suivre, vous écrire ni vous notifier."
+
+msgid "Run by"
+msgstr "Géré par"
+
+msgid "You blocked @{}."
+msgstr "Vous avez bloqué @{}."
+
+msgid "Block @{}? You stop following each other and being friends, and you can't see or reach each other anymore."
+msgstr "Bloquer @{} ? Vous cessez de vous suivre et d'être amis, et vous ne pouvez plus vous voir ni vous joindre."
+
+msgid "A person or an organization"
+msgstr "Une personne ou une organisation"
+
+msgid "A bot: it posts automatically"
+msgstr "Un robot : il publie automatiquement"
+
+msgid "A parody, fan or commentary account"
+msgstr "Un compte parodique, de fan ou de commentaire"
+
+msgid "A parody, fan or commentary account: not who it imitates"
+msgstr "Un compte parodique, de fan ou de commentaire : pas la personne imitée"
+
+msgid "A bot must name the human answering for it, in at most {} characters."
+msgstr "Un robot doit nommer l'humain qui en répond, en au plus {} caractères."
+
+msgid "A bot can publish at most {} posts an hour: try again later."
+msgstr "Un robot peut publier au plus {} publications par heure : réessayez plus tard."
+
+msgid "Hate speech or discrimination"
+msgstr "Discours haineux ou discrimination"
+
+msgid "Harassment, threats or doxxing"
+msgstr "Harcèlement, menaces ou divulgation d'informations personnelles"
+
+msgid "Sexualization of minors"
+msgstr "Sexualisation de mineurs"
+
+msgid "Sensitive content without a content warning"
+msgstr "Contenu sensible sans avertissement"
+
+msgid "Private information or intimate images without consent"
+msgstr "Renseignements privés ou images intimes sans consentement"
+
+msgid "Violent extremism or glorification of violence"
+msgstr "Extrémisme violent ou glorification de la violence"
+
+msgid "Impersonation, disinformation, or an unlabelled bot, AI media or ad"
+msgstr "Usurpation d'identité, désinformation, ou robot, média IA ou publicité non indiqué"
+
+msgid "Warning"
+msgstr "Avertissement"
+
+msgid "Content removed"
+msgstr "Contenu supprimé"
+
+msgid "Content marked sensitive"
+msgstr "Contenu marqué sensible"
+
+msgid "Account limited"
+msgstr "Compte limité"
+
+msgid "Account suspended"
+msgstr "Compte suspendu"
+
+msgid "Account banned"
+msgstr "Compte banni"
+
+msgid "Nothing was removed: the moderators ask you to follow the server rules."
+msgstr "Rien n'a été supprimé : les modérateurs vous demandent de respecter les règles du serveur."
+
+msgid "The moderators deleted it, here and on the other servers that had it."
+msgstr "Les modérateurs l'ont supprimé, ici et sur les autres serveurs qui l'avaient."
+
+msgid "The moderators added a content warning to it: it's hidden until clicked."
+msgstr "Les modérateurs y ont ajouté un avertissement : il est caché jusqu'à ce qu'on clique."
+
+msgid "Only the people following you, your friends and the moderators see what you post."
+msgstr "Seuls vos abonnés, vos amis et les modérateurs voient vos publications."
+
+msgid "You can't sign in, and your profile and posts are hidden, until the end of the suspension."
+msgstr "Vous ne pouvez pas vous connecter, et votre profil et vos publications sont cachés, jusqu'à la fin de la suspension."
+
+msgid "You can't sign in anymore, and your profile and posts are hidden."
+msgstr "Vous ne pouvez plus vous connecter, et votre profil et vos publications sont cachés."
+
+msgid "Appeal waiting for a moderator"
+msgstr "Appel en attente d'un modérateur"
+
+msgid "Appeal accepted: the decision was reversed"
+msgstr "Appel accepté : la décision a été annulée"
+
+msgid "Appeal rejected: the decision stays"
+msgstr "Appel refusé : la décision est maintenue"
+
+msgid "Your appeal is sent: a moderator will answer it here."
+msgstr "Votre appel est envoyé : un modérateur y répondra ici."
+
+msgid "Explain why the decision should change."
+msgstr "Expliquez pourquoi la décision devrait changer."
+
+msgid "This notice can't be appealed anymore."
+msgstr "Cet avis ne peut plus être porté en appel."
+
+msgid "Accepted: the decision is reversed, and the person is told."
+msgstr "Accepté : la décision est annulée, et la personne en est informée."
+
+msgid "Rejected: the person is told."
+msgstr "Refusé : la personne en est informée."
+
+msgid "This appeal was already answered."
+msgstr "Cet appel a déjà reçu une réponse."
+
+msgid "This page is for the site's staff."
+msgstr "Cette page est réservée à l'équipe du site."
+
+msgid "Appeals"
+msgstr "Appels"
+
+msgid "The warning is sent, and the report resolved."
+msgstr "L'avertissement est envoyé, et le signalement résolu."
+
+msgid "It's behind a content warning now, and the report resolved."
+msgstr "Le contenu est maintenant derrière un avertissement, et le signalement résolu."
+
+msgid "The account is limited, and the report resolved."
+msgstr "Le compte est limité, et le signalement résolu."
+
+msgid "The account isn't limited anymore."
+msgstr "Le compte n'est plus limité."
+
+msgid "Accounts of the staff can't be warned, limited, banned, suspended or deleted here."
+msgstr "Les comptes de l'équipe ne peuvent pas être avertis, limités, bannis, suspendus ni supprimés ici."
+
+msgid "Its media are rejected: its posts come without their pictures, videos and sounds."
+msgstr "Ses médias sont refusés : ses publications arrivent sans leurs images, vidéos et sons."
+
+msgid "Media rejected"
+msgstr "Médias refusés"
+
+msgid "Its posts only reach the people following its accounts."
+msgstr "Ses publications n'atteignent que les abonnés de ses comptes."
+
+msgid "Nothing comes from it nor goes to it."
+msgstr "Rien n'en vient et rien n'y va."
+
+msgid "Its posts come, without their pictures, videos and sounds."
+msgstr "Ses publications arrivent, sans leurs images, vidéos et sons."
+
+msgid "You can't write to this person: one of you blocked the other."
+msgstr "Vous ne pouvez pas écrire à cette personne : l'un de vous a bloqué l'autre."
+
+msgid "You can't do this: one of you blocked the other."
+msgstr "Impossible : l'un de vous a bloqué l'autre."
+
+msgid "Moderation notice"
+msgstr "Avis de modération"
+
+msgid "Your appeal was answered"
+msgstr "Votre appel a reçu une réponse"
+
+msgid "You can read the details and appeal once, even if your account is suspended, by signing in."
+msgstr "Vous pouvez lire les détails et faire appel une fois, même si votre compte est suspendu, en vous connectant."
+
+msgid "You can read the details and appeal once, even if your account is suspended, by signing in:"
+msgstr "Vous pouvez lire les détails et faire appel une fois, même si votre compte est suspendu, en vous connectant :"
+
+msgid "Your moderation notices"
+msgstr "Vos avis de modération"
+
+msgid "The moderators of {} answered your appeal."
+msgstr "Les modérateurs de {} ont répondu à votre appel."
+
+msgid "The moderators of {} acted on your account."
+msgstr "Les modérateurs de {} ont agi sur votre compte."
+
+msgid "{}: your appeal was answered"
+msgstr "{} : votre appel a reçu une réponse"
+
+msgid "{}: a moderation notice"
+msgstr "{} : un avis de modération"
+
+msgid "Unlisted: not in public lists"
+msgstr "Non listé : hors des listes publiques"
+
+msgid "A bot only answers people who follow it or mention it."
+msgstr "Un robot ne répond qu'aux personnes qui le suivent ou le mentionnent."
+
+msgid "A bot only writes to people who follow it or wrote to it first."
+msgstr "Un robot n'écrit qu'aux personnes qui le suivent ou lui ont écrit d'abord."
+
+msgid "Too many tries: wait an hour and try again."
+msgstr "Trop d'essais : attendez une heure et réessayez."
+
+msgid "Too many tries: wait 15 minutes and try again."
+msgstr "Trop d'essais : attendez 15 minutes et réessayez."
+
+msgid "Show password"
+msgstr "Afficher le mot de passe"
+
+msgid "Hide password"
+msgstr "Masquer le mot de passe"
+
+msgid "The camera is blocked for this site: allow it in the browser (the icon left of the address), then try again."
+msgstr "La caméra est bloquée pour ce site : autorisez-la dans le navigateur (l'icône à gauche de l'adresse), puis réessayez."
+
+msgid "The browser sees no camera. Check that it's plugged in and works in other apps."
+msgstr "Le navigateur ne voit aucune caméra. Vérifiez qu'elle est branchée et qu'elle fonctionne dans d'autres applications."
+
+msgid "The camera couldn't start: another app may be using it, or its driver failed."
+msgstr "La caméra n'a pas pu démarrer : une autre application l'utilise peut-être, ou son pilote a échoué."
+
+msgid "The camera only works on a secure (https) address of the site."
+msgstr "La caméra ne fonctionne qu'avec une adresse sécurisée (https) du site."
+
+msgid "1 to {} photos: JPEG, PNG, GIF or WebP."
+msgstr "1 à {} photos : JPEG, PNG, GIF ou WebP."
+
+msgid "A badge shows it by your name, here and on other servers. A bot must name a human to contact, and can publish at most one post an hour."
+msgstr "Un badge l'indique à côté de votre nom, ici et sur les autres serveurs. Un robot doit nommer une personne à joindre et peut publier au plus une publication par heure."
+
+msgid "A bot can publish at most one post an hour: try again later."
+msgstr "Un robot peut publier au plus une publication par heure : réessayez plus tard."
+
+msgid "A community's events shows on its page, and its moderators can manage them."
+msgstr "Les événements d'une communauté s'affichent sur sa page, et ses modérateurs peuvent les gérer."
+
+msgid "A post can be at most {} characters (a link counts for 23, and @name@server for @name)."
+msgstr "Une publication peut compter au plus {} caractères (un lien compte pour 23, et @nom@serveur pour @nom)."
+
+msgid "Accepted, and the person is told, but the content was already erased: it can't come back."
+msgstr "Accepté, et la personne est avisée, mais le contenu était déjà effacé : il ne peut pas revenir."
+
+msgid "Add a photo: this server shares photos, not text alone."
+msgstr "Ajoutez une photo : ce serveur partage des photos, pas du texte seul."
+
+msgid "Also with people on Mastodon, Pleroma, Hubzilla, Misskey and other compatible Fediverse servers."
+msgstr "Aussi avec des personnes sur Mastodon, Pleroma, Hubzilla, Misskey et d'autres serveurs compatibles du Fédivers."
+
+msgid "An email was sent at sign up: open the link to confirm your address."
+msgstr "Un courriel a été envoyé à l'inscription : ouvrez le lien pour confirmer votre adresse."
+
+msgid "Block @{}? You stop seeing each other, and they can't follow, message or notify you."
+msgstr "Bloquer @{}? Vous ne vous verrez plus, et cette personne ne pourra plus vous suivre, vous écrire ni vous notifier."
+
+msgid "Block this account? You stop seeing each other, and its server is told."
+msgstr "Bloquer ce compte? Vous ne vous verrez plus, et son serveur en est avisé."
+
+msgid "Bots and parody accounts carry a badge by their name; a bot names the human answering for it, and publishes at most one post an hour. Posts made with AI or sponsored carry a label, and sensitive posts a content warning."
+msgstr "Les robots et les comptes parodiques portent un badge à côté de leur nom; un robot nomme la personne qui en répond et publie au plus une publication par heure. Les publications faites avec l'IA ou commanditées portent une étiquette, et les publications sensibles un avertissement de contenu."
+
+msgid "Connect"
+msgstr "Se connecter"
+
+msgid "Conversation settings"
+msgstr "Paramètres de la conversation"
+
+msgid "Converting… It appears in feeds when it's ready; only you see it until it's ready. Reload the page to check."
+msgstr "Conversion en cours… Elle apparaîtra dans les fils une fois prête; d'ici là, vous seul la voyez. Rechargez la page pour vérifier."
+
+msgid "Created or modified by AI (picture, sound, video or text)"
+msgstr "Créé ou modifié par IA (image, son, vidéo ou texte)"
+
+msgid "Delete this message? It goes for both people of the conversation."
+msgstr "Supprimer ce message? Il disparaît pour les deux personnes de la conversation."
+
+msgid "Didn't received it? Send it again"
+msgstr "Vous ne l'avez pas reçu? Envoyez-le de nouveau"
+
+msgid "Events coming up"
+msgstr "Événements à venir"
+
+msgid "Events over"
+msgstr "Événements passés"
+
+msgid "Example: in OBS: Settings → Stream → Service:"
+msgstr "Exemple, dans OBS : Paramètres → Stream → Service :"
+
+msgid "Followers who left aren't kept."
+msgstr "Les abonnés partis ne sont pas conservés."
+
+msgid "If you don't accept them, you can download your data and delete your account in the settings."
+msgstr "Si vous ne les acceptez pas, vous pouvez télécharger vos données et supprimer votre compte dans les paramètres."
+
+msgid "Individual"
+msgstr "Personne"
+
+msgid "Keep the key secret: anyone who has it can stream as youand must be reset."
+msgstr "Gardez la clé secrète : quiconque l'a peut diffuser en votre nom, et elle doit alors être réinitialisée."
+
+msgid "Keep the replay: the stream becomes a VOD"
+msgstr "Garder la rediffusion : le direct devient une vidéo à la demande"
+
+msgid "Message from {}"
+msgstr "Message de {}"
+
+msgid "Mute notifications"
+msgstr "Mettre les notifications en sourdine"
+
+msgid "Muted"
+msgstr "En sourdine"
+
+msgid "Muted: you won't be notified of new messages in this conversation."
+msgstr "En sourdine : vous ne serez pas avisé des nouveaux messages de cette conversation."
+
+msgid "No conversation yet. Write to someone above, or use \"Message\" on a profile. Your friends will appear here."
+msgstr "Aucune conversation pour l'instant. Écrivez à quelqu'un ci-dessus, ou utilisez « Message » sur un profil. Vos amis apparaîtront ici."
+
+msgid "No messages yet, say something"
+msgstr "Aucun message pour l'instant, dites quelque chose"
+
+msgid "No post yet..."
+msgstr "Aucune publication pour l'instant…"
+
+msgid "Nothing here yet: when you publish something, it appears here with its statistics."
+msgstr "Rien ici pour l'instant : quand vous publiez quelque chose, il apparaît ici avec ses statistiques."
+
+msgid "Output: video encoder x264 or any H.264 encoder, keyframe interval 2 s, bitrate up to 6000 kbps; audio AAC. Video: 1280×720 or 1920×1080, 30 or 60 fps. Converts the stream at most in 1080p."
+msgstr "Sortie : encodeur vidéo x264 ou tout encodeur H.264, intervalle d'images clés 2 s, débit jusqu'à 6000 kb/s; audio AAC. Vidéo : 1280×720 ou 1920×1080, 30 ou 60 i/s. Le direct est converti au plus en 1080p."
+
+msgid "Participants approval required"
+msgstr "Approbation des participants requise"
+
+msgid "People appeal what the moderators did. Accepting reverses it: suspension, ban, limit, content warning, and posts or comments removed less than {} days ago, which come back (some other servers, like Mastodon, may not show them again). Better answered by another moderator than the one who decided."
+msgstr "Les personnes font appel de ce que les modérateurs ont fait. Accepter l'annule : suspension, bannissement, limitation, avertissement de contenu, et publications ou commentaires retirés il y a moins de {} jours, qui reviennent (certains autres serveurs, comme Mastodon, peuvent ne pas les réafficher). Il vaut mieux qu'un autre modérateur que celui qui a décidé y réponde."
+
+msgid "Recommended settings"
+msgstr "Réglages recommandés"
+
+msgid "Recommended: 1280×720 (16:9). Otherwise a frame of the video is used."
+msgstr "Recommandé : 1280×720 (16:9). Sinon, une image de la vidéo est utilisée."
+
+msgid "Remove it? It's hidden at once and other servers are told; it's erased after {} days, unless an appeal brings it back."
+msgstr "Le retirer? Il est masqué immédiatement et les autres serveurs sont avisés; il est effacé après {} jours, sauf si un appel le rétablit."
+
+msgid "Removed, and the report resolved."
+msgstr "Retiré, et le signalement est résolu."
+
+msgid "Report @{}"
+msgstr "Signaler @{}"
+
+msgid "Report this account"
+msgstr "Signaler ce compte"
+
+msgid "Say something..."
+msgstr "Dites quelque chose…"
+
+msgid "Search people, communities, or @username@domain"
+msgstr "Chercher des personnes, des communautés ou @utilisateur@domaine"
+
+msgid "Search people, or @username@domain"
+msgstr "Chercher des personnes ou @utilisateur@domaine"
+
+msgid "Send a message"
+msgstr "Envoyer un message"
+
+msgid "Share something with this community..."
+msgstr "Partagez quelque chose avec cette communauté…"
+
+msgid "Share something..."
+msgstr "Partagez quelque chose…"
+
+msgid "Show the link publicly (otherwise only the participants will see it)"
+msgstr "Afficher le lien publiquement (sinon, seuls les participants le verront)"
+
+msgid "Since it was published. Choose one to see more."
+msgstr "Depuis sa publication. Choisissez-en une pour en voir plus."
+
+msgid "Sponsored: advertisement or partnership"
+msgstr "Commandité : publicité ou partenariat"
+
+msgid "Starts (required)"
+msgstr "Début (obligatoire)"
+
+msgid "Stream from any streaming app. Your followers see a post when you go live, and will be public"
+msgstr "Diffusez depuis n'importe quelle application de diffusion. Vos abonnés voient une publication quand vous passez en direct, et elle sera publique"
+
+msgid "Stream stops working with the old key. Use the new one."
+msgstr "La diffusion ne fonctionnera plus avec l'ancienne clé. Utilisez la nouvelle."
+
+msgid "Terms of Use and/or Privacy Policy changed."
+msgstr "Les Conditions d'utilisation ou la Politique de confidentialité ont changé."
+
+msgid "The author says it was created or modified by AI"
+msgstr "L'auteur indique que c'est créé ou modifié par IA"
+
+msgid "The moderators removed it, here and on the other servers that had it. It's kept hidden for a while: if your appeal is accepted in time, it comes back."
+msgstr "Les modérateurs l'ont retiré, ici et sur les autres serveurs qui l'avaient. Il reste masqué un certain temps : si votre appel est accepté à temps, il revient."
+
+msgid "The register of confidentiality incidents: personal data accessed, used, shared or lost without authorization. Record each one and keep it 5 years; the GDPR asks to document them. When there is a risk of serious injury, tell the Commission d'accès à l'information (Québec) or your data protection authority — within 72 hours in Europe — and the people concerned."
+msgstr "Le registre des incidents de confidentialité : données personnelles consultées, utilisées, communiquées ou perdues sans autorisation. Inscrivez chacun et conservez-le 5 ans; le RGPD demande de les documenter. En cas de risque de préjudice sérieux, avisez la Commission d'accès à l'information (Québec) ou votre autorité de protection des données — dans les 72 heures en Europe — ainsi que les personnes concernées."
+
+msgid "The server rules ask to label them. Other servers see them as #AIGenerated and #Ad."
+msgstr "Les règles du serveur demandent de les identifier. Les autres serveurs les voient comme #AIGenerated et #Ad."
+
+msgid "The servers this server has met."
+msgstr "Les serveurs que ce serveur a rencontrés."
+
+msgid "This community is private: only approved members can read its posts."
+msgstr "Cette communauté est privée : seuls les membres approuvés peuvent lire ses publications."
+
+msgid "This message does not exist."
+msgstr "Ce message n'existe pas."
+
+msgid "This private message is shown to the moderators with your report, so they can judge it. Nothing else of the conversation is."
+msgstr "Ce message privé est montré aux modérateurs avec votre signalement, pour qu'ils puissent en juger. Rien d'autre de la conversation ne l'est."
+
+msgid "Unmute notifications"
+msgstr "Réactiver les notifications"
+
+msgid "Up to {} MB, any video format"
+msgstr "Jusqu'à {} Mo, tout format vidéo"
+
+msgid "Up to {} photos: JPEG, PNG, GIF or WebP."
+msgstr "Jusqu'à {} photos : JPEG, PNG, GIF ou WebP."
+
+msgid "Upload"
+msgstr "Téléverser"
+
+msgid "View the profile"
+msgstr "Voir le profil"
+
+msgid "Violence, spoilers, politics..."
+msgstr "Violence, divulgâcheurs, politique…"
+
+msgid "When an address is specified, it will be shown on a map."
+msgstr "Lorsqu'une adresse est indiquée, elle est affichée sur une carte."
+
+msgid "When the moderators act on an account or on what it posted, its owner gets a notice naming the rule broken. Each decision can be appealed once, even by a suspended account, by signing in."
+msgstr "Quand les modérateurs agissent sur un compte ou sur ce qu'il a publié, son propriétaire reçoit un avis indiquant la règle enfreinte. Chaque décision peut faire l'objet d'un appel une fois, même par un compte suspendu, en se connectant."
+
+msgid "Where (required)"
+msgstr "Où (obligatoire)"
+
+msgid "Wide pictures look best, like 1920×1080."
+msgstr "Les images larges rendent mieux, comme 1920×1080."
+
+msgid "Write a caption..."
+msgstr "Écrivez une légende…"
+
+msgid "Write an article"
+msgstr "Écrire un article"
+
+msgid "Write an article."
+msgstr "Écrivez un article."
+
+msgid "Write to a user using its username or @username@domain"
+msgstr "Écrivez à quelqu'un avec son nom d'utilisateur ou @utilisateur@domaine"
+
+msgid "You can't report your own message."
+msgstr "Vous ne pouvez pas signaler votre propre message."
+
+msgid "You haven't blocked anyone. When you block someone you stop seeing each other, and they can't follow, message or notify you."
+msgstr "Vous n'avez bloqué personne. Quand vous bloquez quelqu'un, vous ne vous voyez plus, et cette personne ne peut plus vous suivre, vous écrire ni vous notifier."
+
+msgid "You will be notified of new messages in this conversation again."
+msgstr "Vous serez de nouveau avisé des nouveaux messages de cette conversation."
+
+msgid "Your article preview shows here."
+msgstr "L'aperçu de votre article s'affiche ici."
+
+msgid "mentioned you"
+msgstr "vous a mentionné"
+
+msgid "message"
+msgstr "message"
+
+msgid "{} characters left"
+msgstr "{} caractères restants"
+
+msgid "{} characters too many"
+msgstr "{} caractères de trop"
+
+msgid "(LitePub, Pleroma)"
+msgstr "(LitePub, Pleroma)"
+
+msgid "(Mastodon)"
+msgstr "(Mastodon)"
+
+msgid "A relay forwards public posts between the servers following it: this site receives the public posts of other servers (they show in search, on hashtag pages and in feeds following the hashtags), discovers their accounts, and sends its own public posts. Unlisted, followers-only and private posts never go to relays."
+msgstr "Un relais transmet les publications publiques entre les serveurs qui le suivent : ce site reçoit les publications publiques d'autres serveurs (elles apparaissent dans la recherche, sur les pages des mots-clics et dans les fils qui suivent ces mots-clics), découvre leurs comptes et envoie ses propres publications publiques. Les publications non listées, réservées aux abonnés ou privées ne vont jamais aux relais."
+
+msgid "A relay's address starts with https://."
+msgstr "L'adresse d'un relais commence par https://."
+
+msgid "Ask again"
+msgstr "Redemander"
+
+msgid "Connected"
+msgstr "Connecté"
+
+msgid "Follow it to see its public posts in your feed."
+msgstr "Suivez-le pour voir ses publications publiques dans votre fil."
+
+msgid "Follow the hashtag"
+msgstr "Suivre le mot-clic"
+
+msgid "Follow the relay"
+msgstr "Suivre le relais"
+
+msgid "Followed hashtags"
+msgstr "Mots-clics suivis"
+
+msgid "Its inbox for Mastodon relays (ending with /inbox), or its actor for LitePub and Pleroma relays (often ending with /actor)."
+msgstr "Sa boîte de réception pour les relais Mastodon (se termine par /inbox), ou son acteur pour les relais LitePub et Pleroma (se termine souvent par /actor)."
+
+msgid "Its public posts show in your feed."
+msgstr "Ses publications publiques apparaissent dans votre fil."
+
+msgid "Let my public posts be found by the search, here and on other servers"
+msgstr "Permettre que mes publications publiques soient trouvées par la recherche, ici et sur d'autres serveurs"
+
+msgid "No relay found at this address."
+msgstr "Aucun relais trouvé à cette adresse."
+
+msgid "No relay followed."
+msgstr "Aucun relais suivi."
+
+msgid "No server uses this site as a relay."
+msgstr "Aucun serveur n'utilise ce site comme relais."
+
+msgid "Off: other servers can't use this site as their relay. Turn on RELAY-SERVER in settings.conf (Configuration tab) to let them ask."
+msgstr "Désactivé : les autres serveurs ne peuvent pas utiliser ce site comme relais. Activez RELAY-SERVER dans settings.conf (onglet Configuration) pour qu'ils puissent le demander."
+
+msgid "Off: your posts don't show in search results, except for you and people who interacted with them. Your profile can still be found by its name, and your hashtags still show on their pages."
+msgstr "Désactivé : vos publications n'apparaissent pas dans les résultats de recherche, sauf pour vous et les personnes qui ont interagi avec elles. Votre profil peut toujours être trouvé par son nom, et vos mots-clics apparaissent toujours sur leurs pages."
+
+msgid "Other servers can use this site as their relay with this address, each accepted here first:"
+msgstr "D'autres serveurs peuvent utiliser ce site comme relais avec cette adresse, chacun accepté ici d'abord :"
+
+msgid "Paused"
+msgstr "En pause"
+
+msgid "Paused: nothing is sent to it nor read from it."
+msgstr "En pause : rien ne lui est envoyé ni lu de lui."
+
+msgid "Refused"
+msgstr "Refusé"
+
+msgid "Relay address"
+msgstr "Adresse du relais"
+
+msgid "Relays"
+msgstr "Relais"
+
+msgid "Relays followed"
+msgstr "Relais suivis"
+
+msgid "Stop following this relay?"
+msgstr "Ne plus suivre ce relais?"
+
+msgid "Stop relaying for this server?"
+msgstr "Ne plus relayer pour ce serveur?"
+
+msgid "The relay is asked again."
+msgstr "Le relais est sollicité de nouveau."
+
+msgid "The relay is asked: it shows as connected once it accepts."
+msgstr "La demande est envoyée au relais : il apparaîtra comme connecté une fois qu'il aura accepté."
+
+msgid "The relay is removed, and told."
+msgstr "Le relais est retiré, et il en est avisé."
+
+msgid "The server is accepted: it gets the public posts relayed here."
+msgstr "Le serveur est accepté : il reçoit les publications publiques relayées ici."
+
+msgid "The server is refused, and told."
+msgstr "Le serveur est refusé, et il en est avisé."
+
+msgid "This server is banned here."
+msgstr "Ce serveur est banni ici."
+
+msgid "This site as a relay"
+msgstr "Ce site comme relais"
+
+msgid "Unfollow the hashtag"
+msgstr "Ne plus suivre le mot-clic"
+
+msgid "Waiting for its answer"
+msgstr "En attente de sa réponse"
+
+msgid "You already posted this text today: repeating it looks like spam."
+msgstr "Vous avez déjà publié ce texte aujourd'hui : le répéter ressemble à du pourriel."
+
+msgid "You already wrote this comment several times: repeating it looks like spam."
+msgstr "Vous avez déjà écrit ce commentaire plusieurs fois : le répéter ressemble à du pourriel."
+
+msgid "You can follow at most {} hashtags."
+msgstr "Vous pouvez suivre au plus {} mots-clics."
+
+msgid "You commented a lot this hour: wait a little before commenting again."
+msgstr "Vous avez beaucoup commenté cette heure-ci : attendez un peu avant de commenter de nouveau."
+
+msgid "You don't follow any hashtag. Open one (like on a post) and follow it to see its public posts in your feed."
+msgstr "Vous ne suivez aucun mot-clic. Ouvrez-en un (par exemple sur une publication) et suivez-le pour voir ses publications publiques dans votre fil."
+
+msgid "You published a lot this hour: wait a little before publishing again."
+msgstr "Vous avez beaucoup publié cette heure-ci : attendez un peu avant de publier de nouveau."
+
+msgid "You sent this same message several times in the last hour: repeating it looks like spam."
+msgstr "Vous avez envoyé ce même message plusieurs fois dans la dernière heure : le répéter ressemble à du pourriel."
+
+msgid "automatic report (anti-spam)"
+msgstr "signalement automatique (anti-pourriel)"
+
+msgid "since {}"
+msgstr "depuis le {}"

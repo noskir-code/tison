@@ -11,11 +11,11 @@
     {% call dashboard_ui::charts(charts) %}{% endcall %}
 
     {% if let Some(rows) = content %}
-    <h2 class="dashboard-list-title">{{ "Each one"|t }}</h2>
+    <h2 class="dashboard-list-title">{{ "Individual"|t }}</h2>
     {% if rows.is_empty() %}
-    <p class="empty">{{ "Nothing here yet: what you publish appears here with its numbers."|t }}</p>
+    <p class="empty">{{ "Nothing here yet: when you publish something, it appears here with its statistics."|t }}</p>
     {% else %}
-    <p class="post-username">{{ "Since it was published. Choose one to see its days."|t }}</p>
+    <p class="post-username">{{ "Since it was published. Choose one to see more."|t }}</p>
     <div class="instance-table-wrap">
         <table class="content-table">
             <thead>
@@ -50,7 +50,7 @@
     {% endif %}
     {% endif %}
     {% if tab_slug == "followers" %}
-    <p class="post-username">{{ "Followers who left aren't kept: the line shows your followers of today, by the day they followed you."|t }}</p>
+    <p class="post-username">{{ "Followers who left aren't kept."|t }}</p>
     {% endif %}
 </section>
 {% endblock %}

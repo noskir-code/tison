@@ -57,6 +57,7 @@
             <option value="{{ visibility.as_str() }}">{{ visibility.label()|t }}</option>
             {% endfor %}
         </select>
+        {% call posts_ui::label_fields("episode", "", false, false) %}{% endcall %}
         {% call upload_ui::upload_button("Publish the episode"|t) %}{% endcall %}
     </form>
 </section>

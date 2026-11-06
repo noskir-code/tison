@@ -1,7 +1,7 @@
 //! Reports and the moderation dashboard.
 //!
-//! Users report a post, a comment or an account (`/report?post=12`,
-//! `?comment=`, `?user=`, `?remote=`). Reports also come from other servers
+//! Users report a post, a comment, a message they received or an account
+//! (`/report?post=12`, `?comment=`, `?message=`, `?user=`, `?remote=`). Reports also come from other servers
 //! (Fediverse `Flag`, see `API::activities`). The site's staff (`moderator`
 //! and `admin` roles) handle them on `/moderation`: delete what was
 //! reported, suspend a local user, block an account of another server, or
@@ -26,6 +26,7 @@ use crate::{
         author::Author,
         comment,
         federation as store,
+        notice,
         post,
         site_page::{self, SitePage},
         report::{self, COMMENT_MAX_CHARS, NewReport, Reason, Report, Status, Target},
@@ -54,10 +55,13 @@ struct ReportTemplate {
     target_label: String,
     /// The reported text, empty for an account.
     excerpt: String,
-    reasons: [Reason; 6],
+    reasons: [Reason; 10],
     comment_max_chars: usize,
     error: Option<String>,
     done: bool,
+    /// Where "Back" and "Cancel" lead without JavaScript (with it, back in
+    /// the history, see `data-history-back` in system.js).
+    back_url: String,
 }
 
 /// What `?post=`, `?comment=`, `?user=` or `?remote=` points to, as the
@@ -88,7 +92,7 @@ async fn resolve_target(pool: &PgPool, me: &User, query: &HashMap<String, String
         return Ok((new(Target::Post(post_id), Some(account_of(&post.author)), &post.body, label), ("post", post_id.to_string())));
     }
     if let Some(comment_id) = number("comment") {
-        let (found, post_id) = comment::find_any(pool, comment_id).await.ok().flatten().ok_or("This comment does not exist.")?;
+        let (found, post_id) = comment::find_any(pool, comment_id).await.ok().flatten().filter(|(found, _)| !found.removed).ok_or("This comment does not exist.")?;
         // Only comments of posts the viewer can see.
         post::find(pool, post_id, Some(me.id)).await.ok().flatten().ok_or("This comment does not exist.")?;
         if found.author.local().is_some_and(|author| author.id == me.id) {
@@ -98,6 +102,21 @@ async fn resolve_target(pool: &PgPool, me: &User, query: &HashMap<String, String
         return Ok((
             new(Target::Comment(comment_id), Some(account_of(&found.author)), &found.body, label),
             ("comment", comment_id.to_string()),
+        ));
+    }
+    if let Some(message_id) = number("message") {
+        // Only a message of a conversation the viewer is in.
+        let found = crate::entities::message::find_visible(pool, message_id, me.id).await.ok().flatten().ok_or("This message does not exist.")?;
+        if found.is_mine {
+            return Err("You can't report your own message.");
+        }
+        if found.author.local().is_some_and(|author| author.is_staff()) {
+            return Err("The staff of the site can't be reported.");
+        }
+        let label = crate::i18n::tf("Message from {}", found.author.handle());
+        return Ok((
+            new(Target::Message(message_id), Some(account_of(&found.author)), &found.body, label),
+            ("message", message_id.to_string()),
         ));
     }
     if let Some(username) = query.get("user") {
@@ -133,9 +152,22 @@ pub async fn report_page(
         Ok(found) => found,
         Err(message) => return error_page(layout, StatusCode::NOT_FOUND, message),
     };
+    let back_url = match field.0 {
+        "post" => format!("/posts/{}", field.1),
+        "comment" => comment::post_of(&pool, field.1.parse().unwrap_or_default())
+            .await
+            .ok()
+            .flatten()
+            .map_or_else(|| "/".to_string(), |post_id| format!("/posts/{post_id}#comment-{}", field.1)),
+        "message" => "/messenger".to_string(),
+        "user" => format!("/user/{}", field.1),
+        "remote" => format!("/remote/{}", field.1),
+        _ => "/".to_string(),
+    };
     render_template(&ReportTemplate {
         title: "Report".to_string(),
         layout,
+        back_url,
         target_field: field,
         excerpt: target.snapshot,
         target_label: target.target_label,
@@ -151,6 +183,10 @@ pub async fn send_report(State(state): State<AppState>, session: Session, Form(f
         Ok(signed_in) => signed_in,
         Err(response) => return response,
     };
+    let key = me.id.to_string();
+    if !crate::security::hit(crate::security::Limit::Report, &key) {
+        return error_page(Layout::load(&state, &session).await, StatusCode::TOO_MANY_REQUESTS, crate::security::Limit::Report.message());
+    }
     let (mut target, (field, value)) = match resolve_target(&pool, &me, &form).await {
         Ok(found) => found,
         Err(message) => return error_page(Layout::load(&state, &session).await, StatusCode::NOT_FOUND, message),
@@ -199,6 +235,8 @@ struct ModerationTemplate {
     message: Option<&'static str>,
     /// The choices of a suspension, see `SUSPENSION_DAYS`.
     suspension_days: [i32; 7],
+    /// The rules a notice can name, see `entities::notice`.
+    rules: [Reason; 10],
 }
 
 /// The signed-in member of the site's staff, else the page to show.
@@ -243,7 +281,7 @@ pub async fn dashboard(State(state): State<AppState>, session: Session, Query(qu
         })
         .collect();
     let message = query.get("done").map(|done| match done.as_str() {
-        "deleted" => "Deleted, and the report resolved.",
+        "deleted" => "Removed, and the report resolved.",
         "banned" => "The account is banned, and the report resolved.",
         "suspended" => "The account is suspended, and the report resolved.",
         "unsuspended" => "The account is reinstated.",
@@ -251,7 +289,11 @@ pub async fn dashboard(State(state): State<AppState>, session: Session, Query(qu
         "account_deleted" => "The account and everything it posted are deleted, and the report resolved.",
         "blocked" => "The account is blocked, and the report resolved.",
         "unblocked" => "The account is unblocked.",
-        "staff" => "Accounts of the staff can't be banned, suspended or deleted here.",
+        "warned" => "The warning is sent, and the report resolved.",
+        "marked_sensitive" => "It's behind a content warning now, and the report resolved.",
+        "limited" => "The account is limited, and the report resolved.",
+        "unlimited" => "The account isn't limited anymore.",
+        "staff" => "Accounts of the staff can't be warned, limited, banned, suspended or deleted here.",
         _ => "Saved.",
     });
     render_template(&ModerationTemplate {
@@ -264,13 +306,16 @@ pub async fn dashboard(State(state): State<AppState>, session: Session, Query(qu
         next_before,
         message,
         suspension_days: SUSPENSION_DAYS,
+        rules: Reason::ALL,
     })
 }
 
-/// Acts on a report: `remove` (the report itself), `resolve`, `dismiss`, `reopen`, `delete` (what it's
-/// about), `ban`, `suspend` (for `days`), `unsuspend` (reinstates) and
-/// `delete-account` (a local user), `block` / `unblock` (an account of
-/// another server).
+/// Acts on a report: `remove` (the report itself), `resolve`, `dismiss`,
+/// `reopen`, `warn`, `sensitive` (a content warning: `warning`), `delete`
+/// (what it's about), `limit` / `unlimit`, `ban`, `suspend` (for `days`),
+/// `unsuspend` (reinstates) and `delete-account` (a local user), `block` /
+/// `unblock` (an account of another server). The person is told what was
+/// done and why (`rule`, `note`), see `entities::notice`.
 pub async fn act(
     State(state): State<AppState>,
     session: Session,
@@ -283,10 +328,51 @@ pub async fn act(
     };
     let back_status = Status::parse(form.get("status").map(String::as_str)).as_str();
     let back = |done: &str| Redirect::to(&format!("/moderation?status={back_status}&done={done}#report-{id}")).into_response();
-    let (post_id, comment_id, user_id, actor_id) = match report::targets(&pool, id).await {
+    let report::Targets { post_id, comment_id, message_id, user_id, actor_id } = match report::targets(&pool, id).await {
         Ok(Some(targets)) => targets,
         Ok(None) => return error_page(Layout::load(&state, &session).await, StatusCode::NOT_FOUND, "This report does not exist."),
         Err(err) => return failed(&state, &session, err).await,
+    };
+    // The rule told to the person (the report's reason unless chosen) and
+    // the moderator's note, see `entities::notice`.
+    let (report_reason, snapshot) = match report::reason_and_snapshot(&pool, id).await {
+        Ok(found) => found.unwrap_or((Reason::Other, String::new())),
+        Err(err) => return failed(&state, &session, err).await,
+    };
+    let rule = form.get("rule").and_then(|rule| Reason::parse(rule)).unwrap_or(report_reason);
+    let note = form.get("note").cloned().unwrap_or_default();
+    // A local account, not of the staff: it gets the notice.
+    let target = match user_id {
+        Some(user_id) => match user::find_by_id(&pool, user_id).await {
+            Ok(found) => found,
+            Err(err) => return failed(&state, &session, err).await,
+        },
+        None => None,
+    };
+    // The post (and comment) it's about, for the notice's link.
+    let about = match (post_id, comment_id) {
+        (Some(post_id), comment_id) => Some((post_id, comment_id)),
+        (None, Some(comment_id)) => comment::post_of(&pool, comment_id).await.ok().flatten().map(|post_id| (post_id, Some(comment_id))),
+        (None, None) => None,
+    };
+    let tell = |action: notice::Action, about: Option<(i64, Option<i64>)>, until| {
+        let pool = pool.clone();
+        let target = target.clone();
+        let note = note.clone();
+        let snapshot = snapshot.clone();
+        let moderator = me.id;
+        let state = state.clone();
+        async move {
+            let Some(target) = target.filter(|target| !target.is_staff()) else {
+                return Ok::<(), sqlx::Error>(());
+            };
+            let (post_id, comment_id) = about.map_or((None, None), |(post_id, comment_id)| (Some(post_id), comment_id));
+            let new = notice::NewNotice { user_id: target.id, action, reason: rule, note: &note, post_id, comment_id, excerpt: &snapshot, until, created_by: moderator };
+            let id = notice::create(&pool, &new).await?;
+            // Suspended, they may not come back to see it.
+            crate::handlers::notice::email(&state, &pool, id, false);
+            Ok(())
+        }
     };
     let result: Result<&str, sqlx::Error> = async {
         Ok(match action.as_str() {
@@ -306,25 +392,76 @@ pub async fn act(
                 report::set_status(&pool, id, Status::Open, me.id).await?;
                 "saved"
             }
-            "delete" => {
-                // Other servers are told, like when the author deletes it.
+            // Nothing done but telling the person the rule (Server rules,
+            // enforcement: "Reminder / warning").
+            "warn" => {
+                if target.as_ref().is_none_or(User::is_staff) {
+                    return Ok("saved");
+                }
+                tell(notice::Action::Warning, about, None).await?;
+                report::set_status(&pool, id, Status::Resolved, me.id).await?;
+                "warned"
+            }
+            // Behind a content warning (posts) or blurred (comments), here
+            // and on other servers.
+            "sensitive" => {
                 if let Some(comment_id) = comment_id {
-                    let deletions = notifier::comment_deleting(&state, &pool, comment_id).await;
-                    comment::delete(&pool, comment_id).await?;
-                    deletions.send(&state, &pool).await;
+                    comment::set_sensitive(&pool, comment_id, true).await?;
+                    notifier::comment_updated(&state, &pool, comment_id).await;
                 } else if let Some(post_id) = post_id {
-                    let deletions = notifier::post_deleting(&state, &pool, post_id).await;
-                    post::delete(&pool, post_id).await?;
-                    deletions.send(&state, &pool).await;
+                    let warning = form.get("warning").map(|warning| warning.trim()).filter(|warning| !warning.is_empty());
+                    let warning = warning.map(str::to_string).unwrap_or_else(|| crate::i18n::t(rule.label()));
+                    post::set_moderated_warning(&pool, post_id, Some(&warning)).await?;
+                    notifier::post_updated(&state, &pool, post_id).await;
+                }
+                tell(notice::Action::MarkedSensitive, about, None).await?;
+                report::set_status(&pool, id, Status::Resolved, me.id).await?;
+                "marked_sensitive"
+            }
+            "delete" => {
+                // A private message goes for both people. Posts and comments
+                // are hidden at once and erased after
+                // `settings::removed_content_days`, unless an accepted appeal
+                // brings them back. Other servers are told at once, like
+                // when the author deletes it.
+                if let Some(message_id) = message_id {
+                    crate::handlers::messenger::remove_reported(&state, &pool, message_id).await?;
+                    tell(notice::Action::Removed, None, None).await?;
+                } else {
+                    if let Some(comment_id) = comment_id {
+                        let deletions = notifier::comment_deleting(&state, &pool, comment_id).await;
+                        comment::remove(&pool, comment_id).await?;
+                        deletions.send(&state, &pool).await;
+                    } else if let Some(post_id) = post_id {
+                        let deletions = notifier::post_deleting(&state, &pool, post_id).await;
+                        post::remove(&pool, post_id).await?;
+                        deletions.send(&state, &pool).await;
+                    }
+                    // The notice keeps what was removed, to bring it back.
+                    tell(notice::Action::Removed, about, None).await?;
                 }
                 report::set_status(&pool, id, Status::Resolved, me.id).await?;
                 "deleted"
+            }
+            "limit" | "unlimit" => {
+                let Some(target) = target.as_ref().filter(|target| !target.is_staff()) else {
+                    return Ok("staff");
+                };
+                let limit = action == "limit";
+                user::set_limited(&pool, target.id, limit).await?;
+                if limit {
+                    tell(notice::Action::Limited, None, None).await?;
+                    report::set_status(&pool, id, Status::Resolved, me.id).await?;
+                    "limited"
+                } else {
+                    "unlimited"
+                }
             }
             "ban" | "suspend" | "unsuspend" | "delete-account" => {
                 let Some(user_id) = user_id else {
                     return Ok("saved");
                 };
-                let Some(target) = user::find_by_id(&pool, user_id).await? else {
+                let Some(target) = target.clone() else {
                     return Ok("saved");
                 };
                 if target.is_staff() {
@@ -336,13 +473,18 @@ pub async fn act(
                         notifier::account_status_changed(&state, &pool, user_id).await;
                         return Ok("unsuspended");
                     }
-                    "ban" => user::restrict(&pool, user_id, None).await?,
+                    "ban" => {
+                        user::restrict(&pool, user_id, None).await?;
+                        tell(notice::Action::Banned, None, None).await?;
+                    }
                     "suspend" => {
                         let days = form.get("days").and_then(|days| days.parse::<i32>().ok()).filter(|days| SUSPENSION_DAYS.contains(days));
                         let Some(days) = days else {
                             return Ok("saved");
                         };
                         user::restrict(&pool, user_id, Some(days)).await?;
+                        let until = user::find_by_id(&pool, user_id).await?.and_then(|user| user.suspended_until);
+                        tell(notice::Action::Suspended, None, until).await?;
                     }
                     _ => {
                         report::set_status(&pool, id, Status::Resolved, me.id).await?;
@@ -386,6 +528,33 @@ pub async fn act(
 
 /// The lengths of a suspension offered, in days; longer is a ban.
 pub const SUSPENSION_DAYS: [i32; 7] = [1, 3, 7, 14, 30, 90, 365];
+
+/// Erases, every hour, the posts and comments removed by the moderators
+/// more than `settings::removed_content_days` ago, with their files: past
+/// that, an appeal can't bring them back.
+pub async fn run_removed_purge(pool: PgPool) {
+    let mut every = tokio::time::interval(std::time::Duration::from_secs(60 * 60));
+    loop {
+        every.tick().await;
+        let days = crate::settings::removed_content_days();
+        let purged = async {
+            let mut count = 0;
+            for comment_id in comment::removed_before(&pool, days).await? {
+                count += usize::from(comment::delete(&pool, comment_id).await?);
+            }
+            for post_id in post::removed_before(&pool, days).await? {
+                count += usize::from(post::delete(&pool, post_id).await?);
+            }
+            Ok::<_, sqlx::Error>(count)
+        }
+        .await;
+        match purged {
+            Ok(0) => {}
+            Ok(count) => tracing::info!("erased {} post(s) and comment(s) removed by the moderators more than {} days ago", count, days),
+            Err(err) => tracing::warn!("failed to erase the removed posts and comments: {}", err),
+        }
+    }
+}
 
 /// Ends the suspensions whose time is over, every minute, and tells other
 /// servers.
@@ -541,33 +710,193 @@ pub async fn remove_moderator(State(state): State<AppState>, session: Session, P
 /// A tab of the moderation area: Reports, Federation, Statistics, Staff, and
 /// Configuration for the creator.
 pub struct Section {
-    label: &'static str,
-    url: &'static str,
-    active: bool,
-    /// Open reports, on the Reports tab.
-    count: Option<i64>,
+    pub(crate) label: &'static str,
+    pub(crate) url: &'static str,
+    pub(crate) active: bool,
+    /// Open reports, on the Reports tab; appeals waiting, on Appeals.
+    pub(crate) count: Option<i64>,
 }
 
 /// The tabs, `active` being the label of the current one.
-async fn sections(pool: &PgPool, active: &str, me: &User) -> Vec<Section> {
+pub(crate) async fn sections(pool: &PgPool, active: &str, me: &User) -> Vec<Section> {
     let open = report::open_count(pool).await.unwrap_or(0);
+    let appeals = notice::pending_count(pool).await.unwrap_or(0);
+    let relay_requests = crate::entities::relay::pending_subscribers(pool).await.unwrap_or(0);
     [
         ("Reports", "/moderation"),
+        ("Appeals", "/moderation/appeals"),
         ("Users", "/moderation/users"),
         ("Federation", "/moderation/federation"),
+        ("Relays", "/moderation/relays"),
         ("Statistics", "/moderation/statistics"),
         ("Staff", "/moderation/staff"),
+        ("Incidents", "/moderation/incidents"),
         ("Configuration", "/moderation/configuration"),
     ]
         .into_iter()
-        .filter(|(label, _)| *label != "Configuration" || me.is_admin())
+        .filter(|(label, _)| !matches!(*label, "Configuration" | "Incidents" | "Relays") || me.is_admin())
         .map(|(label, url)| Section {
             label,
             url,
             active: label == active,
-            count: (label == "Reports" && open > 0).then_some(open),
+            count: match label {
+                "Reports" => (open > 0).then_some(open),
+                "Appeals" => (appeals > 0).then_some(appeals),
+                "Relays" => (relay_requests > 0).then_some(relay_requests),
+                _ => None,
+            },
         })
         .collect()
+}
+
+// --- Relays ---
+
+#[derive(Template)]
+#[template(path = "moderation_relays.html")]
+struct RelaysTemplate {
+    title: String,
+    layout: Layout,
+    sections: Vec<Section>,
+    relays: Vec<crate::entities::relay::Relay>,
+    subscribers: Vec<crate::entities::relay::Subscriber>,
+    /// `RELAY-SERVER`: other servers can follow this one.
+    relay_server: bool,
+    /// Where other servers subscribe: the instance actor's inbox, and its
+    /// address for LitePub relays.
+    inbox_url: String,
+    actor_url: String,
+    federation_on: bool,
+    message: Option<String>,
+    error: bool,
+}
+
+/// The relays followed, and the servers following this one as a relay, see
+/// `API::relay`.
+pub async fn relays_page(State(state): State<AppState>, session: Session, Query(query): Query<HashMap<String, String>>) -> Response {
+    let (pool, me) = match admin(&state, &session).await {
+        Ok(found) => found,
+        Err(response) => return response,
+    };
+    let loaded = async { Ok::<_, sqlx::Error>((crate::entities::relay::list(&pool).await?, crate::entities::relay::subscribers(&pool).await?)) }.await;
+    let (relays, subscribers) = match loaded {
+        Ok(loaded) => loaded,
+        Err(err) => return failed(&state, &session, err).await,
+    };
+    let base = state.public_base_url.trim_end_matches('/');
+    let error = query.contains_key("error");
+    render_template(&RelaysTemplate {
+        title: "Relays".to_string(),
+        sections: sections(&pool, "Relays", &me).await,
+        layout: Layout::load(&state, &session).await,
+        relays,
+        subscribers,
+        relay_server: crate::settings::relay_server(),
+        inbox_url: format!("{base}{}", crate::API::relay::INBOX_PATH),
+        actor_url: format!("{base}/ap/actor"),
+        federation_on: state.federation.is_some(),
+        message: query.get("error").cloned().or_else(|| {
+            query.get("done").map(|done| match done.as_str() {
+                "added" => "The relay is asked: it shows as connected once it accepts.".to_string(),
+                "removed" => "The relay is removed, and told.".to_string(),
+                "paused" => "Paused: nothing is sent to it nor read from it.".to_string(),
+                "resumed" => "The relay is asked again.".to_string(),
+                "accepted" => "The server is accepted: it gets the public posts relayed here.".to_string(),
+                "rejected" => "The server is refused, and told.".to_string(),
+                _ => "Saved.".to_string(),
+            })
+        }),
+        error,
+    })
+}
+
+/// Follows a relay (`url`).
+pub async fn add_relay(State(state): State<AppState>, session: Session, Form(form): Form<HashMap<String, String>>) -> Response {
+    let (pool, me) = match admin(&state, &session).await {
+        Ok(found) => found,
+        Err(response) => return response,
+    };
+    let Some(federation) = state.federation.as_deref() else {
+        return Redirect::to("/moderation/relays").into_response();
+    };
+    let url = form.get("url").map(|url| url.trim().to_string()).unwrap_or_default();
+    match crate::API::relay::follow(federation, &pool, &url).await {
+        Ok(_) => {
+            tracing::info!("@{} added the relay {}", me.username, url);
+            Redirect::to("/moderation/relays?done=added").into_response()
+        }
+        Err(message) => Redirect::to(&format!("/moderation/relays?error={}", crate::handlers::search::form_urlencode(&crate::i18n::t(&message)))).into_response(),
+    }
+}
+
+/// `remove`, `pause` or `resume` a relay followed.
+pub async fn relay_action(State(state): State<AppState>, session: Session, Path((id, action)): Path<(i64, String)>) -> Response {
+    let (pool, me) = match admin(&state, &session).await {
+        Ok(found) => found,
+        Err(response) => return response,
+    };
+    let Some(federation) = state.federation.as_deref() else {
+        return Redirect::to("/moderation/relays").into_response();
+    };
+    let relay = match crate::entities::relay::find(&pool, id).await {
+        Ok(Some(relay)) => relay,
+        Ok(None) => return Redirect::to("/moderation/relays").into_response(),
+        Err(err) => return failed(&state, &session, err).await,
+    };
+    let done = match action.as_str() {
+        "remove" => {
+            if let Err(err) = crate::API::relay::unfollow(federation, &pool, &relay).await {
+                tracing::warn!("failed to tell the relay {}: {}", relay.url, err);
+            }
+            if let Err(err) = crate::entities::relay::remove(&pool, id).await {
+                return failed(&state, &session, err).await;
+            }
+            "removed"
+        }
+        "pause" => {
+            if let Err(err) = crate::entities::relay::set_state(&pool, id, crate::entities::relay::State::Paused).await {
+                return failed(&state, &session, err).await;
+            }
+            "paused"
+        }
+        _ => {
+            if let Err(message) = crate::API::relay::follow(federation, &pool, &relay.url).await {
+                return Redirect::to(&format!("/moderation/relays?error={}", crate::handlers::search::form_urlencode(&crate::i18n::t(&message)))).into_response();
+            }
+            "resumed"
+        }
+    };
+    tracing::info!("@{} did {} on the relay {}", me.username, action, relay.url);
+    Redirect::to(&format!("/moderation/relays?done={done}")).into_response()
+}
+
+/// `accept`, `reject` or `remove` a server following this one as a relay.
+pub async fn subscriber_action(State(state): State<AppState>, session: Session, Path((id, action)): Path<(i64, String)>) -> Response {
+    let (pool, me) = match admin(&state, &session).await {
+        Ok(found) => found,
+        Err(response) => return response,
+    };
+    let Some(federation) = state.federation.as_deref() else {
+        return Redirect::to("/moderation/relays").into_response();
+    };
+    let subscriber = match crate::entities::relay::find_subscriber(&pool, id).await {
+        Ok(Some(subscriber)) => subscriber,
+        Ok(None) => return Redirect::to("/moderation/relays").into_response(),
+        Err(err) => return failed(&state, &session, err).await,
+    };
+    let accepted = action == "accept";
+    if let Err(err) = crate::API::relay::answer_subscriber(federation, &pool, &subscriber, accepted).await {
+        tracing::warn!("failed to answer {}: {}", subscriber.actor_id, err);
+    }
+    let saved = match action.as_str() {
+        "accept" => crate::entities::relay::set_subscriber_state(&pool, id, crate::entities::relay::State::Accepted).await,
+        "reject" => crate::entities::relay::set_subscriber_state(&pool, id, crate::entities::relay::State::Rejected).await,
+        _ => crate::entities::relay::remove_subscriber(&pool, Some(id), None).await,
+    };
+    if let Err(err) = saved {
+        return failed(&state, &session, err).await;
+    }
+    tracing::info!("@{} did {} on the relay subscriber {}", me.username, action, subscriber.actor_id);
+    Redirect::to(&format!("/moderation/relays?done={}", if accepted { "accepted" } else { "rejected" })).into_response()
 }
 
 // --- Federation ---
@@ -606,6 +935,7 @@ pub async fn federation_page(State(state): State<AppState>, session: Session, Qu
         "limited" => "Limited: its posts and notifications only reach the people following its accounts.",
         "banned" => "Banned: what came from it is deleted, and nothing goes to it anymore.",
         "cleared" => "The server is treated normally again.",
+        "media" => "Its media are rejected: its posts come without their pictures, videos and sounds.",
         "invalid" => "Write a domain, like mastodon.social.",
         "own" => "This is the domain of this site.",
         _ => "Saved.",
@@ -658,6 +988,7 @@ pub async fn set_instance_policy(State(state): State<AppState>, session: Session
     back(match policy {
         Some(store::Policy::Limited) => "limited",
         Some(store::Policy::Banned) => "banned",
+        Some(store::Policy::RejectMedia) => "media",
         None => "cleared",
     })
 }
@@ -808,11 +1139,14 @@ struct SitePageEditTemplate {
     body_max_chars: usize,
     /// `{{INSTANCE_NAME}}`... filled in on the site, see `site_page::PLACEHOLDERS`.
     placeholders: String,
+    /// The languages it can be written in, each its own file.
+    languages: [crate::i18n::Lang; 3],
     error: Option<String>,
 }
 
-/// Writing one of the pages linked under the menu, for the creator only.
-pub async fn site_page_edit(State(state): State<AppState>, session: Session, Path(slug): Path<String>) -> Response {
+/// Writing one of the pages linked under the menu, for the creator only,
+/// in English or another language (`?lang=fr`: `Terms.fr.md`).
+pub async fn site_page_edit(State(state): State<AppState>, session: Session, Path(slug): Path<String>, Query(query): Query<HashMap<String, String>>) -> Response {
     let (pool, me) = match admin(&state, &session).await {
         Ok(found) => found,
         Err(response) => return response,
@@ -820,7 +1154,8 @@ pub async fn site_page_edit(State(state): State<AppState>, session: Session, Pat
     let Some(kind) = site_page::Kind::parse(&slug) else {
         return error_page(Layout::load(&state, &session).await, StatusCode::NOT_FOUND, "This page doesn't exist.");
     };
-    site_page_form(&state, &session, &pool, &me, site_page::read(kind), None).await
+    let lang = query.get("lang").and_then(|code| crate::i18n::Lang::parse(code)).unwrap_or_default();
+    site_page_form(&state, &session, &pool, &me, site_page::read_language(kind, lang), None).await
 }
 
 async fn site_page_form(state: &AppState, session: &Session, pool: &PgPool, me: &User, page: SitePage, error: Option<String>) -> Response {
@@ -832,6 +1167,7 @@ async fn site_page_form(state: &AppState, session: &Session, pool: &PgPool, me: 
         page,
         body_max_chars: site_page::BODY_MAX_CHARS,
         placeholders: site_page::PLACEHOLDERS.map(|name| format!("{{{{{name}}}}}")).join(", "),
+        languages: crate::i18n::Lang::ALL,
         error,
     });
     (status, form).into_response()
@@ -847,33 +1183,35 @@ pub async fn save_site_page(State(state): State<AppState>, session: Session, Pat
     let Some(kind) = site_page::Kind::parse(&slug) else {
         return error_page(Layout::load(&state, &session).await, StatusCode::NOT_FOUND, "This page doesn't exist.");
     };
+    let lang = form.get("lang").and_then(|code| crate::i18n::Lang::parse(code)).unwrap_or_default();
+    let path = kind.path_in(lang);
     let body = form.get("body").cloned().unwrap_or_default();
     let refused = if body.chars().count() > site_page::BODY_MAX_CHARS {
         Some(crate::i18n::tf("The page is too long: at most {} characters.", site_page::BODY_MAX_CHARS))
     } else {
-        match site_page::save(kind, form.get("version").map(String::as_str).unwrap_or_default(), &body) {
+        match site_page::save(kind, lang, form.get("version").map(String::as_str).unwrap_or_default(), &body) {
             Ok(()) => None,
             Err(site_page::SaveError::Changed) => Some(crate::i18n::tf(
                 "{} changed since you opened it (in an editor, or another tab): nothing was saved. Your text is below: save again to replace the file with it.",
-                kind.path(),
+                &path,
             )),
             Err(site_page::SaveError::Io(err)) => {
-                tracing::error!("failed to write {}: {}", kind.path(), err);
-                Some(crate::i18n::tf("{} couldn't be written: check that Tison may write in this folder.", kind.path()))
+                tracing::error!("failed to write {}: {}", path, err);
+                Some(crate::i18n::tf("{} couldn't be written: check that Tison may write in this folder.", &path))
             }
         }
     };
     if let Some(error) = refused {
         // The text sent stays in the form, with the version of the file as
         // it is now: saving again replaces it.
-        let page = SitePage { body, ..site_page::read(kind) };
+        let page = SitePage { body, ..site_page::read_language(kind, lang) };
         return site_page_form(&state, &session, &pool, &me, page, Some(error)).await;
     }
     // Pictures of the web are shown through the proxy, which only serves known addresses.
     if let Err(err) = crate::entities::media::register_article_pictures(&pool, &body).await {
-        tracing::warn!("failed to register the pictures of {}: {}", kind.path(), err);
+        tracing::warn!("failed to register the pictures of {}: {}", path, err);
     }
-    tracing::info!("@{} changed {}", me.username, kind.path());
+    tracing::info!("@{} changed {}", me.username, path);
     Redirect::to(&format!("/moderation/configuration?page={}#site-pages", kind.slug())).into_response()
 }
 
@@ -891,7 +1229,7 @@ pub async fn site_page_preview(State(state): State<AppState>, session: Session, 
     if let Err(err) = crate::entities::media::register_article_pictures(&pool, body).await {
         tracing::warn!("failed to register the pictures of a preview: {}", err);
     }
-    let page = SitePage { kind: site_page::Kind::Terms, body: body.to_string(), updated_at: None, version: String::new() };
+    let page = SitePage { kind: site_page::Kind::Terms, lang: crate::i18n::Lang::En, body: body.to_string(), updated_at: None, version: String::new() };
     let html = page.html(&state.instance_name, &state.public_base_url);
     ([(axum::http::header::CACHE_CONTROL, "no-store")], axum::Json(serde_json::json!({ "html": html }))).into_response()
 }
@@ -971,4 +1309,75 @@ pub async fn email_domains(State(state): State<AppState>, session: Session, Form
         Ok(done) => back(done),
         Err(err) => failed(&state, &session, err).await,
     }
+}
+
+// --- Confidentiality incidents ---
+
+#[derive(Template)]
+#[template(path = "moderation_incidents.html")]
+struct IncidentsTemplate {
+    title: String,
+    layout: Layout,
+    sections: Vec<Section>,
+    incidents: Vec<crate::entities::incident::Incident>,
+    today: String,
+    text_max_chars: usize,
+    error: Option<&'static str>,
+    saved: bool,
+}
+
+/// The register of confidentiality incidents (Law 25 art. 3.8, GDPR art.
+/// 33.5), for the creator only: see `entities::incident`.
+pub async fn incidents_page(State(state): State<AppState>, session: Session, Query(query): Query<HashMap<String, String>>) -> Response {
+    let (pool, me) = match admin(&state, &session).await {
+        Ok(found) => found,
+        Err(response) => return response,
+    };
+    let incidents = match crate::entities::incident::all(&pool).await {
+        Ok(incidents) => incidents,
+        Err(err) => return failed(&state, &session, err).await,
+    };
+    render_template(&IncidentsTemplate {
+        title: "Incidents".to_string(),
+        sections: sections(&pool, "Incidents", &me).await,
+        layout: Layout::load(&state, &session).await,
+        incidents,
+        today: sqlx::types::chrono::Utc::now().format("%Y-%m-%d").to_string(),
+        text_max_chars: crate::entities::incident::TEXT_MAX_CHARS,
+        error: query.get("error").map(|_| "Write what happened and when it was discovered."),
+        saved: query.contains_key("saved"),
+    })
+}
+
+/// Adds an incident, or changes one (`id`): its notices are added later.
+pub async fn save_incident(State(state): State<AppState>, session: Session, Form(form): Form<HashMap<String, String>>) -> Response {
+    let (pool, me) = match admin(&state, &session).await {
+        Ok(found) => found,
+        Err(response) => return response,
+    };
+    let date = |name: &str| form.get(name).and_then(|value| sqlx::types::chrono::NaiveDate::parse_from_str(value.trim(), "%Y-%m-%d").ok());
+    let text = |name: &str| form.get(name).map(|value| value.trim().chars().take(crate::entities::incident::TEXT_MAX_CHARS).collect::<String>()).unwrap_or_default();
+    let id = form.get("id").and_then(|id| id.parse::<i64>().ok());
+    let (Some(discovered_on), description) = (date("discovered_on"), text("description")) else {
+        return Redirect::to("/moderation/incidents?error=1#new").into_response();
+    };
+    if description.is_empty() {
+        return Redirect::to("/moderation/incidents?error=1#new").into_response();
+    }
+    let incident = crate::entities::incident::IncidentForm {
+        occurred_on: date("occurred_on"),
+        discovered_on,
+        description,
+        data_concerned: text("data_concerned"),
+        people_affected: text("people_affected"),
+        serious_risk: form.get("serious_risk").is_some_and(|value| value == "yes"),
+        measures: text("measures"),
+        authority_notified_on: date("authority_notified_on"),
+        people_notified_on: date("people_notified_on"),
+    };
+    if let Err(err) = crate::entities::incident::save(&pool, id, &incident, me.id).await {
+        return failed(&state, &session, err).await;
+    }
+    tracing::info!("@{} recorded a confidentiality incident", me.username);
+    Redirect::to("/moderation/incidents?saved").into_response()
 }

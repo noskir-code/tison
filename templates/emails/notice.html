@@ -1,0 +1,23 @@
+{% extends "emails/layout.html" %}
+{% block title %}{{ "Moderation notice"|t }}{% endblock %}
+{% block preview %}{% if answered %}{{ notice.appeal_status.label()|t }}{% else %}{{ notice.action.label()|t }}{% endif %}{% endblock %}
+{% block content %}
+{% if answered %}
+<h1 class="title">{{ "Your appeal was answered"|t }}</h1>
+<p class="text"><strong>{{ notice.appeal_status.label()|t }}</strong></p>
+{% if !notice.answer.is_empty() %}<p class="text">{{ notice.answer }}</p>{% endif %}
+{% else %}
+<h1 class="title">{{ notice.action.label()|t }}</h1>
+<p class="text">{{ notice.action.explanation()|t }}{% if let Some(until) = notice.until_label() %} {{ "Until {}."|tf(until) }}{% endif %}</p>
+<p class="text"><strong>{{ "Rule broken:"|t }}</strong> {{ notice.reason.label()|t }}</p>
+{% if !notice.note.is_empty() %}<p class="text">{{ notice.note }}</p>{% endif %}
+<p class="text">{{ "You can read the details and appeal once, even if your account is suspended, by signing in."|t }}</p>
+{% endif %}
+<table role="presentation" cellpadding="0" cellspacing="0">
+    <tr>
+        <td class="button-cell">
+            <a href="{{ link }}" class="button">{{ "Your moderation notices"|t }}</a>
+        </td>
+    </tr>
+</table>
+{% endblock %}

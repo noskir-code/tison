@@ -97,10 +97,12 @@ pub enum Kind {
     EventTomorrow,
     /// An event the user goes to starts within the hour.
     EventSoon,
+    /// A post mentions the user (`@alice`), see `entities::mention`.
+    Mention,
 }
 
 impl Kind {
-    const ALL: [Self; 17] = [
+    const ALL: [Self; 18] = [
         Self::Like,
         Self::Comment,
         Self::Reply,
@@ -118,6 +120,7 @@ impl Kind {
         Self::EventCancelled,
         Self::EventTomorrow,
         Self::EventSoon,
+        Self::Mention,
     ];
 
     /// Stored in the database.
@@ -140,6 +143,7 @@ impl Kind {
             Self::EventCancelled => "event_cancelled",
             Self::EventTomorrow => "event_tomorrow",
             Self::EventSoon => "event_soon",
+            Self::Mention => "mention",
         }
     }
 
@@ -155,9 +159,9 @@ impl Kind {
             Self::Reply => "replied to your comment",
             Self::CommentLike => "liked your comment",
             Self::Share => "shared your post",
-            Self::Follow => "followed you from the Fediverse",
+            Self::Follow => "followed you from another server",
             Self::UserFollow => "followed you",
-            Self::FriendRequest => "wants to be your friend",
+            Self::FriendRequest => "sent you a friend request",
             Self::FriendAccepted => "accepted your friend request",
             Self::JoinRequest => "asked to join",
             Self::JoinApproved => "accepted you in",
@@ -166,7 +170,8 @@ impl Kind {
             Self::EventAccepted => "accepted you at the event",
             Self::EventCancelled => "cancelled the event",
             Self::EventTomorrow => "· reminder: the event starts within a day",
-            Self::EventSoon => "· reminder: the event starts within the hour",
+            Self::EventSoon => "· reminder: the event starts within the next hour",
+            Self::Mention => "mentioned you",
         }
     }
 
@@ -398,6 +403,37 @@ pub async fn reaction_added(
     .bind(Kind::from_reaction(reaction).as_str())
     .bind(actor_id)
     .bind(post_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Notifies the users mentioned by a post (`@alice`), written here by
+/// `actor_user_id` or received from `remote_actor_id`. Once per post: an
+/// edit mentioning them again doesn't notify again. Who can't see the post
+/// is left out before, see `handlers::mention`.
+pub async fn mentioned(
+    pool: &PgPool,
+    post_id: i64,
+    user_ids: &[i32],
+    actor_user_id: Option<i32>,
+    remote_actor_id: Option<i64>,
+) -> Result<(), sqlx::Error> {
+    if user_ids.is_empty() {
+        return Ok(());
+    }
+    sqlx::query(signalled!(
+        "added",
+        "INSERT INTO notifications (user_id, kind, actor_user_id, remote_actor_id, post_id)
+         SELECT m, $1, $2, $3, $4 FROM UNNEST($5::integer[]) AS m
+         WHERE m IS DISTINCT FROM $2
+           AND NOT EXISTS (SELECT 1 FROM notifications o WHERE o.user_id = m AND o.kind = $1 AND o.post_id = $4)"
+    ))
+    .bind(Kind::Mention.as_str())
+    .bind(actor_user_id)
+    .bind(remote_actor_id)
+    .bind(post_id)
+    .bind(user_ids)
     .execute(pool)
     .await?;
     Ok(())
@@ -681,7 +717,7 @@ pub async fn event_reminders(pool: &PgPool) -> Result<usize, sqlx::Error> {
                     CASE WHEN ev.starts_at <= NOW() + INTERVAL '1 hour' THEN 'event_soon' ELSE 'event_tomorrow' END AS kind
              FROM event_participants ep
              JOIN events ev ON ev.post_id = ep.post_id
-             JOIN posts p ON p.id = ep.post_id
+             JOIN posts p ON p.id = ep.post_id AND p.removed_at IS NULL
              WHERE ep.user_id IS NOT NULL AND ep.role = 'going' AND ev.status <> 'cancelled'
                AND ev.starts_at > NOW() AND ev.starts_at <= NOW() + INTERVAL '24 hours'
          ),
@@ -826,13 +862,17 @@ pub async fn followed(pool: &PgPool, user_id: i32, remote_actor_id: i64) -> Resu
 /// `$4` an optional id to load only that one, `$5` an optional id to load
 /// only older ones.
 /// Whether the notification `n` reaches its user: not from an account of a
-/// limited server they don't follow. A macro for `concat!`.
+/// limited server they don't follow, nor from someone they block or who
+/// blocks them. A macro for `concat!`.
 macro_rules! not_muted {
     () => {
         "NOT EXISTS (SELECT 1 FROM federation_actors ma JOIN instance_policies mp ON mp.domain = ma.host
             WHERE ma.id = n.remote_actor_id AND mp.policy = 'limited'
               AND NOT EXISTS (SELECT 1 FROM federation_following mf
-                              WHERE mf.actor_id = ma.id AND mf.user_id = n.user_id AND mf.accepted))"
+                              WHERE mf.actor_id = ma.id AND mf.user_id = n.user_id AND mf.accepted))
+         AND NOT EXISTS (SELECT 1 FROM user_blocks nb WHERE nb.user_id = n.user_id
+              AND (nb.blocked_user_id = n.actor_user_id OR nb.blocked_actor_id = n.remote_actor_id))
+         AND NOT EXISTS (SELECT 1 FROM user_blocks nr WHERE nr.user_id = n.actor_user_id AND nr.blocked_user_id = n.user_id)"
     };
 }
 
@@ -865,7 +905,9 @@ macro_rules! notification_select {
               LEFT JOIN posts p ON p.id = n.post_id
               LEFT JOIN comments c ON c.id = n.comment_id
               LEFT JOIN communities cm ON cm.id = n.community_id
-             WHERE n.user_id = $1 AND ",
+             WHERE n.user_id = $1
+               -- Not about what the moderators removed.
+               AND (p.removed_at IS NULL AND c.removed_at IS NULL) AND ",
             not_muted!(),
             " AND ",
             service_shown!(),
@@ -929,7 +971,9 @@ pub async fn claim_push(pool: &PgPool, user_id: i32, id: i64) -> Result<bool, sq
 
 pub async fn unread_count(pool: &PgPool, user_id: i32) -> Result<i64, sqlx::Error> {
     sqlx::query_scalar(concat!(
-        "SELECT COUNT(*) FROM notifications n WHERE n.user_id = $1 AND n.read_at IS NULL AND ",
+        "SELECT COUNT(*) FROM notifications n WHERE n.user_id = $1 AND n.read_at IS NULL
+           AND NOT EXISTS (SELECT 1 FROM posts rp WHERE rp.id = n.post_id AND rp.removed_at IS NOT NULL)
+           AND NOT EXISTS (SELECT 1 FROM comments rc WHERE rc.id = n.comment_id AND rc.removed_at IS NOT NULL) AND ",
         not_muted!(),
         " AND ",
         service_shown!()

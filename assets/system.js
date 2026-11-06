@@ -1386,7 +1386,13 @@ const Tison = (() => {
 
         function show(text, found) {
             list.replaceChildren();
-            for (const [label, items] of [[t("People"), found.users], [t("Communities"), found.communities]]) {
+            const groups = [
+                [t("People"), found.users],
+                [t("Communities"), found.communities],
+                [t("Hashtags"), found.tags || []],
+                [t("Posts"), found.posts || []],
+            ];
+            for (const [label, items] of groups) {
                 if (!items.length) {
                     continue;
                 }
@@ -1430,10 +1436,14 @@ const Tison = (() => {
             }
         }
 
+        // From the first letter or digit (after `@`, `!` or `#`), like the
+        // server's `starts_searchable`.
+        const searchable = (text) => /^[\p{L}\p{N}]/u.test(text.replace(/^[@!#]+/, ""));
+
         input.addEventListener("input", () => {
             clearTimeout(timer);
             const text = input.value.trim();
-            if (text.replace(/^[@!]/, "").length < 3) {
+            if (!searchable(text)) {
                 asked++;
                 close();
                 return;
@@ -1463,7 +1473,7 @@ const Tison = (() => {
         list.addEventListener("mousedown", (event) => event.preventDefault());
         input.addEventListener("blur", close);
         input.addEventListener("focus", () => {
-            if (list.children.length && input.value.trim().length >= 3) {
+            if (list.children.length && searchable(input.value.trim())) {
                 list.hidden = false;
                 input.setAttribute("aria-expanded", "true");
             }
@@ -1507,6 +1517,19 @@ const Tison = (() => {
      * says ("Delete", t("Remove")), or `data-confirm-label`. One listener for the
      * page: forms added later (live messages) ask too.
      */
+    // `a[data-history-back="-1"]`: back in the history (the page's security
+    // policy refuses `javascript:` links), else its own address.
+    function setupHistoryBack() {
+        document.addEventListener("click", (event) => {
+            const link = event.target.closest("a[data-history-back]");
+            if (!link || history.length < 2) {
+                return;
+            }
+            event.preventDefault();
+            history.go(Number(link.dataset.historyBack) || -1);
+        });
+    }
+
     function setupConfirmations() {
         if (!("HTMLDialogElement" in window)) {
             // Very old browsers: their own box.
@@ -1921,14 +1944,12 @@ const Tison = (() => {
     }
 
     /**
-     * The camera button of the post form (`[data-camera]`): the browser asks
+     * The camera button of the messenger (`[data-camera]`): the browser asks
      * for permission, then a picture taken is added to the photos, like one
-     * chosen from the files. Needs https (or localhost).
+     * chosen from the files. Needs https (or localhost). When it can't, says
+     * why under the tools: refused, no camera seen, busy, or not https.
      */
     function setupCamera() {
-        if (!navigator.mediaDevices?.getUserMedia || !window.isSecureContext) {
-            return;
-        }
         document.querySelectorAll("[data-camera]").forEach((button) => {
             const form = button.closest("form");
             const input = form?.querySelector('input[name="photos"]');
@@ -1936,13 +1957,51 @@ const Tison = (() => {
                 return;
             }
             button.hidden = false;
+            const status = document.createElement("p");
+            status.className = "error camera-status";
+            status.setAttribute("role", "alert");
+            status.hidden = true;
+            (button.closest(".message-tools") || button).after(status);
+            const fail = (message) => {
+                status.textContent = message;
+                status.hidden = false;
+            };
+            const why = (error) => {
+                switch (error?.name) {
+                    case "NotAllowedError":
+                    case "SecurityError":
+                        return t("The camera is blocked for this site: allow it in the browser (the icon left of the address), then try again.");
+                    case "NotFoundError":
+                    case "OverconstrainedError":
+                        return t("The browser sees no camera. Check that it's plugged in and works in other apps.");
+                    case "NotReadableError":
+                    case "AbortError":
+                        return t("The camera couldn't start: another app may be using it, or its driver failed.");
+                    default:
+                        return t("The camera can't be used: the browser refused it, or there is none.");
+                }
+            };
             button.addEventListener("click", async () => {
+                status.hidden = true;
+                if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+                    fail(t("The camera only works on a secure (https) address of the site."));
+                    return;
+                }
                 let stream;
                 try {
+                    // The back camera of phones when there is one, any camera otherwise.
                     stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
-                } catch {
-                    alert(t("The camera can't be used: the browser refused it, or there is none."));
-                    return;
+                } catch (first) {
+                    if (first?.name === "NotAllowedError" || first?.name === "SecurityError") {
+                        fail(why(first));
+                        return;
+                    }
+                    try {
+                        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                    } catch (error) {
+                        fail(why(error));
+                        return;
+                    }
                 }
                 const dialog = document.createElement("dialog");
                 dialog.className = "camera-dialog";
@@ -1957,6 +2016,11 @@ const Tison = (() => {
                 take.type = "button";
                 take.className = "button primary";
                 take.textContent = t("Take the photo");
+                // A camera takes a moment to start: no photo before its first image.
+                take.disabled = true;
+                video.addEventListener("loadeddata", () => {
+                    take.disabled = false;
+                }, { once: true });
                 const cancel = document.createElement("button");
                 cancel.type = "button";
                 cancel.className = "button";
@@ -1972,6 +2036,9 @@ const Tison = (() => {
                 cancel.addEventListener("click", close);
                 dialog.addEventListener("cancel", close);
                 take.addEventListener("click", () => {
+                    if (!video.videoWidth || !video.videoHeight) {
+                        return;
+                    }
                     const canvas = document.createElement("canvas");
                     canvas.width = video.videoWidth;
                     canvas.height = video.videoHeight;
@@ -1988,6 +2055,7 @@ const Tison = (() => {
                     }, "image/jpeg", 0.9);
                 });
                 dialog.showModal();
+                video.play().catch(() => {});
             });
         });
     }
@@ -2387,7 +2455,7 @@ const Tison = (() => {
                 const file = input.files[0];
                 zone.classList.toggle("chosen", Boolean(file));
                 name.textContent = file ? file.name : empty[0];
-                help.textContent = file ? `${(file.size / 1024 / 1024).toFixed(1)} MB · click to choose another` : empty[1];
+                help.textContent = file ? `${(file.size / 1024 / 1024).toFixed(1)} MB · click to choose another one` : empty[1];
             };
             input.addEventListener("change", show);
             for (const kind of ["dragenter", "dragover"]) {
@@ -2540,7 +2608,7 @@ const Tison = (() => {
                         }
                     } else if (progress.state === "converting") {
                         setRing(ring, progress.percent);
-                        say("Converting with ffmpeg in every quality…", tf("Converting… {}%", progress.percent));
+                        say("Conversion...", tf("Converting… {}%", progress.percent));
                     } else {
                         finish(progress.state === "ready");
                     }
@@ -3555,6 +3623,46 @@ const Tison = (() => {
         });
     }
 
+    // Event maps: OpenStreetMap's, loaded only when asked (it gets the
+    // visitor's IP address). Without JavaScript, the link "Open in
+    // OpenStreetMap" stays.
+    function setupMapConsent() {
+        document.querySelectorAll("[data-map-src]").forEach((holder) => {
+            const button = holder.querySelector("[data-map-load]");
+            button.hidden = false;
+            button.addEventListener("click", () => {
+                const map = document.createElement("iframe");
+                map.className = "event-map";
+                map.src = holder.dataset.mapSrc;
+                map.title = holder.dataset.mapTitle;
+                map.referrerPolicy = "no-referrer";
+                holder.replaceWith(map);
+            });
+        });
+    }
+
+    // The moderation's report cards: the rule and note told to the person
+    // (`[data-notice-fields]`) go with whichever action is sent, as hidden
+    // fields of its own form. Without JavaScript, the report's reason.
+    function setupNoticeFields() {
+        document.querySelectorAll("[data-notice-fields]").forEach((fields) => {
+            const card = fields.closest(".report-card");
+            card?.querySelectorAll(".report-actions form").forEach((form) => {
+                form.addEventListener("submit", () => {
+                    form.querySelectorAll("[data-notice-copy]").forEach((copy) => copy.remove());
+                    fields.querySelectorAll("[name]").forEach((field) => {
+                        const copy = document.createElement("input");
+                        copy.type = "hidden";
+                        copy.name = field.name;
+                        copy.value = field.value;
+                        copy.dataset.noticeCopy = "";
+                        form.append(copy);
+                    });
+                });
+            });
+        });
+    }
+
     // A chosen thumbnail shown at once, cropped to 16:9 like the server does.
     function setupThumbnailPreviews() {
         for (const input of document.querySelectorAll("input[data-thumbnail-input]")) {
@@ -3608,14 +3716,114 @@ const Tison = (() => {
             button.addEventListener("click", () => {
                 const shown = field.type === "text";
                 field.type = shown ? "password" : "text";
-                button.textContent = shown ? "Show" : t("Hide");
+                button.textContent = shown ? t("Show") : t("Hide");
             });
+        }
+    }
+
+    /*
+     * A button showing what is typed in each password field, for typing it
+     * right (NIST SP 800-63B and OWASP ask to offer it). Hidden again when
+     * the form is sent (browsers save it as a password, and "Back" doesn't
+     * show it), when leaving the page and after a minute; spelling checks
+     * stay off, so a browser's cloud spell-checker never gets it. Without
+     * JavaScript there's no button. The stream key has its own (`data-secret`).
+     */
+    /*
+     * The length of a post counted like Mastodon (mention::mastodon_length,
+     * which decides): a link counts for 23 characters, a mention of another
+     * server only for its username (`@bob@mastodon.social` for `@bob`).
+     */
+    const LINK_LENGTH = 23;
+    function mastodonLength(text) {
+        const links = /(?<![\p{L}\p{N}\/@._-])(?:https?:\/\/|www\.)[^\s<>"`{}|\\^]+/giu;
+        const counted = text
+            .replace(links, (link) => {
+                // The punctuation ending a sentence isn't part of the link.
+                const kept = link.replace(/[.,;:!?'"*_~]+$/u, "");
+                return "x".repeat(LINK_LENGTH) + "x".repeat(link.length - kept.length);
+            })
+            .replace(/(?<![\p{L}\p{N}\/@._:-])@([A-Za-z0-9_](?:[A-Za-z0-9_.-]*[A-Za-z0-9_])?)@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/gu, "@$1");
+        return Array.from(counted).length;
+    }
+
+    // `textarea[data-mastodon-counter="500"]`: the characters left, shown in
+    // its `[data-counter-for]`; past the limit the form can't be sent.
+    function setupMastodonCounters() {
+        document.querySelectorAll("textarea[data-mastodon-counter]").forEach((field) => {
+            const max = Number(field.dataset.mastodonCounter) || 500;
+            const counter = document.querySelector(`[data-counter-for="${field.id}"]`);
+            if (!counter) {
+                return;
+            }
+            const update = () => {
+                const left = max - mastodonLength(field.value);
+                counter.textContent = String(left);
+                counter.title = left < 0 ? tf("{} characters too many", -left) : tf("{} characters left", left);
+                counter.classList.toggle("over", left < 0);
+                counter.classList.toggle("near", left >= 0 && left < 20);
+                field.setCustomValidity(left < 0 ? tf("{} characters too many", -left) : "");
+            };
+            field.addEventListener("input", update);
+            field.form?.addEventListener("reset", () => setTimeout(update));
+            update();
+        });
+    }
+
+    function setupPasswordToggles(root = document) {
+        const HIDE_AFTER_MS = 60 * 1000;
+        const eye = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"/></svg>';
+        const eyeOff = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M4 4l16 16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+        for (const field of root.querySelectorAll('input[type="password"]:not([data-secret]):not([data-password-toggle])')) {
+            field.dataset.passwordToggle = "";
+            field.spellcheck = false;
+            field.setAttribute("autocapitalize", "off");
+            field.setAttribute("autocorrect", "off");
+            if (!field.id) {
+                field.id = `password-${Math.random().toString(36).slice(2)}`;
+            }
+            const wrapper = document.createElement("span");
+            wrapper.className = "password-field";
+            field.replaceWith(wrapper);
+            wrapper.append(field);
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "password-toggle";
+            button.setAttribute("aria-controls", field.id);
+            wrapper.append(button);
+            let timer = null;
+            const show = (visible) => {
+                field.type = visible ? "text" : "password";
+                const label = visible ? t("Hide password") : t("Show password");
+                button.setAttribute("aria-pressed", String(visible));
+                button.setAttribute("aria-label", label);
+                button.title = label;
+                button.innerHTML = visible ? eyeOff : eye;
+                clearTimeout(timer);
+                if (visible) {
+                    timer = setTimeout(() => show(false), HIDE_AFTER_MS);
+                }
+            };
+            show(false);
+            button.addEventListener("click", () => {
+                const start = field.selectionStart;
+                const end = field.selectionEnd;
+                show(field.type === "password");
+                field.focus();
+                // Where the cursor was, not at the start.
+                try {
+                    field.setSelectionRange(start, end);
+                } catch {}
+            });
+            field.form?.addEventListener("submit", () => show(false));
+            window.addEventListener("pagehide", () => show(false));
         }
     }
 
     function start() {
         refreshTimes();
         setupConfirmations();
+        setupHistoryBack();
         setupSearch();
         setupTheme();
         setupMenu();
@@ -3624,6 +3832,7 @@ const Tison = (() => {
         setupCollapsible();
         setupPhotos();
         setupPhotoComposer();
+        setupMastodonCounters();
         setupEmojiPickers();
         setupCamera();
         setupFileLists();
@@ -3633,6 +3842,9 @@ const Tison = (() => {
         setupConversions();
         setupThumbnailPreviews();
         setupCropInputs();
+        setupPasswordToggles();
+        setupMapConsent();
+        setupNoticeFields();
         setupPlayers();
         setupVideoQualities();
         setupEventTimes();

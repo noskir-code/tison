@@ -1,5 +1,7 @@
 {% extends "base.html" %} {% import "macros/emoji.html" as emoji_ui %} {% import "macros/post.html" as posts_ui %} {% import "macros/comment.html" as comments_ui %}
-{% block head %}{% if let Some(url) = activitypub_url %}
+{% block head %}{# Search engines: only posts of users who chose it, never copies of other servers'. #}
+{% if !post.author.allows_search_engines() %}<meta name="robots" content="noindex, noarchive" />{% endif %}
+{% if let Some(url) = activitypub_url %}
 <link rel="alternate" type="application/activity+json" href="{{ url }}" />
 {% endif %}
 {# The card other sites (Mastodon, messengers...) show for a link to an article. #}
