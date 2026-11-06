@@ -56,8 +56,8 @@ https://instavox.social/
  - (Completed) v0.17 > Add translation system
  - (Completed) v0.18 > Add the necessary pages for legal use and Fediverse norms
  - (Completed) v0.19 > Fix texts and menus
- - (Current) v0.20 > Badges system
- - (Current) v.21 > Add a relay system for post and users
+ - (Completed) v0.20 > Badges system
+ - (Completed) v.21 > Add a relay system for post and users
  - (Current) v0.22 > Apply corrective to the federation system and enhancing even more functions
  - v0.23 > API to connect from other server and to connect to other servers
  - v0.24 > AT Protocol Bridge integration

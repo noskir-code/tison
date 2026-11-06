@@ -1,6 +1,6 @@
 [package]
 name = "tison"
-version = "1.0.102"
+version = "1.21.134"
 edition = "2024"
 
 [dependencies]
